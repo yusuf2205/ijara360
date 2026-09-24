@@ -59,7 +59,8 @@ try {
     if ($state -eq 'absent') {
         & ssh @sshOptions $nasTarget "set -eu; mkdir -p /volume1/docker/ijara360/releases; mkdir $release; mkdir $release/source"
         if ($LASTEXITCODE -ne 0) { throw 'Cannot create new NAS release directory.' }
-        & scp @sshOptions $archive $bundle $manifest "${nasTarget}:${release}/"
+        # UGOS SFTP exposes a different root; legacy SCP uses the verified SSH path.
+        & scp -O @sshOptions $archive $bundle $manifest "${nasTarget}:${release}/"
         if ($LASTEXITCODE -ne 0) { throw 'NAS transfer failed; incomplete directory retained for inspection.' }
         & ssh @sshOptions $nasTarget "set -eu; cd $release; sha256sum -c manifest.sha256; tar -xf source.tar -C source; touch COMPLETE"
         if ($LASTEXITCODE -ne 0) { throw 'NAS checksum or extraction failed.' }
