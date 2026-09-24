@@ -1,0 +1,20 @@
+# Local credentials, runtime state, backups and transfer artifacts
+.local/
+.env
+.env.*
+!.env.example
+secrets/
+data/
+backups/
+media/
+*.dump
+*.sql.gz
+*.tar
+*.tar.gz
+*.zip
+*.key
+*.pem
+node_modules/
+__pycache__/
+.DS_Store
+Thumbs.db
