@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+}
+
+model Property {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(120)
+  address   String?  @db.VarChar(500)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  users     User[]
+  rooms     Room[]
+  auditLogs AuditLog[]
+  @@map("properties")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  propertyId   String   @map("property_id") @db.Uuid
+  phone        String   @unique @db.VarChar(16)
+  fullName     String   @map("full_name") @db.VarChar(160)
+  passwordHash String   @map("password_hash")
+  role         Role     @default(ADMIN)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  sessions     Session[]
+  auditLogs    AuditLog[]
+  @@index([propertyId])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique @map("token_hash") @db.Char(64)
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Room {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  number     String   @db.VarChar(20)
+  capacity   Int
+  version    Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  beds       Bed[]
+  @@unique([propertyId, number])
+  @@map("rooms")
+}
+
+model Bed {
+  id        String   @id @default(uuid()) @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  number    String   @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at")
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  // Occupancy, not a mutable flag, will determine OCCUPIED in the next round.
+  @@unique([roomId, number])
+  @@map("beds")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  propertyId String   @map("property_id") @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(80)
+  entity     String   @db.VarChar(40)
+  entityId   String   @map("entity_id") @db.Uuid
+  metadata   Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@index([propertyId, createdAt])
+  @@map("audit_logs")
+}
+
+model RateBucket {
+  key       String   @id @db.Char(64)
+  attempts  Int      @default(1)
+  expiresAt DateTime @map("expires_at")
+  @@index([expiresAt])
+  @@map("rate_buckets")
+}

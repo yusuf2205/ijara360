@@ -1,3 +1,4 @@
+-- HISTORICAL DESIGN ONLY. Current executable migrations are in prisma/migrations.
 -- Ijara360 / M1 / PostgreSQL schema design v0.1 / 2026-09-25
 -- DESIGN ONLY. Not applied, not a production migration.
 -- Mandatory service/procedure invariants are listed at the end.

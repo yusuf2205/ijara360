@@ -1,0 +1,19 @@
+{
+    auto_https disable_redirects
+    default_sni 192.168.1.105
+}
+https://192.168.1.105 {
+    tls internal
+    encode zstd gzip
+    handle /api/* {
+        reverse_proxy api:4000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+    }
+}

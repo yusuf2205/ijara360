@@ -1,0 +1,13 @@
+.git
+.local
+**/node_modules
+**/dist
+**/.next
+.env*
+**/*.tsbuildinfo
+test-results
+playwright-report
+data
+backups
+media
+secrets

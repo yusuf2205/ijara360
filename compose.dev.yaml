@@ -1,0 +1,17 @@
+name: ijara360-dev
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: ijara360
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:-change-this-local-password}
+      POSTGRES_DB: ijara360_dev
+    ports: ["127.0.0.1:55436:5432"]
+    volumes: ["development-db:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ijara360 -d ijara360_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+volumes:
+  development-db:

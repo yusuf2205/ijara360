@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env.example
+!.env.test.example
 secrets/
 data/
 backups/
@@ -18,3 +19,9 @@ node_modules/
 __pycache__/
 .DS_Store
 Thumbs.db
+dist/
+.next/
+*.tsbuildinfo
+test-results/
+playwright-report/
+coverage/

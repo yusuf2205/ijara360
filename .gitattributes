@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+# Already-applied migrations must retain their exact bytes/checksums.
+prisma/migrations/**/migration.sql -text whitespace=cr-at-eol,-blank-at-eof

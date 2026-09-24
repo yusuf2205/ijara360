@@ -1,0 +1,26 @@
+{
+  "name": "ijara360",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/api", "apps/web"],
+  "engines": {"node": ">=22.0.0"},
+  "scripts": {
+    "dev:api": "npm run dev -w @ijara360/api",
+    "dev:web": "npm run dev -w @ijara360/web",
+    "build": "npm run build -w @ijara360/api && npm run build -w @ijara360/web",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:demo": "node --env-file=.env scripts/demo-seed.cjs",
+    "test:api": "node --env-file=.env.test --test --test-concurrency=1 apps/api/test/*.test.cjs",
+    "test:ui": "playwright test",
+    "typecheck": "tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/web/tsconfig.json"
+  },
+  "dependencies": {"@prisma/client": "6.19.3"},
+  "overrides": {"deepmerge-ts": "8.0.0"},
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.0.0",
+    "prisma": "6.19.3",
+    "typescript": "^5.9.0"
+  }
+}
