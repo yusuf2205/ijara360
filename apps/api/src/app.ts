@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { AuthModule } from './auth';
 import { Database, DatabaseModule } from './database';
 import { InventoryModule } from './inventory';
+import { allowedOrigins } from './origins';
 
 @Controller('health')
 class HealthController {
@@ -44,6 +45,7 @@ class ErrorFilter implements ExceptionFilter {
 export async function createApp() {
   if (!process.env.APP_ORIGIN || !process.env.SETUP_TOKEN || process.env.SETUP_TOKEN.length < 32) throw new Error('APP_ORIGIN and a random SETUP_TOKEN (32+ characters) are required.');
   if (process.env.NODE_ENV === 'production' && (process.env.COOKIE_SECURE === 'false' || !process.env.APP_ORIGIN.startsWith('https://'))) throw new Error('Production requires HTTPS and secure cookies.');
+  const origins = allowedOrigins(process.env.APP_ORIGIN, process.env.ADDITIONAL_APP_ORIGINS, process.env.NODE_ENV === 'production');
   const app = await NestFactory.create(AppModule, { bodyParser: false, logger: ['error', 'warn', 'log'] });
   app.setGlobalPrefix('api');
   app.use(helmet());
@@ -52,7 +54,7 @@ export async function createApp() {
     res.setHeader('X-Request-Id', randomUUID());
     res.setHeader('Cache-Control', 'no-store');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      if (req.headers.origin !== process.env.APP_ORIGIN || req.headers['x-ijara-request'] !== '1') {
+      if (!origins.has(req.headers.origin ?? '') || req.headers['x-ijara-request'] !== '1') {
         res.status(403).json({ statusCode: 403, message: 'Запрос отклонён. Откройте приложение по основному адресу.' }); return;
       }
     }

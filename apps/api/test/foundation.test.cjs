@@ -24,7 +24,7 @@ async function owner() {
   await send(agent, 'post', '/auth/login').send({ phone: setup.phone, password }).expect(200);
   return agent;
 }
-before(async () => { app = await createApp(); await app.init(); server = app.getHttpServer(); });
+before(async () => { process.env.ADDITIONAL_APP_ORIGINS = 'https://mynas.tail4bf75c.ts.net:8446'; app = await createApp(); await app.init(); server = app.getHttpServer(); });
 beforeEach(reset);
 after(async () => { await reset(); await app.close(); await db.$disconnect(); });
 
@@ -60,6 +60,15 @@ test('login rejects incorrect credentials, role injection and cross-origin write
   await agent.post('/api/rooms').set('Origin', origin).send({number:'3',capacity:1}).expect(403);
   await request(server).get('/api/rooms').expect(401);
 });
+test('remote HTTPS origin can log in while unlisted origins and missing CSRF header fail', async () => {
+  await owner();
+  const remote = 'https://mynas.tail4bf75c.ts.net:8446';
+  const credentials = { phone: setup.phone, password };
+  await request(server).post('/api/auth/login').set('Origin', remote).set('X-Ijara-Request', '1').send(credentials).expect(200);
+  await request(server).post('/api/auth/login').set('Origin', remote).send(credentials).expect(403);
+  await request(server).post('/api/auth/login').set('Origin', 'https://mynas.tail4bf75c.ts.net').set('X-Ijara-Request', '1').send(credentials).expect(403);
+});
+
 test('logout and expired sessions lose access', async () => {
   const agent = await owner();
   await send(agent, 'post', '/auth/logout').expect(204);

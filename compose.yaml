@@ -32,6 +32,7 @@ services:
     environment:
       DATABASE_URL: postgresql://ijara_app:${APP_DB_PASSWORD}@db:5432/ijara360?schema=public
       APP_ORIGIN: ${APP_ORIGIN:-https://192.168.1.105:8446}
+      ADDITIONAL_APP_ORIGINS: ${ADDITIONAL_APP_ORIGINS:-}
       SETUP_TOKEN: ${SETUP_TOKEN:?Set SETUP_TOKEN}
       NODE_ENV: production
       COOKIE_SECURE: "true"
@@ -58,7 +59,7 @@ services:
   gateway:
     image: caddy:2
     restart: unless-stopped
-    ports: ["192.168.1.105:8446:443"]
+    ports: ["192.168.1.105:8446:443", "127.0.0.1:8447:8080"]
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy:/data

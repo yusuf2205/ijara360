@@ -2,8 +2,7 @@
     auto_https disable_redirects
     default_sni 192.168.1.105
 }
-https://192.168.1.105 {
-    tls internal
+(application) {
     encode zstd gzip
     handle /api/* {
         reverse_proxy api:4000
@@ -16,4 +15,12 @@ https://192.168.1.105 {
         Referrer-Policy same-origin
         X-Frame-Options DENY
     }
+}
+https://192.168.1.105 {
+    tls internal
+    import application
+}
+# Only published on NAS loopback, behind Tailscale Serve HTTPS.
+http://:8080 {
+    import application
 }

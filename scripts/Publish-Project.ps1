@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$SkipGitea)
+param([switch]$SkipGitea, [ValidateSet('192.168.1.105', '100.126.164.29')][string]$NasHost = '192.168.1.105')
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -50,7 +50,7 @@ foreach ($remote in $remotes) {
 }
 
 # Fixed, user-authorized target. No deployment, deletion, sudo or container changes.
-$nasTarget = 'Joseph@192.168.1.105'
+$nasTarget = "Joseph@$NasHost"
 $release = "/volume1/docker/ijara360/releases/$revision"
 $sshOptions = @('-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15')
 try {
