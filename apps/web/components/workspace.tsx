@@ -3,12 +3,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowDownLeft, ArrowLeft, ArrowRight, BedDouble, Building2, Check, ChevronRight, CircleHelp, DoorOpen, History, LayoutDashboard, LogOut, MapPin, Plus, Search, Settings2, ShieldCheck, Users, X } from 'lucide-react';
-import { api, ApiError, type Activity, type Property, type Room, type User } from '../lib/api';
+import { api, ApiError, type Activity, type Property, type Room, type User, type Resident } from '../lib/api';
 
-type View = 'overview' | 'rooms' | 'room' | 'history' | 'settings';
+import { ResidentsPanel, ResidentFlow, dateLabel, money, type ResidentAction } from './residents';
+
+type View = 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident';
 type Modal = 'room' | 'edit-room' | 'bed' | 'admin' | 'password' | null;
-const titles: Record<View, string> = { overview: 'Обзор дома', rooms: 'Комнаты', room: 'Комнаты', history: 'История действий', settings: 'Настройки' };
-const actionLabels: Record<string,string> = { SETUP_COMPLETED: 'Дом настроен', ROOM_CREATED: 'Добавлена комната', ROOM_UPDATED: 'Изменена комната', BED_CREATED: 'Добавлено место', PROPERTY_UPDATED: 'Изменены данные дома', ADMIN_CREATED: 'Добавлен управляющий', ADMIN_ACCESS_CHANGED: 'Изменён доступ сотрудника', LOGIN: 'Вход в систему', PASSWORD_CHANGED: 'Пароль изменён' };
+const titles: Record<View, string> = { residents: 'Жильцы', resident: 'Жилец', overview: 'Обзор дома', rooms: 'Комнаты', room: 'Комнаты', history: 'История действий', settings: 'Настройки' };
+const actionLabels: Record<string,string> = { RESIDENT_CREATED: 'Добавлен жилец', RESIDENT_UPDATED: 'Изменены данные жильца', OCCUPANCY_CHECKED_IN: 'Жилец заселён', OCCUPANCY_TRANSFERRED: 'Жилец переселён', OCCUPANCY_CHECKED_OUT: 'Жилец выселен', SETUP_COMPLETED: 'Дом настроен', ROOM_CREATED: 'Добавлена комната', ROOM_UPDATED: 'Изменена комната', BED_CREATED: 'Добавлено место', PROPERTY_UPDATED: 'Изменены данные дома', ADMIN_CREATED: 'Добавлен управляющий', ADMIN_ACCESS_CHANGED: 'Изменён доступ сотрудника', LOGIN: 'Вход в систему', PASSWORD_CHANGED: 'Пароль изменён' };
 
 function ModalDialog({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -18,12 +20,15 @@ function ModalDialog({ title, close, children }: { title: string; close: () => v
   </dialog>;
 }
 
-export default function Workspace({ view, roomId, capacityOnly = false }: { view: View; roomId?: string; capacityOnly?: boolean }) {
+export default function Workspace({ view, roomId, capacityOnly = false, residentId, residentFilter }: { view: View; roomId?: string; capacityOnly?: boolean; residentId?: string; residentFilter?: string }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [residents, setResidents] = useState<Resident[]>([]);
+  const [residentAction, setResidentAction] = useState<ResidentAction|null>(null);
+  const occupiedBeds = rooms.reduce((n,r)=>n+r.occupiedBeds,0);
   const [staff, setStaff] = useState<User[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -41,7 +46,8 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
   async function refresh() {
     try {
       const account = await api<User>('/auth/me');
-      const [p, r, a] = await Promise.all([api<Property>('/property'), api<Room[]>('/rooms'), api<Activity[]>('/audit')]);
+      const [p, r, a, people] = await Promise.all([api<Property>('/property'), api<Room[]>('/rooms'), api<Activity[]>('/audit'), api<Resident[]>('/residents')]);
+      setResidents(people);
       setUser(account); setProperty(p); setRooms(r); setActivity(a);
       if (view === 'settings' && account.role === 'OWNER') setStaff(await api<User[]>('/users'));
       setUpdatedAt(new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }));
@@ -51,7 +57,7 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
       else setError((e as Error).message);
     }
   }
-  useEffect(() => { void refresh(); }, [view, roomId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void refresh(); }, [view, roomId, residentId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); } }, [toast]);
   function open(kind: Modal) { setFormError(''); setModal(kind); }
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -90,9 +96,10 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
       <nav aria-label="Основная навигация">
         <Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={20}/>Главная</Link>
         <Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={20}/>Комнаты<span className="nav-count">{rooms.length}</span></Link>
+        <Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={20}/>Жильцы</Link>
         <Link className={view === 'history' ? 'active' : ''} href="/history"><History size={20}/>История</Link>
       </nav>
-      <div className="sidebar-bottom"><div className="foundation-tip"><ShieldCheck size={21}/><strong>Начинаем с порядка</strong><p>Настройте комнаты и места. Учёт жильцов — следующий шаг.</p></div>
+      <div className="sidebar-bottom"><div className="foundation-tip"><ShieldCheck size={21}/><strong>Начинаем с порядка</strong><p>Жильцы, комнаты и история проживания всегда под рукой.</p></div>
         <Link className={`settings-link ${view === 'settings' ? 'active' : ''}`} href="/settings"><Settings2 size={19}/>Настройки</Link>
         <div className="sidebar-user"><span className="avatar">{user?.fullName?.slice(0,1) || '·'}</span><div><strong>{user?.fullName || 'Подключение…'}</strong><small>{owner ? 'Владелец' : 'Управляющий'}</small></div><button aria-label="Выйти" className="icon-button" onClick={logout}><LogOut size={18}/></button></div>
       </div>
@@ -103,19 +110,21 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
         {error && <div className="error global-error" role="alert">{error}<button className="button secondary" onClick={refresh}>Повторить</button></div>}
         {!loaded ? <div className="loading" role="status"><div className="skeleton title"/><div className="skeleton stats"/><div className="skeleton content"/>{!error && <span>Загружаем ваш дом…</span>}</div> : <>
         {(view === 'overview' || view === 'rooms') && <>
-          <div className="page-heading"><div><div className="heading-kicker">{view === 'overview' ? 'ОБЗОР ОБЪЕКТА' : 'КОМНАТЫ И СПАЛЬНЫЕ МЕСТА'}</div><h1>{view === 'overview' ? 'Дом под контролем' : 'Комнаты'}</h1><p>{view === 'overview' ? 'Все комнаты и места — в одном пространстве.' : 'Посмотрите план комнат или добавьте новые места.'}</p></div>{owner && <button className="button primary" onClick={() => open('room')}><Plus size={19}/>Добавить комнату</button>}</div>
+          <div className="page-heading"><div><div className="heading-kicker">{view === 'overview' ? 'ОБЗОР ОБЪЕКТА' : 'КОМНАТЫ И СПАЛЬНЫЕ МЕСТА'}</div><h1>{view === 'overview' ? 'Дом под контролем' : 'Комнаты'}</h1><p>{view === 'overview' ? 'Все комнаты и места — в одном пространстве.' : 'Посмотрите план комнат или добавьте новые места.'}</p></div><div className="resident-actions"><button className="button primary" onClick={()=>setResidentAction({mode:'check-in'})}><Plus size={19}/>Заселить</button>{owner && <button className="button secondary" onClick={() => open('room')}>Добавить комнату</button>}</div></div>
           <div className="stats-grid">
             <Link href="/rooms" className="stat"><div><span>Комнат</span><Building2 size={21}/></div><strong>{rooms.length}<ArrowRight size={20}/></strong><small>В вашем доме</small></Link>
             <Link href="/rooms" className="stat"><div><span>Спальных мест</span><BedDouble size={22}/></div><strong>{totalBeds}<ArrowRight size={20}/></strong><small>Создано и готово к учёту</small></Link>
-            <Link href="/rooms" className="stat accent"><div><span>Свободных мест</span><DoorOpen size={22}/></div><strong>{totalBeds}<ArrowRight size={20}/></strong><small><span className="dot"/> По данным системы</small></Link>
+            <Link href="/rooms" className="stat accent"><div><span>Свободных мест</span><DoorOpen size={22}/></div><strong>{totalBeds-occupiedBeds}<ArrowRight size={20}/></strong><small><span className="dot"/> По данным системы</small></Link>
+            <Link href="/residents?filter=active" className="stat"><div><span>Занято мест</span><Users size={22}/></div><strong>{occupiedBeds}<ArrowRight size={20}/></strong><small>Активные проживания</small></Link>
+            <Link href="/residents?filter=active" className="stat"><div><span>Жильцов сейчас</span><Users size={22}/></div><strong>{occupiedBeds}<ArrowRight size={20}/></strong><small>Сейчас живут в доме</small></Link>
             <Link href="/rooms?filter=space" className="stat"><div><span>Можно добавить</span><Plus size={22}/></div><strong>{totalCapacity - totalBeds}<ArrowRight size={20}/></strong><small>В пределах вместимости</small></Link>
           </div>
-          {view === 'overview' && <div className="setup-banner"><span className="banner-icon"><ShieldCheck size={25}/></span><div><strong>Основа вашего дома готова</strong><p>Сейчас доступны комнаты, места и история. Заселение и оплаты появятся на следующем этапе.</p></div><span className="phase-badge">Первый этап</span></div>}
+          {view === 'overview' && <div className="setup-banner"><span className="banner-icon"><ShieldCheck size={25}/></span><div><strong>Кто живёт в доме — видно сразу</strong><p>Заселяйте на свободные места, переселяйте и сохраняйте историю проживания.</p></div><span className="phase-badge">Учёт проживания</span></div>}
           <section className="room-section"><div className="section-heading"><div><h2>{capacityOnly ? "Можно добавить места" : "Ваши комнаты"} <span>{capacityOnly ? filtered.length : rooms.length}</span></h2><p>Каждое место на своём месте</p></div><label className="search-field"><Search size={18}/><input aria-label="Найти комнату" placeholder="Найти комнату…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
             {filtered.length ? <div className="room-grid">{filtered.map(room => <Link href={`/rooms/${room.id}`} className="room-card" key={room.id}>
-              <div className="room-card-top"><span className="room-number">{room.number.padStart(2,'0')}</span><span className="status-pill"><span className="dot"/>{room.availableBeds ? "Есть свободные места" : "Места не добавлены"}</span></div>
-              <h3>Комната №{room.number}</h3><p>{room.totalBeds} мест · Вместимость {room.capacity}</p>
-              <div className="mini-beds" aria-label={`${room.availableBeds} свободных мест`}>{room.beds.slice(0,10).map(b => <span key={b.id}><BedDouble size={19}/></span>)}{room.beds.length > 10 && <small>+{room.beds.length - 10}</small>}</div>
+              <div className="room-card-top"><span className="room-number">{room.number.padStart(2,'0')}</span><span className="status-pill"><span className="dot"/>{room.availableBeds ? "Есть свободные места" : room.totalBeds ? "Все места заняты" : "Места не добавлены"}</span></div>
+              <h3>Комната №{room.number}</h3><p>{room.occupiedBeds} / {room.totalBeds} занято · Свободно: {room.availableBeds}</p>
+              <div className="mini-beds" aria-label={`${room.availableBeds} свободных мест`}>{room.beds.slice(0,10).map(b => <span className={b.status==='OCCUPIED'?'occupied':''} key={b.id}><BedDouble size={19}/></span>)}{room.beds.length > 10 && <small>+{room.beds.length - 10}</small>}</div>
               <div className="room-card-bottom"><span><strong>{room.availableBeds}</strong> свободно <span className="separator">/</span> <strong>{room.occupiedBeds}</strong> занято</span><span className="arrow-circle"><ArrowRight size={17}/></span></div>
             </Link>)}</div> : <div className="empty"><Building2 size={38}/><h3>{query ? 'Комната не найдена' : 'Здесь появятся ваши комнаты'}</h3><p>{query ? 'Попробуйте другой номер.' : 'Добавьте первую комнату и укажите количество мест.'}</p>{!query && owner && <button className="button primary" onClick={() => open('room')}>Добавить комнату</button>}</div>}
           </section>
@@ -124,12 +133,13 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
         {view === 'room' && (currentRoom ? <>
           <Link className="back-link" href="/rooms"><ArrowLeft size={16}/>Все комнаты</Link>
           <div className="page-heading"><div><div className="heading-kicker">СПАЛЬНЫЕ МЕСТА</div><h1>Комната №{currentRoom.number}</h1><p>{currentRoom.totalBeds} мест создано · Вместимость {currentRoom.capacity}</p></div>{owner && <button className="button secondary" onClick={() => open('edit-room')}><Settings2 size={17}/>Изменить комнату</button>}</div>
-          <div className="room-summary"><div><span className="dot"/><strong>{currentRoom.availableBeds}</strong> свободно</div><div><span className="dot neutral"/><strong>{currentRoom.occupiedBeds}</strong> занято</div><span>Учёт проживания ещё не подключён</span></div>
-          <div className="bed-grid">{currentRoom.beds.map(bed => <article className="bed-card" key={bed.id}><div className="bed-card-top"><span>{bed.displayNumber}</span><span className="status-pill"><span className="dot"/>Свободно</span></div><BedDouble size={48} strokeWidth={1.2}/><h3>Место {bed.number}</h3><p>Готово к заселению на следующем этапе</p></article>)}
+          <div className="room-summary"><div><span className="dot"/><strong>{currentRoom.availableBeds}</strong> свободно</div><div><span className="dot neutral"/><strong>{currentRoom.occupiedBeds}</strong> занято</div><span>По активным проживаниям</span></div>
+          <div className="bed-grid">{currentRoom.beds.map(bed => <article className={`bed-card ${bed.occupancy?'occupied-bed':''}`} key={bed.id}><div className="bed-card-top"><span>{bed.displayNumber}</span><span className="status-pill"><span className="dot"/>{bed.occupancy?'Занято':'Свободно'}</span></div><BedDouble size={38} strokeWidth={1.2}/><h3>Место {bed.number}</h3>{bed.occupancy ? <Link className="bed-resident" href={`/residents/${bed.occupancy.residentId}`}><strong>{bed.occupancy.resident?.fullName}</strong><span>{bed.occupancy.resident?.phone}</span><span>С {dateLabel(bed.occupancy.moveInDate)}</span><span>{money(bed.occupancy.monthlyPrice)} / мес.</span><span className="inline-link">Открыть жильца <ArrowRight size={14}/></span></Link> : <button className="button primary" onClick={()=>setResidentAction({mode:'check-in',bedId:bed.id})}>Заселить</button>}</article>)}
             {owner && currentRoom.totalBeds < currentRoom.capacity && <button className="bed-add" onClick={() => open('bed')}><Plus size={28}/><strong>Добавить место</strong><span>Ещё {currentRoom.capacity - currentRoom.totalBeds} в пределах вместимости</span></button>}
           </div>
           {owner && currentRoom.totalBeds === currentRoom.capacity && <p className="helper-line"><CircleHelp size={17}/>Все места созданы. Чтобы добавить ещё, увеличьте вместимость комнаты.</p>}
         </> : <div className="empty"><h1>Комната не найдена</h1><Link href="/rooms">Вернуться к комнатам</Link></div>)}
+        {(view === 'residents' || view === 'resident') && <ResidentsPanel residents={residents} residentId={residentId} onAction={setResidentAction} initialFilter={residentFilter}/>}
         {view === 'history' && <><div className="page-heading"><div><div className="heading-kicker">ПРОЗРАЧНЫЙ УЧЁТ</div><h1>История действий</h1><p>Кто и когда менял данные. Последние 100 действий.</p></div></div><ActivityList items={activity}/></>}
         {view === 'settings' && <>
           <div className="page-heading"><div><div className="heading-kicker">ВАШЕ ПРОСТРАНСТВО</div><h1>Настройки</h1><p>Данные дома и доступ сотрудников.</p></div></div>
@@ -140,8 +150,9 @@ export default function Workspace({ view, roomId, capacityOnly = false }: { view
         <footer className="page-footer"><span><ShieldCheck size={14}/>Данные сохранены на вашем сервере</span><span>Обновлено в {updatedAt}</span></footer>
         </>}
       </main>
-      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'history' ? 'active' : ''} href="/history"><History size={21}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={21}/>Настройки</Link></nav>
+      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={21}/>Жильцы</Link><Link className={view === 'history' ? 'active' : ''} href="/history"><History size={21}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={21}/>Настройки</Link></nav>
     </div>
+    {residentAction && <ResidentFlow action={residentAction} rooms={rooms} residents={residents} close={()=>setResidentAction(null)} saved={async id=>{await refresh();setToast('Данные сохранены');if(id&&(residentAction.mode==='create'||residentAction.mode==='check-in'&&view!=='room'))router.push(`/residents/${id}`);}}/>}
     {toast && <div className="toast" role="status"><Check size={19}/>{toast}</div>}
     {modal && <ModalDialog close={() => { if (!busy) setModal(null); }} title={{ room: 'Новая комната', 'edit-room': 'Изменить комнату', bed: 'Новое спальное место', admin: 'Добавить управляющего', password: 'Изменить пароль' }[modal]}>
       <form onSubmit={save}>

@@ -5,6 +5,8 @@ import { Database } from './database';
 import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
 
+const roomInclude = Prisma.validator<Prisma.RoomInclude>()({ beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
+
 @Injectable()
 export class InventoryService {
   constructor(private readonly db: Database) {}
@@ -20,15 +22,15 @@ export class InventoryService {
     await tx.auditLog.create({ data: { propertyId: actor.propertyId, actorId: actor.id, action, entity, entityId, metadata } });
   }
   async rooms(actor: Actor) {
-    const rooms = await this.db.room.findMany({ where: { propertyId: actor.propertyId }, include: { beds: { orderBy: { createdAt: 'asc' } } } });
+    const rooms = await this.db.room.findMany({ where: { propertyId: actor.propertyId }, include: roomInclude });
     return rooms.sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true })).map(room => this.roomDto(room));
   }
-  roomDto(room: Prisma.RoomGetPayload<{ include: { beds: true } }>) {
-    return { ...room, totalBeds: room.beds.length, availableBeds: room.beds.length, occupiedBeds: 0,
-      beds: [...room.beds].sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true })).map(b => ({ ...b, status: 'AVAILABLE', displayNumber: `${room.number}-${b.number}` })) };
+  roomDto(room: Prisma.RoomGetPayload<{ include: typeof roomInclude }>) {
+    return { ...room, totalBeds: room.beds.length, availableBeds: room.beds.filter(b => !b.occupancies.length).length, occupiedBeds: room.beds.filter(b => b.occupancies.length).length,
+      beds: [...room.beds].sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true })).map(b => ({ ...b, occupancy: b.occupancies[0] ?? null, status: b.occupancies.length ? 'OCCUPIED' : 'AVAILABLE', displayNumber: `${room.number}-${b.number}` })) };
   }
   async room(actor: Actor, id: string) {
-    const room = await this.db.room.findFirst({ where: { id, propertyId: actor.propertyId }, include: { beds: true } });
+    const room = await this.db.room.findFirst({ where: { id, propertyId: actor.propertyId }, include: roomInclude });
     if (!room) throw new NotFoundException('Комната не найдена.');
     return this.roomDto(room);
   }
@@ -37,18 +39,18 @@ export class InventoryService {
       const count = dto.bedCount ?? dto.capacity;
       if (count > dto.capacity) throw new ConflictException('Количество мест превышает вместимость.');
       const room = await tx.room.create({ data: { propertyId: actor.propertyId, number: dto.number, capacity: dto.capacity,
-        beds: { create: Array.from({ length: count }, (_, i) => ({ number: String(i + 1) })) } }, include: { beds: true } });
+        beds: { create: Array.from({ length: count }, (_, i) => ({ number: String(i + 1) })) } }, include: roomInclude });
       await this.audit(tx, actor, 'ROOM_CREATED', 'Room', room.id, { number: room.number, capacity: room.capacity, beds: count });
       return this.roomDto(room);
     });
   }
   updateRoom(actor: Actor, id: string, dto: UpdateRoomDto) {
     return this.write(actor, async tx => {
-      const room = await tx.room.findFirst({ where: { id, propertyId: actor.propertyId }, include: { beds: true } });
+      const room = await tx.room.findFirst({ where: { id, propertyId: actor.propertyId }, include: roomInclude });
       if (!room) throw new NotFoundException('Комната не найдена.');
       if (room.version !== dto.version) throw new ConflictException('Комнату уже изменили. Обновите страницу.');
       if (dto.capacity < room.beds.length) throw new ConflictException('Вместимость не может быть меньше количества мест.');
-      const updated = await tx.room.update({ where: { id }, data: { number: dto.number, capacity: dto.capacity, version: { increment: 1 } }, include: { beds: true } });
+      const updated = await tx.room.update({ where: { id }, data: { number: dto.number, capacity: dto.capacity, version: { increment: 1 } }, include: roomInclude });
       await this.audit(tx, actor, 'ROOM_UPDATED', 'Room', id, { before: { number: room.number, capacity: room.capacity }, after: { number: updated.number, capacity: updated.capacity } });
       return this.roomDto(updated);
     });
@@ -81,7 +83,7 @@ class InventoryController {
   @Get('dashboard') async dashboard(@Req() req: AuthRequest) {
     const rooms = await this.inventory.rooms(req.actor);
     return { roomsCount: rooms.length, bedsCount: rooms.reduce((n, r) => n + r.totalBeds, 0), availableBeds: rooms.reduce((n, r) => n + r.availableBeds, 0),
-      capacity: rooms.reduce((n, r) => n + r.capacity, 0), phase: 'FOUNDATION' };
+      capacity: rooms.reduce((n, r) => n + r.capacity, 0), occupiedBeds: rooms.reduce((n,r) => n + r.occupiedBeds,0), currentResidents: rooms.reduce((n,r) => n + r.occupiedBeds,0), phase: 'M2' };
   }
   @Get('rooms') rooms(@Req() req: AuthRequest) { return this.inventory.rooms(req.actor); }
   @Get('rooms/:id') room(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.inventory.room(req.actor, id); }
@@ -89,7 +91,7 @@ class InventoryController {
   @Patch('rooms/:id') updateRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoomDto) { return this.inventory.updateRoom(req.actor, id, dto); }
   @Post('rooms/:id/beds') createBed(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: BedDto) { return this.inventory.createBed(req.actor, id, dto); }
   @Get('audit') async audit(@Req() req: AuthRequest) {
-    const actions = req.actor.role === 'OWNER' ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'BED_CREATED', 'PROPERTY_UPDATED'];
+    const actions = req.actor.role === 'OWNER' ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'BED_CREATED', 'PROPERTY_UPDATED', 'RESIDENT_CREATED', 'RESIDENT_UPDATED', 'OCCUPANCY_CHECKED_IN', 'OCCUPANCY_TRANSFERRED', 'OCCUPANCY_CHECKED_OUT'];
     return this.db.auditLog.findMany({ where: { propertyId: req.actor.propertyId, ...(actions ? { action: { in: actions } } : {}) },
       include: { actor: { select: { fullName: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 });
   }

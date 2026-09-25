@@ -22,6 +22,8 @@ model Property {
   users     User[]
   rooms     Room[]
   auditLogs AuditLog[]
+  residents Resident[]
+  occupancies Occupancy[]
   @@map("properties")
 }
 
@@ -37,6 +39,8 @@ model User {
   property     Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   sessions     Session[]
   auditLogs    AuditLog[]
+  occupancies  Occupancy[]
+  @@unique([id, propertyId])
   @@index([propertyId])
   @@map("users")
 }
@@ -63,6 +67,8 @@ model Room {
   updatedAt  DateTime @updatedAt @map("updated_at")
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   beds       Bed[]
+  occupancies Occupancy[]
+  @@unique([id, propertyId])
   @@unique([propertyId, number])
   @@map("rooms")
 }
@@ -73,6 +79,8 @@ model Bed {
   number    String   @db.VarChar(20)
   createdAt DateTime @default(now()) @map("created_at")
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  occupancies Occupancy[]
+  @@unique([id, roomId])
   // Occupancy, not a mutable flag, will determine OCCUPIED in the next round.
   @@unique([roomId, number])
   @@map("beds")
@@ -99,4 +107,52 @@ model RateBucket {
   expiresAt DateTime @map("expires_at")
   @@index([expiresAt])
   @@map("rate_buckets")
+}
+
+enum OccupancyStatus {
+  ACTIVE
+  CLOSED
+}
+
+model Resident {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  fullName String @map("full_name") @db.VarChar(160)
+  phone String @db.VarChar(16)
+  photoUrl String? @map("photo_url") @db.VarChar(500)
+  note String? @db.VarChar(2000)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  occupancies Occupancy[]
+  @@unique([propertyId, phone])
+  @@unique([id, propertyId])
+  @@map("residents")
+}
+
+model Occupancy {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  roomId String @map("room_id") @db.Uuid
+  bedId String @map("bed_id") @db.Uuid
+  moveInDate DateTime @map("move_in_date") @db.Date
+  moveOutDate DateTime? @map("move_out_date") @db.Date
+  monthlyPrice Decimal @map("monthly_price") @db.Decimal(14, 2)
+  paymentDay Int @map("payment_day")
+  depositAmount Decimal @map("deposit_amount") @db.Decimal(14, 2)
+  status OccupancyStatus @default(ACTIVE)
+  createdBy String @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  resident Resident @relation(fields: [residentId, propertyId], references: [id, propertyId], onDelete: Restrict, onUpdate: Restrict)
+  room Room @relation(fields: [roomId, propertyId], references: [id, propertyId], onDelete: Restrict, onUpdate: Restrict)
+  bed Bed @relation(fields: [bedId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: Restrict)
+  creator User @relation(fields: [createdBy, propertyId], references: [id, propertyId], onDelete: Restrict, onUpdate: Restrict)
+  // Partial unique indexes for ACTIVE bed/resident live in the SQL migration (Prisma 6).
+  @@index([propertyId, status])
+  @@index([residentId, moveInDate])
+  @@index([bedId, moveInDate])
+  @@map("occupancies")
 }

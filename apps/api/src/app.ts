@@ -10,6 +10,7 @@ import { AuthModule } from './auth';
 import { Database, DatabaseModule } from './database';
 import { InventoryModule } from './inventory';
 import { allowedOrigins } from './origins';
+import { ResidentsModule } from './residents';
 
 @Controller('health')
 class HealthController {
@@ -19,7 +20,7 @@ class HealthController {
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
   }
 }
-@Module({ imports: [DatabaseModule, AuthModule, InventoryModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, AuthModule, InventoryModule, ResidentsModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()

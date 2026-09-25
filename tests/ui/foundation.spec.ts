@@ -89,7 +89,7 @@ test('owner creates ADMIN; ADMIN cannot see owner controls', async ({page}) => {
 });
 test('capacity card filters rooms and mobile settings allow logout', async ({page}) => {
   await page.setViewportSize({width:390,height:844}); await login(page);
-  await page.locator('.stat').nth(3).click();
+  await page.locator('.stat').filter({hasText:'Можно добавить'}).click();
   await expect(page.locator('.room-card')).toHaveCount(1);
   await expect(page.locator('.room-card')).toContainText('Комната №8');
   await page.goto('/settings');

@@ -155,7 +155,7 @@ test('dashboard reflects persisted room/bed counts and does not invent finance d
   const agent = await owner();
   const dashboard=(await send(agent,'get','/dashboard').expect(200)).body;
   assert.equal(dashboard.roomsCount,2); assert.equal(dashboard.bedsCount,5); assert.equal(dashboard.availableBeds,5);
-  assert.equal(dashboard.debt,undefined); assert.equal(dashboard.phase,'FOUNDATION');
+  assert.equal(dashboard.debt,undefined); assert.equal(dashboard.phase,'M2');
 });
 test('audit failure rolls back the room and beds', async () => {
   const agent=await owner();

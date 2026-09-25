@@ -1,4 +1,4 @@
-// Explicit isolated demo: no residents are created before the occupancy module exists.
+// Explicit isolated M2 demo; never runs in production.
 const { PrismaClient } = require('@prisma/client');
 const { hashPassword, normalizePhone } = require('../apps/api/dist/security');
 const db = new PrismaClient();
@@ -18,7 +18,12 @@ const db = new PrismaClient();
       const capacity=i<=3?9:8;
       await tx.room.create({data:{propertyId:property.id,number:String(i),capacity,beds:{create:Array.from({length:capacity},(_,n)=>({number:String(n+1)}))}}});
     }
+    const beds = await tx.bed.findMany({where:{room:{propertyId:property.id}},orderBy:{id:'asc'}});
+    for (let i=0;i<5;i++) {
+      const resident=await tx.resident.create({data:{propertyId:property.id,fullName:`Демо-жилец ${i+1}`,phone:`+99890111000${i+1}`,note:'Демонстрационные данные'}});
+      await tx.occupancy.create({data:{propertyId:property.id,residentId:resident.id,roomId:beds[i].roomId,bedId:beds[i].id,moveInDate:new Date('2026-09-01'),moveOutDate:i===4?new Date('2026-09-10'):null,status:i===4?'CLOSED':'ACTIVE',monthlyPrice:'750000',paymentDay:10,depositAmount:'100000',createdBy:owner.id}});
+    }
     await tx.auditLog.create({data:{propertyId:property.id,actorId:owner.id,action:'SETUP_COMPLETED',entity:'Property',entityId:property.id,metadata:{demo:true,rooms:7,beds:59}}});
   });
-  console.log('Demo created: 7 rooms, 59 beds. No production data changed.');
+  console.log('Demo created: 7 rooms, 59 beds, 5 residents, 4 active and 1 closed occupancy. No production data changed.');
 })().catch(e=>{console.error(e.message);process.exitCode=1;}).finally(()=>db.$disconnect());

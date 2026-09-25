@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const db = new PrismaClient();
 (async () => {
   await db.$executeRawUnsafe('GRANT USAGE ON SCHEMA public TO ijara_app');
-  for (const table of ['properties', 'users', 'rooms', 'beds']) {
+  for (const table of ['properties', 'users', 'rooms', 'beds', 'residents', 'occupancies']) {
     await db.$executeRawUnsafe(`GRANT SELECT, INSERT, UPDATE ON TABLE ${table} TO ijara_app`);
   }
   for (const table of ['sessions', 'rate_buckets']) {
