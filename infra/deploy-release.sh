@@ -27,7 +27,8 @@ chmod 644 "$source/infra/init-db.sql" "$source/infra/Caddyfile"
 docker compose --env-file "$secret" -f "$source/compose.yaml" up -d --wait --wait-timeout 240
 docker exec -i ijara360-db-1 psql -X -q -t -A -v ON_ERROR_STOP=1 -U ijara_owner -d ijara360 < "$source/scripts/production-fingerprint.sql" > "$record/after.txt"
 diff -u "$record/before.txt" "$record/after.txt"
-curl --fail --silent --show-error --max-time 30 https://mynas.tail4bf75c.ts.net:8446/api/health
+# UGOS itself does not resolve MagicDNS; retain TLS hostname verification.
+curl --fail --silent --show-error --max-time 30 --resolve mynas.tail4bf75c.ts.net:8446:100.126.164.29 https://mynas.tail4bf75c.ts.net:8446/api/health
 printf '%s' "$revision" > "$root/DEPLOYED_COMMIT.new"
 mv "$root/DEPLOYED_COMMIT.new" "$root/DEPLOYED_COMMIT"
 docker compose --env-file "$secret" -f "$source/compose.yaml" ps
