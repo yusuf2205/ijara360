@@ -56,6 +56,11 @@ services:
     command: ["node", "node_modules/next/dist/bin/next", "start", "apps/web", "-p", "3000"]
     depends_on:
       api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
   gateway:
     image: caddy:2
     restart: unless-stopped
@@ -64,4 +69,10 @@ services:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy:/data
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy-config:/config
-    depends_on: [web]
+    depends_on:
+      web: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
