@@ -11,12 +11,14 @@ docker run -d --name "$name" --network none -e POSTGRES_HOST_AUTH_METHOD=trust -
 trap 'docker rm -f -v "$name" >/dev/null' EXIT HUP INT TERM
 ready=0
 for i in $(seq 1 60); do
-  if docker exec "$name" pg_isready -U ijara_owner -d ijara360_restore >/dev/null 2>&1; then ready=1; break; fi
+  # The image starts a temporary socket-only server during initialization.
+  # TCP readiness waits for the final server, after initialization completes.
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U ijara_owner -d ijara360_restore >/dev/null 2>&1; then ready=1; break; fi
   sleep 1
 done
 test "$ready" = 1
 # Dumps may contain privileges granted to the application's restricted role.
-docker exec "$name" createuser -U ijara_owner ijara_app
-docker exec -i "$name" pg_restore -U ijara_owner -d ijara360_restore --exit-on-error < "$file"
-docker exec "$name" pg_dump -U ijara_owner -d ijara360_restore --schema-only >/dev/null
+docker exec "$name" createuser -h 127.0.0.1 -U ijara_owner ijara_app
+docker exec -i "$name" pg_restore -h 127.0.0.1 -U ijara_owner -d ijara360_restore --exit-on-error < "$file"
+docker exec "$name" pg_dump -h 127.0.0.1 -U ijara_owner -d ijara360_restore --schema-only >/dev/null
 echo 'Restore verification PASS: isolated database restored without errors.'
