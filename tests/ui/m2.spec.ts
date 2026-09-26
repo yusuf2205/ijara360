@@ -13,6 +13,17 @@ async function resident(page:Page){await page.goto('/residents');await page.getB
 async function conditions(page:Page){await page.getByLabel('Месячная цена, сум',{exact:true}).fill('750000.50');await page.getByLabel('Депозит, сум',{exact:true}).fill('100000');await next(page);}
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);}
 test.describe.configure({mode:'serial'});
+test('M2 empty residents state offers check-in and invalid links have friendly recovery',async({page})=>{
+ await login(page);await page.goto('/residents');
+ await expect(page.getByRole('heading',{name:'Жильцов пока нет'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Заселить',exact:true})).toBeVisible();
+ for(const id of ['invalid-id','00000000-0000-4000-8000-000000000000']){
+  await page.goto('/residents/'+id);await expect(page.getByRole('heading',{name:'Жилец не найден'})).toBeVisible();
+  await page.getByRole('link',{name:'Все жильцы',exact:true}).click();await expect(page.getByRole('heading',{name:'Жильцы',exact:true})).toBeVisible();
+  await page.goto('/rooms/'+id);await expect(page.getByRole('heading',{name:'Комната не найдена'})).toBeVisible();
+  await page.getByRole('link',{name:'Вернуться к комнатам'}).click();await expect(page.getByRole('heading',{name:'Комнаты',exact:true})).toBeVisible();
+ }
+});
 test('M2 mobile check-in from a free bed shows real resident and counters after reload',async({page})=>{
  await page.setViewportSize({width:390,height:844});await login(page);await page.getByRole('heading',{name:'Комната №1',exact:true}).click();
  await page.locator('.bed-card').first().getByRole('button',{name:'Заселить',exact:true}).click();
