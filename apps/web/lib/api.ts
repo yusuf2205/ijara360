@@ -13,7 +13,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 export type User = { id: string; fullName: string; phone: string; role: 'OWNER' | 'ADMIN'; active?: boolean };
 export type Occupancy = { id: string; residentId: string; roomId: string; bedId: string; moveInDate: string; moveOutDate: string | null; monthlyPrice: string; paymentDay: number; depositAmount: string; status: 'ACTIVE' | 'CLOSED'; room: {id:string;number:string}; bed: {id:string;number:string}; resident?: {id:string;fullName:string;phone:string} };
-export type Resident = { id:string; fullName:string; phone:string; note:string|null; photoUrl:string|null; occupancies:Occupancy[] };
+export type Resident = { id:string; fullName:string; phone:string; note:string|null; photoUrl:string|null; occupancies:Occupancy[]; totalDebt:string; creditBalance:string; accessGranted:boolean; accessStatusReason:string };
 export type Bed = { id: string; number: string; displayNumber: string; status: 'AVAILABLE' | 'OCCUPIED'; occupancy: Occupancy | null };
 export type Room = { id: string; number: string; capacity: number; version: number; beds: Bed[]; totalBeds: number; availableBeds: number; occupiedBeds: number };
 export type Property = { id: string; name: string; address: string | null };

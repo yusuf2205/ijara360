@@ -5,7 +5,7 @@ import {ArrowLeft,ArrowRight,Plus,Search,Users,X} from 'lucide-react';
 import {api,type Resident,type Room} from '../lib/api';
 
 export const dateLabel=(value:string)=>new Date(value).toLocaleDateString('ru',{timeZone:'UTC'});
-export const money=(value:string)=>new Intl.NumberFormat('ru',{maximumFractionDigits:2}).format(Number(value))+' сум';
+export const money=(value:string)=>{const [whole,fraction='']=(value||'0').split('.');return whole.replace(/\B(?=(\d{3})+(?!\d))/g,'\u00a0')+(fraction?','+fraction.padEnd(2,'0'):'')+' сум';};
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export type ResidentAction={mode:'check-in'|'transfer'|'check-out'|'edit'|'create';resident?:Resident;bedId?:string};
 
@@ -17,6 +17,7 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
   const active=resident.occupancies.find(o=>o.status==='ACTIVE');
   return <>
    <Link href="/residents" className="back-link"><ArrowLeft size={16}/>Все жильцы</Link>
+   <section className="panel resident-finance"><h2>Финансовый статус</h2><p>Остаток к оплате: {money(resident.totalDebt)}</p><p>Аванс: {money(resident.creditBalance)}</p><p>{resident.accessGranted ? 'Финансовый допуск разрешён' : 'Финансовый допуск ограничен: просрочка'}{resident.accessStatusReason==='GRACE_PERIOD'?' · Льготный период':''}</p><Link className="inline-link" href={`/finance?residentId=${resident.id}`}>Начисления и платежи <ArrowRight size={16}/></Link></section>
    <div className="page-heading"><div><div className="heading-kicker">КАРТОЧКА ЖИЛЬЦА</div><h1>{resident.fullName}</h1><p><a href={`tel:${resident.phone}`}>{resident.phone}</a></p></div><button className="button secondary" onClick={()=>onAction({mode:'edit',resident})}>Изменить данные</button></div>
    <div className="settings-grid"><section className="panel"><h2>Текущее проживание</h2>{active ? <>
     <p className="resident-location"><Link href={`/rooms/${active.roomId}`}>Комната {active.room.number} / Место {active.bed.number}</Link></p>
