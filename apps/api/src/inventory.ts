@@ -83,7 +83,7 @@ class InventoryController {
   @Get('dashboard') async dashboard(@Req() req: AuthRequest) {
     const rooms = await this.inventory.rooms(req.actor);
     return { roomsCount: rooms.length, bedsCount: rooms.reduce((n, r) => n + r.totalBeds, 0), availableBeds: rooms.reduce((n, r) => n + r.availableBeds, 0),
-      capacity: rooms.reduce((n, r) => n + r.capacity, 0), occupiedBeds: rooms.reduce((n,r) => n + r.occupiedBeds,0), currentResidents: rooms.reduce((n,r) => n + r.occupiedBeds,0), phase: 'M2' };
+      capacity: rooms.reduce((n, r) => n + r.capacity, 0), occupiedBeds: rooms.reduce((n,r) => n + r.occupiedBeds,0), currentResidents: rooms.reduce((n,r) => n + r.occupiedBeds,0), phase: 'M3' };
   }
   @Get('rooms') rooms(@Req() req: AuthRequest) { return this.inventory.rooms(req.actor); }
   @Get('rooms/:id') room(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.inventory.room(req.actor, id); }

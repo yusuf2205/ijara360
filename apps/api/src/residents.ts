@@ -4,6 +4,7 @@ import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
 import { normalizePhone } from './security';
 import { CheckInDto, CheckOutDto, ResidentDto, TransferDto } from './residents.dto';
+import { FinanceModule, FinanceService } from './finance';
 
 const history = { include: { room: {select:{id:true,number:true}}, bed: {select:{id:true,number:true}} }, orderBy: [{moveInDate:'desc' as const},{createdAt:'desc' as const},{id:'desc' as const}] };
 export function businessDate(value: string): Date {
@@ -17,7 +18,7 @@ export function businessDate(value: string): Date {
 
 @Injectable()
 export class ResidentsService {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database, private readonly finance: FinanceService) {}
   async write<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     try {
       return await this.db.$transaction(async tx => {
@@ -40,15 +41,17 @@ export class ResidentsService {
   async audit(tx: Prisma.TransactionClient, actor: Actor, action: string, residentId: string, metadata: Prisma.InputJsonObject = {}) {
     await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action,entity:'Resident',entityId:residentId,metadata:{residentId,...metadata}}});
   }
-  list(actor: Actor, q = '', filter = 'all') {
+  async list(actor: Actor, q = '', filter = 'all') {
     if (q.length > 160 || !['all','active','closed'].includes(filter)) throw new UnprocessableEntityException('Некорректный фильтр жильцов.');
     const digits = q.replace(/\D/g,'');
+    await this.finance.refresh(actor.propertyId);
     return this.db.resident.findMany({where:{propertyId:actor.propertyId,
       ...(q ? {OR:[{fullName:{contains:q.trim(),mode:'insensitive' as const}}, {phone:{contains:digits || q}}]} : {}),
       ...(filter === 'active' ? {occupancies:{some:{status:'ACTIVE'}}} : filter === 'closed' ? {AND:[{occupancies:{some:{status:'CLOSED'}}},{occupancies:{none:{status:'ACTIVE'}}}]} : {})},
       include:{occupancies:history},orderBy:[{fullName:'asc'},{id:'asc'}]});
   }
   async detail(actor: Actor, id: string) {
+    await this.finance.refresh(actor.propertyId);
     const resident = await this.db.resident.findFirst({where:{id,propertyId:actor.propertyId},include:{occupancies:history}});
     if (!resident) throw new NotFoundException('Жилец не найден.');
     return resident;
@@ -131,5 +134,5 @@ class ResidentsController {
   @Post('occupancies/:id/transfer') transfer(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: TransferDto) { return this.service.transfer(req.actor,id,dto); }
   @Post('occupancies/:id/check-out') checkOut(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: CheckOutDto) { return this.service.checkOut(req.actor,id,dto); }
 }
-@Module({imports:[AuthModule],providers:[ResidentsService],controllers:[ResidentsController]})
+@Module({imports:[AuthModule,FinanceModule],providers:[ResidentsService],controllers:[ResidentsController]})
 export class ResidentsModule {}

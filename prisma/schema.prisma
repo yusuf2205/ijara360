@@ -24,6 +24,8 @@ model Property {
   auditLogs AuditLog[]
   residents Resident[]
   occupancies Occupancy[]
+  charges Charge[]
+  payments Payment[]
   @@map("properties")
 }
 
@@ -40,6 +42,8 @@ model User {
   sessions     Session[]
   auditLogs    AuditLog[]
   occupancies  Occupancy[]
+  payments Payment[]
+  charges Charge[]
   @@unique([id, propertyId])
   @@index([propertyId])
   @@map("users")
@@ -68,6 +72,7 @@ model Room {
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   beds       Bed[]
   occupancies Occupancy[]
+  charges Charge[]
   @@unique([id, propertyId])
   @@unique([propertyId, number])
   @@map("rooms")
@@ -80,8 +85,9 @@ model Bed {
   createdAt DateTime @default(now()) @map("created_at")
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Restrict)
   occupancies Occupancy[]
+  charges Charge[]
   @@unique([id, roomId])
-  // Occupancy, not a mutable flag, will determine OCCUPIED in the next round.
+  // ACTIVE Occupancy determines OCCUPIED.
   @@unique([roomId, number])
   @@map("beds")
 }
@@ -114,6 +120,105 @@ enum OccupancyStatus {
   CLOSED
 }
 
+enum ChargeStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  @@map("charge_status")
+}
+
+enum ChargeType {
+  RENT
+  DEPOSIT
+  PENALTY
+  UTILITIES
+  OTHER
+  @@map("charge_type")
+}
+
+enum PaymentMethod {
+  CASH
+  CARD_TRANSFER
+  BANK_TRANSFER
+  OTHER
+  @@map("payment_method")
+}
+
+model Charge {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  roomId String @map("room_id") @db.Uuid
+  bedId String @map("bed_id") @db.Uuid
+  amount Decimal @db.Decimal(10, 2)
+  paidAmount Decimal @default(dbgenerated("0")) @map("paid_amount") @db.Decimal(10, 2)
+  // GENERATED ALWAYS in SQL migration. Never supplied on create/update.
+  dueAmount Decimal @default(dbgenerated()) @map("due_amount") @db.Decimal(10, 2)
+  type ChargeType @default(RENT)
+  status ChargeStatus @default(dbgenerated("'UNPAID'::charge_status"))
+  billingPeriodStart DateTime @map("billing_period_start") @db.Date
+  billingPeriodEnd DateTime @map("billing_period_end") @db.Date
+  dueDate DateTime @map("due_date") @db.Date
+  gracePeriodDays Int @default(0) @map("grace_period_days")
+  idempotencyKey String @map("idempotency_key") @db.Uuid
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  property Property @relation(fields:[propertyId], references:[id], onDelete:Restrict)
+  resident Resident @relation(fields:[residentId,propertyId], references:[id,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  room Room @relation(fields:[roomId,propertyId], references:[id,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  bed Bed @relation(fields:[bedId,roomId], references:[id,roomId], onDelete:Restrict, onUpdate:Restrict)
+  creator User @relation(fields:[createdByUserId,propertyId], references:[id,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  payments Payment[]
+  @@unique([id,residentId,propertyId])
+  allocations PaymentAllocation[]
+  @@unique([propertyId,idempotencyKey])
+  @@index([propertyId,dueDate])
+  @@index([residentId,createdAt])
+  @@map("charges")
+}
+
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  chargeId String? @map("charge_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  amount Decimal @db.Decimal(10, 2)
+  method PaymentMethod @default(CASH)
+  comment String? @db.VarChar(2000)
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+  idempotencyKey String @map("idempotency_key") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  property Property @relation(fields:[propertyId], references:[id], onDelete:Restrict)
+  charge Charge? @relation(fields:[chargeId,residentId,propertyId], references:[id,residentId,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  resident Resident @relation(fields:[residentId,propertyId], references:[id,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  creator User @relation(fields:[createdByUserId,propertyId], references:[id,propertyId], onDelete:Restrict, onUpdate:Restrict)
+  @@unique([propertyId,idempotencyKey])
+  @@index([chargeId])
+  @@unique([id,residentId,propertyId])
+  allocations PaymentAllocation[]
+  @@index([residentId,createdAt])
+  @@index([propertyId,createdAt])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+  chargeId String @map("charge_id") @db.Uuid
+  amount Decimal @db.Decimal(10,2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  payment Payment @relation(fields:[paymentId,residentId,propertyId],references:[id,residentId,propertyId],onDelete:Restrict,onUpdate:Restrict)
+  charge Charge @relation(fields:[chargeId,residentId,propertyId],references:[id,residentId,propertyId],onDelete:Restrict,onUpdate:Restrict)
+  @@unique([paymentId,chargeId])
+  @@index([chargeId])
+  @@index([propertyId,residentId])
+  @@map("payment_allocations")
+}
+
 model Resident {
   id String @id @default(uuid()) @db.Uuid
   propertyId String @map("property_id") @db.Uuid
@@ -121,6 +226,13 @@ model Resident {
   phone String @db.VarChar(16)
   photoUrl String? @map("photo_url") @db.VarChar(500)
   note String? @db.VarChar(2000)
+  totalDebt Decimal @default(dbgenerated("0")) @map("total_debt") @db.Decimal(18, 2)
+  creditBalance Decimal @default(dbgenerated("0")) @map("credit_balance") @db.Decimal(18, 2)
+  accessGranted Boolean @default(dbgenerated("true")) @map("access_granted")
+  accessStatusReason String @default(dbgenerated("'OK'::character varying")) @map("access_status_reason") @db.VarChar(255)
+  financeCheckedAt DateTime? @map("finance_checked_at") @db.Timestamptz(3)
+  charges Charge[]
+  payments Payment[]
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
