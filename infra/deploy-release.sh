@@ -22,6 +22,7 @@ docker compose --env-file "$secret" -f "$source/compose.yaml" build
 sh "$source/scripts/backup-nas.sh" > "$record/backup-path"
 chmod 600 "$record/backup-path"
 sh "$source/scripts/verify-backup-nas.sh" "$(cat "$record/backup-path")"
+sh "$source/scripts/verify-migration-nas.sh" "$(cat "$record/backup-path")" "ijara360-api:$revision"
 docker exec -i ijara360-db-1 psql -X -q -t -A -v ON_ERROR_STOP=1 -U ijara_owner -d ijara360 < "$source/scripts/production-fingerprint.sql" > "$record/before.txt"
 chmod 644 "$source/infra/init-db.sql" "$source/infra/Caddyfile"
 docker compose --env-file "$secret" -f "$source/compose.yaml" up -d --wait --wait-timeout 240
