@@ -40,6 +40,8 @@ if [ -n "$(current TELEGRAM_BOT_TOKEN)" ]; then
 elif [ -t 0 ]; then
   printf 'Telegram bot token from @BotFather (input hidden, empty = skip): '
   stty -echo; IFS= read -r token || token=''; stty echo; printf '\n'
+  # Pasting can add spaces, a carriage return or bracketed-paste markers.
+  token=$(printf '%s' "$token" | sed 's/\x1b\[20[01]~//g' | tr -d ' \t\r')
   if [ -n "$token" ]; then
     printf '%s' "$token" | grep -Eq '^[0-9]{5,}:[A-Za-z0-9_-]{30,}$' || { echo 'Token format is not valid; nothing saved.' >&2; exit 1; }
     # Confirms the token with Telegram; the URL is built inside curl's config, not argv.

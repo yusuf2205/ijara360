@@ -31,7 +31,13 @@ docker exec "$name" createuser -h 127.0.0.1 -U ijara_owner ijara_app
 docker exec -i "$name" pg_restore -h 127.0.0.1 -U ijara_owner -d ijara360_restore --exit-on-error < "$file"
 docker exec "$name" pg_dump -h 127.0.0.1 -U ijara_owner -d ijara360_restore --schema-only >/dev/null
 # Every document referenced by the restored database must be present in the archive.
-keys=$(docker exec "$name" psql -X -q -t -A -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ijara_owner -d ijara360_restore -c "SELECT CASE WHEN to_regclass('public.application_documents') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(storage_key, E'\n' ORDER BY storage_key), '') FROM application_documents) END")
+# Backups taken before M4 have no application_documents table: check it in a separate query,
+# because PostgreSQL resolves every table of a statement before evaluating any CASE branch.
+query() { docker exec "$name" psql -X -q -t -A -v ON_ERROR_STOP=1 -h 127.0.0.1 -U ijara_owner -d ijara360_restore -c "$1"; }
+keys=''
+if [ "$(query "SELECT to_regclass('public.application_documents') IS NOT NULL")" = t ]; then
+  keys=$(query 'SELECT storage_key FROM application_documents ORDER BY storage_key')
+fi
 missing=$(printf '%s\n' "$keys" | sed '/^$/d' | sort | comm -23 - "$members" | wc -l)
 test "$((missing))" = 0 || { echo "Restore verification FAIL: $((missing)) documents missing from $archive" >&2; exit 1; }
 echo "Restore verification PASS: isolated database restored without errors; KYC archive has $(wc -l < "$members") encrypted files."
