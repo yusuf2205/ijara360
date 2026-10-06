@@ -24,7 +24,7 @@ export class ResidentsService {
       return await this.db.$transaction(async tx => {
         // Same property lock as room edits; recheck access after waiting for the lock.
         await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-        const allowed = await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','ADMIN']},property:{active:true}}});
+        const allowed = await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','SUPER_ADMIN','ADMIN']},property:{active:true}}});
         if (!allowed) throw new ForbiddenException('Доступ к дому отключён.');
         return action(tx);
       }, {maxWait:10000,timeout:15000});
@@ -73,16 +73,18 @@ export class ResidentsService {
     });
   }
   async freeBed(tx: Prisma.TransactionClient, actor: Actor, bedId: string, date: Date) {
-    const bed = await tx.bed.findFirst({where:{id:bedId,room:{propertyId:actor.propertyId}}});
+    const bed = await tx.bed.findFirst({where:{id:bedId,room:{propertyId:actor.propertyId,archivedAt:null}}});
     if (!bed) throw new NotFoundException('Место не найдено.');
     if (await tx.occupancy.findFirst({where:{bedId,status:'ACTIVE'}})) throw new ConflictException('Это место уже занято');
     if (await tx.occupancy.findFirst({where:{bedId,moveOutDate:{gt:date}}})) throw new ConflictException('На выбранную дату место ещё не было свободно.');
     return bed;
   }
   checkIn(actor: Actor, dto: CheckInDto) {
+    return this.write(actor,tx=>this.checkInTransaction(tx,actor,dto));
+  }
+  async checkInTransaction(tx:Prisma.TransactionClient,actor:Actor,dto:CheckInDto) {
     const date = businessDate(dto.moveInDate);
     if (Boolean(dto.residentId) === Boolean(dto.resident)) throw new UnprocessableEntityException('Выберите существующего жильца или заполните данные нового.');
-    return this.write(actor,async tx => {
       const resident = dto.residentId ? await tx.resident.findFirst({where:{id:dto.residentId,propertyId:actor.propertyId}}) : await this.insert(tx,actor,dto.resident!);
       if (!resident) throw new NotFoundException('Жилец не найден.');
       if (await tx.occupancy.findFirst({where:{residentId:resident.id,status:'ACTIVE'}})) throw new ConflictException('Жилец уже проживает в доме');
@@ -91,7 +93,6 @@ export class ResidentsService {
       const occupancy = await tx.occupancy.create({data:{propertyId:actor.propertyId,residentId:resident.id,roomId:bed.roomId,bedId:bed.id,moveInDate:date,monthlyPrice:dto.monthlyPrice,paymentDay:dto.paymentDay,depositAmount:dto.depositAmount,createdBy:actor.id}});
       await this.audit(tx,actor,'OCCUPANCY_CHECKED_IN',resident.id,{occupancyId:occupancy.id,newRoomId:bed.roomId,newBedId:bed.id});
       return occupancy;
-    });
   }
   async active(tx: Prisma.TransactionClient, actor: Actor, id: string, date: Date) {
     const occupancy = await tx.occupancy.findFirst({where:{id,propertyId:actor.propertyId}});
@@ -134,5 +135,5 @@ class ResidentsController {
   @Post('occupancies/:id/transfer') transfer(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: TransferDto) { return this.service.transfer(req.actor,id,dto); }
   @Post('occupancies/:id/check-out') checkOut(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: CheckOutDto) { return this.service.checkOut(req.actor,id,dto); }
 }
-@Module({imports:[AuthModule,FinanceModule],providers:[ResidentsService],controllers:[ResidentsController]})
+@Module({imports:[AuthModule,FinanceModule],providers:[ResidentsService],controllers:[ResidentsController],exports:[ResidentsService]})
 export class ResidentsModule {}

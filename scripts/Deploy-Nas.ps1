@@ -8,7 +8,8 @@ if (& git status --porcelain) { throw 'Commit changes and run Publish-Project.ps
 $source = "/volume1/docker/ijara360/releases/$revision/source"
 # The release script backs up and verifies existing data, deploys migrations,
 # and records the revision only after service health and HTTPS checks pass.
-$command = "sh $source/infra/deploy-release.sh $revision"
-& ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "Joseph@$NasHost" $command
+# Secrets and deployment evidence belong to root: sudo asks for the NAS password on this terminal.
+$command = "sudo sh $source/infra/deploy-release.sh $revision"
+& ssh -t -o BatchMode=yes -o StrictHostKeyChecking=yes "Joseph@$NasHost" $command
 if ($LASTEXITCODE -ne 0) { throw 'NAS deployment failed; inspect the ijara360 service logs.' }
 Write-Output "Deployed $revision to https://192.168.1.105:8446"

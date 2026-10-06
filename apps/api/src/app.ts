@@ -3,7 +3,7 @@ import { ArgumentsHost, Catch, Controller, ExceptionFilter, Get, HttpException, 
 import { NestFactory } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import cookieParser from 'cookie-parser';
-import { json, Request, Response, NextFunction } from 'express';
+import { json, raw, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import { randomUUID } from 'node:crypto';
 import { AuthModule } from './auth';
@@ -12,6 +12,8 @@ import { InventoryModule } from './inventory';
 import { allowedOrigins } from './origins';
 import { ResidentsModule } from './residents';
 import { FinanceModule } from './finance';
+import { ApplicationsModule } from './applications';
+import { ApplicationEvents } from './application-events';
 
 @Controller('health')
 class HealthController {
@@ -21,7 +23,7 @@ class HealthController {
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
   }
 }
-@Module({ imports: [DatabaseModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()
@@ -50,21 +52,26 @@ export async function createApp() {
   const origins = allowedOrigins(process.env.APP_ORIGIN, process.env.ADDITIONAL_APP_ORIGINS, process.env.NODE_ENV === 'production');
   const app = await NestFactory.create(AppModule, { bodyParser: false, logger: ['error', 'warn', 'log'] });
   app.setGlobalPrefix('api');
+  // Only the gateway (private Docker network) is trusted. It overwrites X-Forwarded-For from
+  // direct LAN clients and keeps the value Tailscale Serve/Funnel sets, so rate limits see the real client.
+  app.getHttpAdapter().getInstance().set('trust proxy', 'loopback, linklocal, uniquelocal');
   app.use(helmet());
   app.use(cookieParser());
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Request-Id', randomUUID());
     res.setHeader('Cache-Control', 'no-store');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !(req.method === 'POST' && req.path === '/api/telegram/webhook')) {
       if (!origins.has(req.headers.origin ?? '') || req.headers['x-ijara-request'] !== '1') {
         res.status(403).json({ statusCode: 403, message: 'Запрос отклонён. Откройте приложение по основному адресу.' }); return;
       }
     }
     next();
   });
+  app.use('/api/public/applications/documents', raw({type:['image/jpeg','image/png','image/webp'],limit:'8mb'}));
   app.use(json({ limit: '32kb' }));
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, errorHttpStatusCode: 422 }));
   app.useGlobalFilters(new ErrorFilter());
+  app.get(ApplicationEvents).attach(app.getHttpServer());
   app.enableShutdownHooks();
   return app;
 }

@@ -181,3 +181,44 @@ test('persistent login rate limit survives multiple requests', async () => {
   const result=await send(request(server),'post','/auth/login').send({phone:'+998900000099',password:'wrong'}).expect(429);
   assert.equal(result.headers['retry-after'],'900');
 });
+
+
+test('room archive excludes inventory, blocks beds and stale writes, and restores', async()=>{
+  const agent=await owner();const room=(await send(agent,'get','/rooms')).body[0];
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:room.version,archived:true}).expect(200);
+  assert.equal((await send(agent,'get','/rooms')).body.length,1);
+  assert.equal((await send(agent,'get','/rooms?filter=archived')).body.length,1);
+  assert.equal((await send(agent,'get','/dashboard')).body.bedsCount,2);
+  await send(agent,'post',`/rooms/${room.id}/beds`).send({number:'9'}).expect(409);
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(409);
+  const archived=(await send(agent,'get',`/rooms/${room.id}`)).body;
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:archived.version,archived:false}).expect(200);
+  assert.equal((await send(agent,'get','/rooms')).body.length,2);
+});
+
+test('room deletion removes only unused beds and room, with audit; ADMIN and foreign requests fail', async()=>{
+  const agent=await owner();const room=(await send(agent,'get','/rooms')).body[0];
+  const adminUser=(await send(agent,'post','/users').send({phone:'+998900000002',fullName:'Admin',password})).body;
+  const admin=request.agent(server);await send(admin,'post','/auth/login').send({phone:adminUser.phone,password});
+  await send(admin,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(403);
+  await send(admin,'patch',`/rooms/${room.id}/archive`).send({version:room.version,archived:true}).expect(403);
+  const foreign=await db.property.create({data:{name:'Other'}});const other=await db.room.create({data:{propertyId:foreign.id,number:'99',capacity:1}});
+  await send(agent,'delete',`/rooms/${other.id}`).send({version:1}).expect(404);
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(200);
+  assert.equal(await db.bed.count({where:{roomId:room.id}}),0);
+  assert.equal(await db.auditLog.count({where:{action:'ROOM_DELETED',entityId:room.id}}),1);
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(404);
+});
+
+test('occupied rooms cannot archive or delete; closed history survives archive and blocks deletion',async()=>{
+  const agent=await owner();const room=(await send(agent,'get','/rooms')).body[0];const user=await db.user.findFirst();
+  const resident=await db.resident.create({data:{propertyId:user.propertyId,fullName:'History',phone:'+998900000077'}});
+  const occupancy=await db.occupancy.create({data:{propertyId:user.propertyId,residentId:resident.id,roomId:room.id,bedId:room.beds[0].id,moveInDate:new Date('2026-01-01'),monthlyPrice:'100',paymentDay:1,depositAmount:'0',createdBy:user.id}});
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:room.version,archived:true}).expect(409);
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(409);
+  await db.occupancy.update({where:{id:occupancy.id},data:{status:'CLOSED',moveOutDate:new Date('2026-01-02')}});
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:room.version,archived:true}).expect(200);
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version+1}).expect(409);
+  await assert.rejects(db.occupancy.create({data:{propertyId:user.propertyId,residentId:resident.id,roomId:room.id,bedId:room.beds[0].id,moveInDate:new Date('2026-01-03'),monthlyPrice:'100',paymentDay:1,depositAmount:'0',createdBy:user.id}}));
+  assert.equal(await db.occupancy.count({where:{roomId:room.id}}),1);
+});

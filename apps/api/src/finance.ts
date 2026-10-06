@@ -49,7 +49,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   async transaction<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-      if (!await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','ADMIN']},property:{active:true}}})) throw new ForbiddenException('Доступ к дому отключён.');
+      if (!await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','SUPER_ADMIN','ADMIN']},property:{active:true}}})) throw new ForbiddenException('Доступ к дому отключён.');
       await tx.$queryRaw`SELECT finance_refresh_property(${actor.propertyId}::uuid)`;
       return action(tx);
     }, {maxWait:10000,timeout:20000});

@@ -21,6 +21,8 @@ export class BedDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
   @IsString() @Length(1, 20) number!: string;
 }
+export class RoomVersionDto { @IsInt() @Min(1) version!: number; }
+export class RoomArchiveDto extends RoomVersionDto { @IsBoolean() archived!: boolean; }
 export class SetupDto {
   @IsString() @Length(8, 30) phone!: string;
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)

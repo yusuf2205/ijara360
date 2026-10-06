@@ -1,11 +1,11 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Delete, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuthModule, AuthRequest, Actor, SessionGuard, userSelect } from './auth';
 import { Database } from './database';
-import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto } from './dto';
+import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
 
-const roomInclude = Prisma.validator<Prisma.RoomInclude>()({ beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
+const roomInclude = Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
 
 @Injectable()
 export class InventoryService {
@@ -13,7 +13,7 @@ export class InventoryService {
   async write<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-      const user = await tx.user.findFirst({ where: { id: actor.id, propertyId: actor.propertyId, active: true, role: 'OWNER', property: { active: true } } });
+      const user = await tx.user.findFirst({ where: { id: actor.id, propertyId: actor.propertyId, active: true, role: {in:['OWNER','SUPER_ADMIN']}, property: { active: true } } });
       if (!user) throw new ForbiddenException('Это действие доступно владельцу.');
       return action(tx);
     });
@@ -21,12 +21,14 @@ export class InventoryService {
   async audit(tx: Prisma.TransactionClient, actor: Actor, action: string, entity: string, entityId: string, metadata: Prisma.InputJsonObject) {
     await tx.auditLog.create({ data: { propertyId: actor.propertyId, actorId: actor.id, action, entity, entityId, metadata } });
   }
-  async rooms(actor: Actor) {
-    const rooms = await this.db.room.findMany({ where: { propertyId: actor.propertyId }, include: roomInclude });
+  async rooms(actor: Actor, filter = 'active') {
+    if (!['active','archived','all'].includes(filter)) throw new UnprocessableEntityException('Некорректный фильтр комнат.');
+    const rooms = await this.db.room.findMany({ where: { propertyId: actor.propertyId, ...(filter === 'all' ? {} : {archivedAt: filter === 'archived' ? {not:null} : null}) }, include: roomInclude });
     return rooms.sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true })).map(room => this.roomDto(room));
   }
   roomDto(room: Prisma.RoomGetPayload<{ include: typeof roomInclude }>) {
-    return { ...room, totalBeds: room.beds.length, availableBeds: room.beds.filter(b => !b.occupancies.length).length, occupiedBeds: room.beds.filter(b => b.occupancies.length).length,
+    const { _count, ...data } = room;
+    return { ...data, canDelete: _count.occupancies === 0 && _count.charges === 0, totalBeds: room.beds.length, availableBeds: room.beds.filter(b => !b.occupancies.length).length, occupiedBeds: room.beds.filter(b => b.occupancies.length).length,
       beds: [...room.beds].sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true })).map(b => ({ ...b, occupancy: b.occupancies[0] ?? null, status: b.occupancies.length ? 'OCCUPIED' : 'AVAILABLE', displayNumber: `${room.number}-${b.number}` })) };
   }
   async room(actor: Actor, id: string) {
@@ -48,6 +50,7 @@ export class InventoryService {
     return this.write(actor, async tx => {
       const room = await tx.room.findFirst({ where: { id, propertyId: actor.propertyId }, include: roomInclude });
       if (!room) throw new NotFoundException('Комната не найдена.');
+      if (room.archivedAt) throw new ConflictException('Сначала восстановите комнату из архива.');
       if (room.version !== dto.version) throw new ConflictException('Комнату уже изменили. Обновите страницу.');
       if (dto.capacity < room.beds.length) throw new ConflictException('Вместимость не может быть меньше количества мест.');
       const updated = await tx.room.update({ where: { id }, data: { number: dto.number, capacity: dto.capacity, version: { increment: 1 } }, include: roomInclude });
@@ -55,10 +58,30 @@ export class InventoryService {
       return this.roomDto(updated);
     });
   }
+  lifecycle(actor: Actor, id: string, dto: RoomVersionDto, archived?: boolean) {
+    return this.write(actor, async tx => {
+      const room = await tx.room.findFirst({where:{id,propertyId:actor.propertyId},include:roomInclude});
+      if (!room) throw new NotFoundException('Комната не найдена.');
+      if (room.version !== dto.version) throw new ConflictException('Комнату уже изменили. Обновите страницу.');
+      if (archived === undefined) {
+        if (room._count.occupancies || room._count.charges) throw new ConflictException('У комнаты есть история проживания или начисления. Уберите её в архив.');
+        await tx.bed.deleteMany({where:{roomId:id}});
+        await tx.room.delete({where:{id}});
+        await this.audit(tx,actor,'ROOM_DELETED','Room',id,{number:room.number,beds:room.beds.length});
+        return {deleted:true};
+      }
+      if (Boolean(room.archivedAt) === archived) throw new ConflictException('Состояние комнаты уже изменено. Обновите страницу.');
+      if (archived && room.beds.some(b=>b.occupancies.length)) throw new ConflictException('Сначала переселите или выселите всех жильцов комнаты.');
+      const updated = await tx.room.update({where:{id},data:{archivedAt:archived ? new Date() : null,version:{increment:1}},include:roomInclude});
+      await this.audit(tx,actor,archived?'ROOM_ARCHIVED':'ROOM_RESTORED','Room',id,{number:room.number});
+      return this.roomDto(updated);
+    });
+  }
   createBed(actor: Actor, roomId: string, dto: BedDto) {
     return this.write(actor, async tx => {
       const room = await tx.room.findFirst({ where: { id: roomId, propertyId: actor.propertyId }, include: { _count: { select: { beds: true } } } });
       if (!room) throw new NotFoundException('Комната не найдена.');
+      if (room.archivedAt) throw new ConflictException('Сначала восстановите комнату из архива.');
       if (room._count.beds >= room.capacity) throw new ConflictException('В комнате уже созданы все места. Сначала увеличьте вместимость.');
       const bed = await tx.bed.create({ data: { roomId, number: dto.number } });
       await tx.room.update({ where: { id: roomId }, data: { version: { increment: 1 } } });
@@ -85,22 +108,24 @@ class InventoryController {
     return { roomsCount: rooms.length, bedsCount: rooms.reduce((n, r) => n + r.totalBeds, 0), availableBeds: rooms.reduce((n, r) => n + r.availableBeds, 0),
       capacity: rooms.reduce((n, r) => n + r.capacity, 0), occupiedBeds: rooms.reduce((n,r) => n + r.occupiedBeds,0), currentResidents: rooms.reduce((n,r) => n + r.occupiedBeds,0), phase: 'M3' };
   }
-  @Get('rooms') rooms(@Req() req: AuthRequest) { return this.inventory.rooms(req.actor); }
+  @Get('rooms') rooms(@Req() req: AuthRequest, @Query('filter') filter?: string) { return this.inventory.rooms(req.actor, filter); }
+  @Patch('rooms/:id/archive') archiveRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RoomArchiveDto) { return this.inventory.lifecycle(req.actor,id,dto,dto.archived); }
+  @Delete('rooms/:id') deleteRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RoomVersionDto) { return this.inventory.lifecycle(req.actor,id,dto); }
   @Get('rooms/:id') room(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.inventory.room(req.actor, id); }
   @Post('rooms') createRoom(@Req() req: AuthRequest, @Body() dto: RoomDto) { return this.inventory.createRoom(req.actor, dto); }
   @Patch('rooms/:id') updateRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoomDto) { return this.inventory.updateRoom(req.actor, id, dto); }
   @Post('rooms/:id/beds') createBed(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: BedDto) { return this.inventory.createBed(req.actor, id, dto); }
   @Get('audit') async audit(@Req() req: AuthRequest) {
-    const actions = req.actor.role === 'OWNER' ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'BED_CREATED', 'PROPERTY_UPDATED', 'RESIDENT_CREATED', 'RESIDENT_UPDATED', 'OCCUPANCY_CHECKED_IN', 'OCCUPANCY_TRANSFERRED', 'OCCUPANCY_CHECKED_OUT'];
+    const actions = ['OWNER','SUPER_ADMIN'].includes(req.actor.role) ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'ROOM_ARCHIVED', 'ROOM_RESTORED', 'ROOM_DELETED', 'BED_CREATED', 'PROPERTY_UPDATED', 'RESIDENT_CREATED', 'RESIDENT_UPDATED', 'OCCUPANCY_CHECKED_IN', 'OCCUPANCY_TRANSFERRED', 'OCCUPANCY_CHECKED_OUT'];
     return this.db.auditLog.findMany({ where: { propertyId: req.actor.propertyId, ...(actions ? { action: { in: actions } } : {}) },
       include: { actor: { select: { fullName: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 });
   }
   @Get('users') async users(@Req() req: AuthRequest) {
-    if (req.actor.role !== 'OWNER') throw new ForbiddenException('Только для владельца.');
+    if (!['OWNER','SUPER_ADMIN'].includes(req.actor.role)) throw new ForbiddenException('Только для владельца.');
     return this.db.user.findMany({ where: { propertyId: req.actor.propertyId }, select: userSelect, orderBy: { createdAt: 'asc' } });
   }
   @Post('users') async createAdmin(@Req() req: AuthRequest, @Body() dto: AdminDto) {
-    if (req.actor.role !== 'OWNER') throw new ForbiddenException('Только для владельца.');
+    if (!['OWNER','SUPER_ADMIN'].includes(req.actor.role)) throw new ForbiddenException('Только для владельца.');
     const phone = normalizePhone(dto.phone);
     const passwordHash = await hashPassword(dto.password);
     return this.inventory.write(req.actor, async tx => {
@@ -113,7 +138,7 @@ class InventoryController {
     return this.inventory.write(req.actor, async tx => {
       const user = await tx.user.findFirst({ where: { id, propertyId: req.actor.propertyId } });
       if (!user) throw new NotFoundException('Сотрудник не найден.');
-      if (user.role === 'OWNER') throw new ConflictException('Нельзя отключить владельца.');
+      if (['OWNER','SUPER_ADMIN'].includes(user.role)) throw new ConflictException('Нельзя отключить владельца.');
       const updated = await tx.user.update({ where: { id }, data: { active: dto.active }, select: userSelect });
       if (!dto.active) await tx.session.deleteMany({ where: { userId: id } });
       await this.inventory.audit(tx, req.actor, 'ADMIN_ACCESS_CHANGED', 'User', id, { active: dto.active, fullName: user.fullName });

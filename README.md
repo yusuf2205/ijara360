@@ -2,7 +2,9 @@
 
 Управление частным студенческим домом. Единица аренды — спальное место.
 
-**M3: начисления, платежи, задолженность и финансовый допуск жильца.**
+**M4: заявки на заселение — анкета заявителя, подтверждение телефона в Telegram, зашифрованные документы, права сотрудников и заселение одобренного заявителя.**
+
+[Контракт и правила M4](docs/M4-APPLICATIONS.md): статусы, права KYC, API, обязательный `KYC_ENCRYPTION_KEY`, backup документов и границы поставки. Перед первым deployment M4 добавьте ключ в `secrets/production.env` (см. `infra/production.env.example`) и сохраните его офлайн-копию.
 
 [Контракт и правила M3](docs/M3-FINANCE.md): ручные начисления, частичная/полная оплата, льготный период, защита от дубликатов и API допуска для будущего M8.
 
@@ -112,6 +114,7 @@ ExecutionPolicy изменяется только для указанного п
 
 - `/volume1/docker/ijara360/releases/<commit>/source` — опубликованные исходники.
 - `/volume1/docker/ijara360/data/postgres` — постоянные данные production PostgreSQL.
+- `/volume1/docker/ijara360/data/kyc` — зашифрованные документы заявок M4 (backup: `ijara360-*.kyc.tar` рядом с дампом).
 - `/volume1/docker/ijara360/data/caddy` — сертификаты локального HTTPS.
 - `/volume1/docker/ijara360/secrets/production.env` — секреты.
 - `/volume1/docker/ijara360/DEPLOYED_COMMIT` — версия развёрнутого приложения.
@@ -122,6 +125,7 @@ PostgreSQL и API production не публикуют собственные по
 
 1. M2 Resident + Occupancy реализован; результаты проверок — в отчёте M2.
 2. M3 Finance реализован; автоматические ежемесячные начисления и корректировки требуют отдельных правил.
-3. Дальнейшая карта: M4 Applications → M5 Tenant App → M6 Realtime → M7 Maps → M8 Cameras & Access → M9 AI Camera Analytics.
+3. M4 Applications реализован; анкета открыта наружу через Tailscale Funnel только для маршрутов заявителя. Сроки хранения KYC требуют решения владельца.
+4. Дальнейшая карта: M5 Tenant App → M6 Realtime → M7 Maps → M8 Cameras & Access → M9 AI Camera Analytics.
 
-Камеры, AI, гости, договоры, SMS/Telegram automation и импорт сейчас не реализуются. Старые `docs/M1-*` и `docs/schema/m1-design.sql` сохранены как исторический проект; они не являются контрактом текущего приложения. Новое ТЗ и [ROUND1.md](docs/ROUND1.md) имеют приоритет.
+Камеры, AI, гости, договоры, SMS/Telegram-рассылки (кроме подтверждения телефона заявителя) и импорт сейчас не реализуются. Старые `docs/M1-*` и `docs/schema/m1-design.sql` сохранены как исторический проект; они не являются контрактом текущего приложения. Новое ТЗ и [ROUND1.md](docs/ROUND1.md) имеют приоритет.

@@ -1,6 +1,22 @@
 {
     auto_https disable_redirects
     default_sni 192.168.1.105
+    # Loopback-only listeners sit behind Tailscale Serve/Funnel on the NAS host: keep the
+    # client address it forwards. The LAN listener (:443) stays untrusted, so Caddy
+    # replaces any client-supplied X-Forwarded-For with the real LAN address.
+    servers :8080 {
+        trusted_proxies static private_ranges
+    }
+    servers :8081 {
+        trusted_proxies static private_ranges
+    }
+}
+(security_headers) {
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+    }
 }
 (application) {
     encode zstd gzip
@@ -10,17 +26,31 @@
     handle {
         reverse_proxy web:3000
     }
-    header {
-        X-Content-Type-Options nosniff
-        Referrer-Policy same-origin
-        X-Frame-Options DENY
-    }
+    import security_headers
 }
 https://192.168.1.105 {
     tls internal
     import application
 }
-# Only published on NAS loopback, behind Tailscale Serve HTTPS.
+# Only published on NAS loopback, behind Tailscale Serve HTTPS (tailnet only).
 http://:8080 {
     import application
+}
+# Public applicant surface, only published on NAS loopback behind Tailscale Funnel HTTPS.
+# Exposes the application form and its API; staff pages, staff API and events are 404.
+http://:8081 {
+    encode zstd gzip
+    @applicantApi path /api/public/applications /api/public/applications/*
+    handle @applicantApi {
+        reverse_proxy api:4000
+    }
+    @applicantWeb path /apply /_next/static/*
+    handle @applicantWeb {
+        reverse_proxy web:3000
+    }
+    handle {
+        respond "Not found" 404
+    }
+    import security_headers
+    header Strict-Transport-Security "max-age=31536000"
 }

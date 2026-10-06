@@ -11,10 +11,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!response.ok) throw new ApiError(response.status, Array.isArray(data?.message) ? data.message.join(' · ') : data?.message || 'Не удалось выполнить запрос.');
   return data as T;
 }
-export type User = { id: string; fullName: string; phone: string; role: 'OWNER' | 'ADMIN'; active?: boolean };
+export type User = { id: string; fullName: string; phone: string; role: 'OWNER' | 'SUPER_ADMIN' | 'ADMIN'; active?: boolean };
 export type Occupancy = { id: string; residentId: string; roomId: string; bedId: string; moveInDate: string; moveOutDate: string | null; monthlyPrice: string; paymentDay: number; depositAmount: string; status: 'ACTIVE' | 'CLOSED'; room: {id:string;number:string}; bed: {id:string;number:string}; resident?: {id:string;fullName:string;phone:string} };
 export type Resident = { id:string; fullName:string; phone:string; note:string|null; photoUrl:string|null; occupancies:Occupancy[]; totalDebt:string; creditBalance:string; accessGranted:boolean; accessStatusReason:string };
 export type Bed = { id: string; number: string; displayNumber: string; status: 'AVAILABLE' | 'OCCUPIED'; occupancy: Occupancy | null };
-export type Room = { id: string; number: string; capacity: number; version: number; beds: Bed[]; totalBeds: number; availableBeds: number; occupiedBeds: number };
+export type Room = { archivedAt: string | null; canDelete: boolean; id: string; number: string; capacity: number; version: number; beds: Bed[]; totalBeds: number; availableBeds: number; occupiedBeds: number };
 export type Property = { id: string; name: string; address: string | null };
-export type Activity = { id: string; action: string; entity: string; entityId: string; actor: { fullName: string }; createdAt: string; metadata: Record<string, unknown> };
+export type Activity = { id: string; action: string; entity: string; entityId: string; actor: { fullName: string } | null; createdAt: string; metadata: Record<string, unknown> };

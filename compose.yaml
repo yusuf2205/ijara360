@@ -21,7 +21,10 @@ services:
     image: ijara360-api:${RELEASE_TAG:-local}
     environment:
       DATABASE_URL: postgresql://ijara_owner:${POSTGRES_PASSWORD}@db:5432/ijara360?schema=public
-    command: ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node scripts/grant-runtime.cjs"]
+    # Runs as root once per deploy: prepares the private KYC directory for the non-root API.
+    command: ["sh", "-c", "install -d -m 700 -o node -g node /var/lib/ijara360/kyc && node node_modules/prisma/build/index.js migrate deploy && node scripts/grant-runtime.cjs"]
+    volumes:
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/var/lib/ijara360/kyc
     depends_on:
       db: {condition: service_healthy}
     restart: "no"
@@ -37,6 +40,16 @@ services:
       NODE_ENV: production
       COOKIE_SECURE: "true"
       PORT: "4000"
+      # M4 applications. Losing KYC_ENCRYPTION_KEY makes stored profiles and documents unreadable.
+      KYC_ENCRYPTION_KEY: ${KYC_ENCRYPTION_KEY:?Set KYC_ENCRYPTION_KEY (64 hex characters)}
+      KYC_STORAGE_PATH: /var/lib/ijara360/kyc
+      APPLICATION_PROPERTY_ID: ${APPLICATION_PROPERTY_ID:-}
+      PUBLIC_APP_ORIGIN: ${PUBLIC_APP_ORIGIN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_MODE: ${TELEGRAM_MODE:-polling}
+    volumes:
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/var/lib/ijara360/kyc
     command: ["node", "apps/api/dist/main.js"]
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -64,7 +77,8 @@ services:
   gateway:
     image: caddy:2
     restart: unless-stopped
-    ports: ["192.168.1.105:8446:443", "127.0.0.1:8447:8080"]
+    # 8448: public applicant surface for Tailscale Funnel only (see docs/M4-APPLICATIONS.md).
+    ports: ["192.168.1.105:8446:443", "127.0.0.1:8447:8080", "127.0.0.1:8448:8081"]
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy:/data
