@@ -82,7 +82,7 @@ model Room {
   occupancies Occupancy[]
   charges Charge[]
   @@unique([id, propertyId])
-  @@unique([propertyId, number])
+  // Active room numbers are unique per property: partial index rooms_property_id_number_active_key (migration 202610070004).
   @@map("rooms")
 }
 

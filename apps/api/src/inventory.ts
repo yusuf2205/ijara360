@@ -6,7 +6,8 @@ import { DEFAULT_ADMIN_PERMISSIONS, PermissionCode, requireAccess } from './perm
 import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
 
-const roomInclude = Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
+const numbered = (n: string) => /^\d{1,6}$/.test(n);
+const roomInclude =Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
 
 @Injectable()
 export class InventoryService {
@@ -68,14 +69,29 @@ export class InventoryService {
         await tx.bed.deleteMany({where:{roomId:id}});
         await tx.room.delete({where:{id}});
         await this.audit(tx,actor,'ROOM_DELETED','Room',id,{number:room.number,beds:room.beds.length});
+        await this.renumber(tx,actor);
         return {deleted:true};
       }
       if (Boolean(room.archivedAt) === archived) throw new ConflictException('Состояние комнаты уже изменено. Обновите страницу.');
       if (archived && room.beds.some(b=>b.occupancies.length)) throw new ConflictException('Сначала переселите или выселите всех жильцов комнаты.');
-      const updated = await tx.room.update({where:{id},data:{archivedAt:archived ? new Date() : null,version:{increment:1}},include:roomInclude});
-      await this.audit(tx,actor,archived?'ROOM_ARCHIVED':'ROOM_RESTORED','Room',id,{number:room.number});
+      // A restored numbered room joins the end of the active list, so it never takes a number that is already in use.
+      const next = !archived && numbered(room.number) ? String((await this.renumber(tx,actor)) + 1) : room.number;
+      const updated = await tx.room.update({where:{id},data:{archivedAt:archived ? new Date() : null,number:next,version:{increment:1}},include:roomInclude});
+      await this.audit(tx,actor,archived?'ROOM_ARCHIVED':'ROOM_RESTORED','Room',id,{number:room.number,...(next!==room.number?{newNumber:next}:{})});
+      if (archived) await this.renumber(tx,actor);
       return this.roomDto(updated);
     });
+  }
+  /** Numbers active rooms with plain numeric numbers 1, 2, 3… in their current order; named rooms keep their names. Returns how many numbered rooms are active. */
+  async renumber(tx: Prisma.TransactionClient, actor: Actor) {
+    const rooms = (await tx.room.findMany({ where: { propertyId: actor.propertyId, archivedAt: null }, select: { id: true, number: true } }))
+      .filter(r => numbered(r.number)).sort((a, b) => Number(a.number) - Number(b.number) || a.number.localeCompare(b.number));
+    const changes = rooms.map((r, i) => ({ roomId: r.id, from: r.number, to: String(i + 1) })).filter(c => c.from !== c.to);
+    // Two passes keep the unique index satisfied while numbers swap places.
+    for (const c of changes) await tx.room.update({ where: { id: c.roomId }, data: { number: `~${c.roomId.slice(0, 18).toUpperCase()}` } });
+    for (const c of changes) await tx.room.update({ where: { id: c.roomId }, data: { number: c.to, version: { increment: 1 } } });
+    if (changes.length) await this.audit(tx, actor, 'ROOMS_RENUMBERED', 'Property', actor.propertyId, { changes });
+    return rooms.length;
   }
   createBed(actor: Actor, roomId: string, dto: BedDto) {
     return this.write(actor, async tx => {
@@ -110,13 +126,14 @@ class InventoryController {
   }
   @Get('rooms') rooms(@Req() req: AuthRequest, @Query('filter') filter?: string) { return this.inventory.rooms(req.actor, filter); }
   @Patch('rooms/:id/archive') archiveRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RoomArchiveDto) { return this.inventory.lifecycle(req.actor,id,dto,dto.archived); }
+  @Post('rooms/renumber') renumber(@Req() req: AuthRequest) { return this.inventory.write(req.actor, async tx => ({ numbered: await this.inventory.renumber(tx, req.actor) })); }
   @Delete('rooms/:id') deleteRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: RoomVersionDto) { return this.inventory.lifecycle(req.actor,id,dto); }
   @Get('rooms/:id') room(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.inventory.room(req.actor, id); }
   @Post('rooms') createRoom(@Req() req: AuthRequest, @Body() dto: RoomDto) { return this.inventory.createRoom(req.actor, dto); }
   @Patch('rooms/:id') updateRoom(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoomDto) { return this.inventory.updateRoom(req.actor, id, dto); }
   @Post('rooms/:id/beds') createBed(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: BedDto) { return this.inventory.createBed(req.actor, id, dto); }
   @Get('audit') async audit(@Req() req: AuthRequest) {
-    const actions = ['OWNER','SUPER_ADMIN'].includes(req.actor.role) ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'ROOM_ARCHIVED', 'ROOM_RESTORED', 'ROOM_DELETED', 'BED_CREATED', 'PROPERTY_UPDATED', 'RESIDENT_CREATED', 'RESIDENT_UPDATED', 'OCCUPANCY_CHECKED_IN', 'OCCUPANCY_TRANSFERRED', 'OCCUPANCY_CHECKED_OUT'];
+    const actions = ['OWNER','SUPER_ADMIN'].includes(req.actor.role) ? undefined : ['ROOM_CREATED', 'ROOM_UPDATED', 'ROOM_ARCHIVED', 'ROOM_RESTORED', 'ROOM_DELETED', 'ROOMS_RENUMBERED','BED_CREATED', 'PROPERTY_UPDATED', 'RESIDENT_CREATED', 'RESIDENT_UPDATED', 'OCCUPANCY_CHECKED_IN', 'OCCUPANCY_TRANSFERRED', 'OCCUPANCY_CHECKED_OUT'];
     return this.db.auditLog.findMany({ where: { propertyId: req.actor.propertyId, ...(actions ? { action: { in: actions } } : {}) },
       include: { actor: { select: { fullName: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 });
   }

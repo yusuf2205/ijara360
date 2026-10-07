@@ -222,3 +222,25 @@ test('occupied rooms cannot archive or delete; closed history survives archive a
   await assert.rejects(db.occupancy.create({data:{propertyId:user.propertyId,residentId:resident.id,roomId:room.id,bedId:room.beds[0].id,moveInDate:new Date('2026-01-03'),monthlyPrice:'100',paymentDay:1,depositAmount:'0',createdBy:user.id}}));
   assert.equal(await db.occupancy.count({where:{roomId:room.id}}),1);
 });
+
+test('rooms renumber 1, 2, 3… after delete and archive; restored rooms join the end; named rooms keep names', async()=>{
+  const agent=await owner();
+  for (const number of ['3','4','6','КЛАДОВКА']) await send(agent,'post','/rooms').send({number,capacity:1}).expect(201);
+  const numbers=async(filter='active')=>(await send(agent,'get',`/rooms?filter=${filter}`)).body.map(r=>r.number);
+  const byNumber=async n=>(await send(agent,'get','/rooms')).body.find(r=>r.number===n);
+  await send(agent,'post','/rooms/renumber').expect(201);
+  assert.deepEqual(await numbers(),['1','2','3','4','5','КЛАДОВКА']);
+  let room=await byNumber('2');
+  await send(agent,'delete',`/rooms/${room.id}`).send({version:room.version}).expect(200);
+  assert.deepEqual(await numbers(),['1','2','3','4','КЛАДОВКА']);
+  room=await byNumber('1');
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:room.version,archived:true}).expect(200);
+  assert.deepEqual(await numbers(),['1','2','3','КЛАДОВКА']);
+  assert.deepEqual(await numbers('archived'),['1']);
+  const archived=(await send(agent,'get',`/rooms/${room.id}`)).body;
+  await send(agent,'patch',`/rooms/${room.id}/archive`).send({version:archived.version,archived:false}).expect(200);
+  assert.deepEqual(await numbers(),['1','2','3','4','КЛАДОВКА']);
+  assert.equal((await byNumber('4')).id,room.id);
+  assert.ok(await db.auditLog.count({where:{action:'ROOMS_RENUMBERED'}})>=3);
+  await send(agent,'post','/rooms').send({number:'2',capacity:1}).expect(409);
+});
