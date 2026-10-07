@@ -2,6 +2,7 @@ import { Body, ConflictException, Controller, ForbiddenException, Get, Injectabl
 import { Prisma } from '@prisma/client';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
+import { PermissionCode, requireAccess } from './permission-policy';
 import { ChargeDto, FinanceQuery, PaymentDto } from './finance.dto';
 
 export function financeDate(value: string) {
@@ -46,10 +47,10 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   async refresh(propertyId: string) {
     await this.db.$queryRaw`SELECT finance_refresh_property(${propertyId}::uuid)`;
   }
-  async transaction<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {
+  async transaction<T>(actor: Actor, need: PermissionCode, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-      if (!await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','SUPER_ADMIN','ADMIN']},property:{active:true}}})) throw new ForbiddenException('Доступ к дому отключён.');
+      await requireAccess(tx,actor,need);
       await tx.$queryRaw`SELECT finance_refresh_property(${actor.propertyId}::uuid)`;
       return action(tx);
     }, {maxWait:10000,timeout:20000});
@@ -63,7 +64,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
     const amount = money(dto.amount);
     const billingPeriodStart = financeDate(dto.billingPeriodStart), billingPeriodEnd = financeDate(dto.billingPeriodEnd), dueDate = financeDate(dto.dueDate);
     if (billingPeriodEnd < billingPeriodStart) throw new UnprocessableEntityException('Конец периода не может быть раньше начала.');
-    return this.transaction(actor,async tx => {
+    return this.transaction(actor,'FINANCE_MANAGE',async tx => {
       await this.resident(tx,actor,dto.residentId);
       const bed = await tx.bed.findFirst({where:{id:dto.bedId,room:{propertyId:actor.propertyId}}});
       if (!bed) throw new NotFoundException('Место не найдено.');
@@ -81,7 +82,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   }
   async createPayment(actor: Actor, dto: PaymentDto) {
     const amount = money(dto.amount);
-    return this.transaction(actor,async tx => {
+    return this.transaction(actor,'FINANCE_MANAGE',async tx => {
       await this.resident(tx,actor,dto.residentId);
       if (dto.chargeId && !await tx.charge.findFirst({where:{id:dto.chargeId,residentId:dto.residentId,propertyId:actor.propertyId}})) throw new NotFoundException('Начисление не найдено для этого жильца.');
       const existing = await tx.payment.findUnique({where:{propertyId_idempotencyKey:{propertyId:actor.propertyId,idempotencyKey:dto.idempotencyKey}},include:paymentInclude});
@@ -96,7 +97,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
     });
   }
   snapshot(actor: Actor, query: FinanceQuery) {
-    return this.transaction(actor,async tx => {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
       if (query.residentId) await this.resident(tx,actor,query.residentId);
       const scope = {propertyId:actor.propertyId,...(query.residentId ? {residentId:query.residentId} : {})};
       const where = {...scope,...(query.status ? {status:query.status} : {})};
@@ -112,7 +113,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
     });
   }
   access(actor: Actor, id: string) {
-    return this.transaction(actor,async tx => {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
       const r = await this.resident(tx,actor,id);
       return {resident_id:r.id,access_granted:r.accessGranted,access_status_reason:r.accessStatusReason,total_debt:r.totalDebt,credit_balance:r.creditBalance,checked_at:r.financeCheckedAt,scope:'FINANCIAL' as const};
     });

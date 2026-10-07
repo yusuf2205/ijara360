@@ -2,6 +2,7 @@ import { Body, ConflictException, Controller, ForbiddenException, Get, Injectabl
 import { Prisma } from '@prisma/client';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
+import { requireAccess } from './permission-policy';
 import { normalizePhone } from './security';
 import { CheckInDto, CheckOutDto, ResidentDto, TransferDto } from './residents.dto';
 import { FinanceModule, FinanceService } from './finance';
@@ -24,8 +25,7 @@ export class ResidentsService {
       return await this.db.$transaction(async tx => {
         // Same property lock as room edits; recheck access after waiting for the lock.
         await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-        const allowed = await tx.user.findFirst({where:{id:actor.id,propertyId:actor.propertyId,active:true,role:{in:['OWNER','SUPER_ADMIN','ADMIN']},property:{active:true}}});
-        if (!allowed) throw new ForbiddenException('Доступ к дому отключён.');
+        await requireAccess(tx,actor,'RESIDENTS_MANAGE');
         return action(tx);
       }, {maxWait:10000,timeout:15000});
     } catch (e) {

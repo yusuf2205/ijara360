@@ -2,6 +2,7 @@ import { Body, ConflictException, Controller, Delete, ForbiddenException, Get, I
 import { Prisma } from '@prisma/client';
 import { AuthModule, AuthRequest, Actor, SessionGuard, userSelect } from './auth';
 import { Database } from './database';
+import { DEFAULT_ADMIN_PERMISSIONS, PermissionCode, requireAccess } from './permission-policy';
 import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
 
@@ -10,11 +11,10 @@ const roomInclude = Prisma.validator<Prisma.RoomInclude>()({ _count: { select: {
 @Injectable()
 export class InventoryService {
   constructor(private readonly db: Database) {}
-  async write<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {
+  async write<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>, need: PermissionCode | 'SUPER_ADMIN' = 'ROOMS_MANAGE') {
     return this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
-      const user = await tx.user.findFirst({ where: { id: actor.id, propertyId: actor.propertyId, active: true, role: {in:['OWNER','SUPER_ADMIN']}, property: { active: true } } });
-      if (!user) throw new ForbiddenException('Это действие доступно владельцу.');
+      await requireAccess(tx, actor, need);
       return action(tx);
     });
   }
@@ -101,7 +101,7 @@ class InventoryController {
       const property = await tx.property.update({ where: { id: req.actor.propertyId }, data: dto });
       await this.inventory.audit(tx, req.actor, 'PROPERTY_UPDATED', 'Property', property.id, { before: { name: before.name, address: before.address }, after: { name: property.name, address: property.address } });
       return property;
-    });
+    }, 'SUPER_ADMIN');
   }
   @Get('dashboard') async dashboard(@Req() req: AuthRequest) {
     const rooms = await this.inventory.rooms(req.actor);
@@ -130,9 +130,10 @@ class InventoryController {
     const passwordHash = await hashPassword(dto.password);
     return this.inventory.write(req.actor, async tx => {
       const user = await tx.user.create({ data: { propertyId: req.actor.propertyId, phone, fullName: dto.fullName, passwordHash, role: 'ADMIN' }, select: userSelect });
-      await this.inventory.audit(tx, req.actor, 'ADMIN_CREATED', 'User', user.id, { fullName: user.fullName });
+      await tx.userPermission.createMany({ data: DEFAULT_ADMIN_PERMISSIONS.map(permissionCode => ({ userId: user.id, propertyId: req.actor.propertyId, permissionCode })) });
+      await this.inventory.audit(tx, req.actor, 'ADMIN_CREATED', 'User', user.id, { fullName: user.fullName, permissions: DEFAULT_ADMIN_PERMISSIONS });
       return user;
-    });
+    }, 'SUPER_ADMIN');
   }
   @Patch('users/:id') async adminActive(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminActiveDto) {
     return this.inventory.write(req.actor, async tx => {
@@ -143,7 +144,7 @@ class InventoryController {
       if (!dto.active) await tx.session.deleteMany({ where: { userId: id } });
       await this.inventory.audit(tx, req.actor, 'ADMIN_ACCESS_CHANGED', 'User', id, { active: dto.active, fullName: user.fullName });
       return updated;
-    });
+    }, 'SUPER_ADMIN');
   }
 }
 
