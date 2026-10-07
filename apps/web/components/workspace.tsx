@@ -8,6 +8,7 @@ import { api, ApiError, type Activity, type Property, type Room, type User, type
 import { ResidentsPanel, ResidentFlow, dateLabel, money, type ResidentAction } from './residents';
 import { FinancePanel } from './finance';
 import {ApplicationsPanel,ApplicationSummary,PermissionPanel} from './applications';
+import {SessionsPanel} from './sessions';
 import '../app/applications.css';
 
 type View = 'applications' | 'application' | 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident' | 'finance';
@@ -169,7 +170,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         {(view === 'residents' || view === 'resident') && <ResidentsPanel residents={residents} residentId={residentId} onAction={setResidentAction} initialFilter={residentFilter}/>}
         {view === 'history' && <><div className="page-heading"><div><div className="heading-kicker">ПРОЗРАЧНЫЙ УЧЁТ</div><h1>История действий</h1><p>Кто и когда менял данные. Последние 100 действий.</p></div></div><ActivityList items={activity}/></>}
         {view === 'settings' && <>
-          {owner && <PermissionPanel/>}
+          {owner && <PermissionPanel/>}<SessionsPanel owner={owner}/>
           <div className="page-heading"><div><div className="heading-kicker">ВАШЕ ПРОСТРАНСТВО</div><h1>Настройки</h1><p>Данные дома и доступ сотрудников.</p></div></div>
           <div className="settings-grid"><section className="panel"><div className="panel-heading"><Building2 size={22}/><h2>Ваш дом</h2></div><form onSubmit={saveProperty} key={property?.name}><label>Название дома<input name="name" defaultValue={property?.name} required maxLength={120} disabled={!owner}/></label><label>Адрес<input name="address" defaultValue={property?.address || ''} maxLength={500} disabled={!owner}/></label>{owner && <button className="button primary" disabled={busy}>Сохранить</button>}</form></section>
           <section className="panel"><div className="panel-heading"><ShieldCheck size={22}/><h2>Моя учётная запись</h2></div><div className="account-details"><span className="avatar large">{user?.fullName.slice(0,1)}</span><div><strong>{user?.fullName}</strong><p>{user?.phone}</p><span className="status-pill">{owner ? 'Владелец' : 'Управляющий'}</span></div></div><div className="account-actions"><button className="button secondary" onClick={() => open('password')}>Изменить пароль</button><button className="button text" onClick={logout}><LogOut size={16}/>Выйти из аккаунта</button></div></section></div>

@@ -58,6 +58,10 @@ model Session {
   userId    String   @map("user_id") @db.Uuid
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
+  deviceName String? @map("device_name") @db.VarChar(120)
+  platform  String   @default("WEB") @db.VarChar(20)
+  remembered Boolean @default(false)
+  lastSeenAt DateTime? @map("last_seen_at")
   user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   @@index([userId])
   @@index([expiresAt])

@@ -1,9 +1,15 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
 
 export class LoginDto {
   @IsString() @Length(8, 30) phone!: string;
   @IsString() @Length(1, 128) password!: string;
+  // Remembered devices keep the session for 30 days instead of 24 hours.
+  @IsOptional() @IsBoolean() remember?: boolean;
+  // Apps receive a bearer token in the body; browsers get the httpOnly cookie.
+  @IsOptional() @IsIn(['WEB','ANDROID','IOS','WINDOWS']) platform?: 'WEB'|'ANDROID'|'IOS'|'WINDOWS';
+  @IsOptional() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @IsString() @Length(1, 120) deviceName?: string;
 }
 export class RoomDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)

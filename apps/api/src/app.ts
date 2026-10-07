@@ -60,7 +60,13 @@ export async function createApp() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Request-Id', randomUUID());
     res.setHeader('Cache-Control', 'no-store');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !(req.method === 'POST' && req.path === '/api/telegram/webhook')) {
+    // App requests carry a bearer token that a foreign page cannot attach (no CORS), so CSRF checks
+    // apply only to cookie-authenticated browser requests.
+    // Native apps send no Origin at all (browsers always do on POST); they still send the custom header.
+    const noCookie = !/(^|;\s*)ijara_session=/.test(req.headers.cookie || '');
+    const bearerOnly = typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ') && noCookie;
+    const nativeApp = !req.headers.origin && req.headers['x-ijara-request'] === '1' && noCookie;
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !bearerOnly && !nativeApp && !(req.method === 'POST' && req.path === '/api/telegram/webhook')) {
       if (!origins.has(req.headers.origin ?? '') || req.headers['x-ijara-request'] !== '1') {
         res.status(403).json({ statusCode: 403, message: 'Запрос отклонён. Откройте приложение по основному адресу.' }); return;
       }

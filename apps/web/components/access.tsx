@@ -12,6 +12,7 @@ export default function Access() {
   const [step, setStep] = useState(1);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
   const [fullName, setFullName] = useState('');
   const [token, setToken] = useState('');
   const [name, setName] = useState('Мой студенческий дом');
@@ -31,7 +32,7 @@ export default function Access() {
         // Setup is committed already. A failed login must not retry setup.
         setConfigured(true);
       }
-      await api('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password }) });
+      await api('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember }) });
       router.replace('/');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
@@ -58,6 +59,7 @@ export default function Access() {
             <label>Ваше имя<input value={fullName} onChange={e => setFullName(e.target.value)} required maxLength={160} autoComplete="name"/></label></>}
             <label>Телефон<input value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="+998 90 123 45 67" required autoComplete="username" /></label>
             <label>Пароль<input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={configured ? 1 : 15} maxLength={128} autoComplete={configured ? 'current-password' : 'new-password'} />{!configured && <small>Не менее 15 символов. Можно использовать длинную фразу.</small>}</label>
+            {configured && <label className="remember-device"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Запомнить это устройство на 30 дней<small>Не отмечайте на чужом компьютере.</small></span></label>}
           </> : <>
             <label>Название дома<input value={name} onChange={e => setName(e.target.value)} required maxLength={120}/></label>
             <label>Адрес <span className="optional">необязательно</span><input value={address} onChange={e => setAddress(e.target.value)} maxLength={500}/></label>
