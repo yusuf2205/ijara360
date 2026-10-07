@@ -9,6 +9,8 @@ COPY prisma ./prisma
 RUN npm ci --no-fund
 COPY apps ./apps
 COPY scripts ./scripts
+# COPY keeps the release checkout's modes; the runtime user "node" must be able to read the code.
+RUN chmod -R a+rX apps scripts prisma package.json package-lock.json
 RUN npm run db:generate
 
 FROM base AS api
