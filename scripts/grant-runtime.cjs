@@ -20,7 +20,9 @@ async function grantRuntime(db) {
   await db.$executeRawUnsafe('GRANT SELECT ON permissions TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,DELETE ON user_permissions TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT ON application_status_history TO ijara_app');
-  console.log('Runtime database privileges applied.');
+  // M5 tenant accounts: accounts and invites are disabled or consumed, never deleted; sessions expire and are removed.
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON tenant_accounts,tenant_invites TO ijara_app');
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON tenant_sessions TO ijara_app');  console.log('Runtime database privileges applied.');
 }
 module.exports = { grantRuntime };
 if (require.main === module) {

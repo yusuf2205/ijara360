@@ -11,13 +11,14 @@ import {ApplicationEvents} from './application-events';
 import {ApplicationProfile,ConvertDto,DraftDto,ReviewDto,StartApplicationDto,conversionCheckIn,validateProfile} from './applications.dto';
 import {digest,makeToken,normalizePhone} from './security';
 import {ResidentsService} from './residents';
+import {TenantAccountsService} from './tenant';
 
 const documentSelect={id:true,kind:true,width:true,height:true,size:true,createdAt:true} as const;
 const mutable=(a:RentalApplication)=>{if(!['DRAFT','NEEDS_INFO'].includes(a.status))throw new ConflictException('Заявка уже отправлена. Дождитесь рассмотрения.');};
 const version=(a:RentalApplication,v:number)=>{if(a.version!==v)throw new ConflictException('Заявка уже была изменена. Откройте её заново.');};
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly events:ApplicationEvents,private readonly residents:ResidentsService,private readonly auth:AuthService){}
+  constructor(private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly events:ApplicationEvents,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
   profile(a:RentalApplication){return this.storage.open<ApplicationProfile>(a.profileCipher,`application:${a.id}`);}
   async config(){
     const property=process.env.APPLICATION_PROPERTY_ID?await this.db.property.findFirst({where:{id:process.env.APPLICATION_PROPERTY_ID,active:true}}):await this.db.property.findFirst({where:{active:true},orderBy:{createdAt:'asc'}});
@@ -169,8 +170,16 @@ export class ApplicationService {
       const occupancy=await this.residents.checkInTransaction(tx,actor,conversionCheckIn(dto,matches.resident?.id,this.profile(current)));
       await tx.rentalApplication.update({where:{id},data:{status:'CONVERTED_TO_RESIDENT',residentId:occupancy.residentId,occupancyId:occupancy.id,convertedAt:new Date(),version:{increment:1}}});
       await tx.applicationStatusHistory.create({data:{applicationId:id,actorId:actor.id,fromStatus:'APPROVED',toStatus:'CONVERTED_TO_RESIDENT'}});
-      await this.audit(tx,current,'APPLICATION_CONVERTED_TO_RESIDENT',actor.id,{residentId:occupancy.residentId,occupancyId:occupancy.id});return {residentId:occupancy.residentId,occupancyId:occupancy.id};
-    });await this.event(a,'converted');return result;
+      await this.audit(tx,current,'APPLICATION_CONVERTED_TO_RESIDENT',actor.id,{residentId:occupancy.residentId,occupancyId:occupancy.id});
+      // M5: the new resident gets an app account; the Telegram account that verified the phone receives the invite.
+      const verifiedBy=await tx.phoneChallenge.findFirst({where:{applicationId:id,consumedAt:{not:null},telegramUserId:{not:null}},orderBy:{consumedAt:'desc'}});
+      const resident=await tx.resident.findUniqueOrThrow({where:{id:occupancy.residentId}});
+      const place=await tx.occupancy.findUniqueOrThrow({where:{id:occupancy.id},include:{room:{select:{number:true}},bed:{select:{number:true}}}});
+      const invite=await this.tenants.issue(tx,{propertyId:actor.propertyId,residentId:resident.id,phone:resident.phone,telegramUserId:verifiedBy?.telegramUserId??null,createdById:actor.id});
+      return {residentId:occupancy.residentId,occupancyId:occupancy.id,invite,fullName:resident.fullName,place:`комната ${place.room.number}, место ${place.bed.number}`};
+    });await this.event(a,'converted');
+    const sent=result.invite?await this.tenants.deliver(result.invite,result.fullName,result.place):null;
+    return {residentId:result.residentId,occupancyId:result.occupancyId,appInvite:sent};
   }
   async document(a:RentalApplication,kind:DocumentKind,actor?:Actor){
     const doc=await this.locked(a,async(tx,current)=>{

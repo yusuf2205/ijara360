@@ -119,6 +119,14 @@ export class ResidentsService {
       const old = await this.active(tx,actor,id,date);
       const closed = await tx.occupancy.update({where:{id},data:{status:'CLOSED',moveOutDate:date}});
       await this.audit(tx,actor,'OCCUPANCY_CHECKED_OUT',old.residentId,{occupancyId:id,oldRoomId:old.roomId,oldBedId:old.bedId});
+      // M5: a resident who no longer lives here loses app access in the same transaction.
+      const account=await tx.tenantAccount.findUnique({where:{residentId:old.residentId}});
+      if(account?.active&&!await tx.occupancy.count({where:{residentId:old.residentId,status:'ACTIVE'}})){
+        await tx.tenantAccount.update({where:{id:account.id},data:{active:false}});
+        await tx.tenantSession.deleteMany({where:{accountId:account.id}});
+        await tx.tenantInvite.updateMany({where:{accountId:account.id,consumedAt:null},data:{consumedAt:new Date()}});
+        await this.audit(tx,actor,'TENANT_ACCOUNT_DISABLED',old.residentId,{accountId:account.id,reason:'CHECKED_OUT'});
+      }
       return closed;
     });
   }

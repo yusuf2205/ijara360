@@ -3,6 +3,7 @@ import Link from 'next/link';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {ArrowLeft,ArrowRight,Plus,Search,Users,X} from 'lucide-react';
 import {api,type Resident,type Room} from '../lib/api';
+import { AppAccountPanel } from './tenant-account';
 
 export const dateLabel=(value:string)=>new Date(value).toLocaleDateString('ru',{timeZone:'UTC'});
 export const money=(value:string)=>{const [whole,fraction='']=(value||'0').split('.');return whole.replace(/\B(?=(\d{3})+(?!\d))/g,'\u00a0')+(fraction?','+fraction.padEnd(2,'0'):'')+' сум';};
@@ -24,7 +25,7 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
     <dl className="detail-grid"><dt>Статус</dt><dd>Проживает</dd><dt>Дата заселения</dt><dd>{dateLabel(active.moveInDate)}</dd><dt>Месячная цена</dt><dd>{money(active.monthlyPrice)}</dd><dt>День оплаты</dt><dd>{active.paymentDay}</dd><dt>Депозит</dt><dd>{money(active.depositAmount)}</dd></dl>
     <div className="resident-actions"><button className="button primary" onClick={()=>onAction({mode:'transfer',resident})}>Переселить</button><button className="button secondary" onClick={()=>onAction({mode:'check-out',resident})}>Выселить</button></div>
    </> : <><p className="muted">{resident.occupancies.length?'Жилец выселен. История сохранена.':'Жилец ещё не заселён.'}</p><button className="button primary" onClick={()=>onAction({mode:'check-in',resident})}><Plus size={18}/>{resident.occupancies.length?'Заселить снова':'Заселить'}</button></>}</section>
-   <section className="panel"><h2>Заметка</h2><p className="resident-note">{resident.note || 'Заметок пока нет.'}</p></section></div>
+   <section className="panel"><h2>Заметка</h2><p className="resident-note">{resident.note || 'Заметок пока нет.'}</p></section><AppAccountPanel residentId={resident.id} living={Boolean(active)}/></div>
    <section className="panel occupancy-history"><h2>История проживания</h2>{resident.occupancies.length ? resident.occupancies.map(o=><article key={o.id} className="stay-row"><div><strong>Комната {o.room.number} / Место {o.bed.number}</strong><p>{dateLabel(o.moveInDate)} → {o.moveOutDate?dateLabel(o.moveOutDate):'сейчас'}</p></div><span className={`status-pill ${o.status==='ACTIVE'?'occupied':''}`}>{o.status==='ACTIVE'?'Проживает':'Завершено'}</span></article>) : <p className="muted">История появится после первого заселения.</p>}</section>
   </>;
  }

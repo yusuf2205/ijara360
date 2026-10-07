@@ -40,11 +40,11 @@ http://:8080 {
 # Exposes the application form and its API; staff pages, staff API and events are 404.
 http://:8081 {
     encode zstd gzip
-    @applicantApi path /api/public/applications /api/public/applications/*
+    @applicantApi path /api/public/applications /api/public/applications/* /api/tenant/*
     handle @applicantApi {
         reverse_proxy api:4000
     }
-    @applicantWeb path /apply /_next/static/*
+    @applicantWeb path /apply /invite /_next/static/*
     handle @applicantWeb {
         reverse_proxy web:3000
     }

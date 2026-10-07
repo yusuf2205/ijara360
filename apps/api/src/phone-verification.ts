@@ -3,14 +3,15 @@ import {RentalApplication} from '@prisma/client';
 import {Database} from './database';
 import {ApplicationService} from './applications.service';
 import {AuthService} from './auth';
+import {TelegramService} from './telegram';
 import {digest,makeToken,normalizePhone,safeTokenEqual} from './security';
 
 type TelegramUpdate={update_id:number;message?:{from?:{id:number;is_bot?:boolean};chat:{id:number;type:string};text?:string;contact?:{user_id?:number;phone_number:string}}};
 @Injectable()
 export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
   private stopped=false;private timer?:NodeJS.Timeout;
-  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService){}
-  ready(){return Boolean(process.env.TELEGRAM_BOT_TOKEN&&/^[a-zA-Z0-9_]{5,32}$/.test(process.env.TELEGRAM_BOT_USERNAME||''));}
+  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService,private readonly telegram:TelegramService){}
+  ready(){return this.telegram.ready();}
   async challenge(a:RentalApplication){
     if(!this.ready())throw new ServiceUnavailableException('Подтверждение телефона пока не подключено.');
     await this.auth.rateLimit('telegram-challenge',a.id,5);
@@ -21,12 +22,8 @@ export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
       await tx.phoneChallenge.create({data:{applicationId:a.id,tokenHash:digest(token),expiresAt:new Date(Date.now()+10*60000)}});
     });return {url:`https://t.me/${process.env.TELEGRAM_BOT_USERNAME}?start=${token}`,expiresIn:600};
   }
-  async call(method:string,body:unknown):Promise<any>{
-    try{
-      const response=await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(35000)});
-      const data=await response.json() as {ok:boolean;result:unknown};if(!response.ok||!data.ok)throw Error();return data.result;
-    }catch{throw new ServiceUnavailableException('Telegram временно недоступен. Повторите позже.');}
-  }
+  // Kept as a seam: tests replace this method to run the bot logic without the network.
+  async call(method:string,body:unknown):Promise<any>{return this.telegram.call(method,body);}
   async send(chatId:number,text:string,reply_markup?:unknown){await this.call('sendMessage',{chat_id:chatId,text,reply_markup});}
   async handle(update:TelegramUpdate){
     const m=update.message;if(!m||m.chat?.type!=='private'||!m.from||m.from.is_bot||m.from.id!==m.chat.id)return;

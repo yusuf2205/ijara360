@@ -42,3 +42,44 @@ test('M5 settings at 390px keep the device list readable without horizontal scro
   await expect(page.getByRole('heading', { name: 'Мои устройства' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('M5 staff invite a resident by link; the resident sets a password on a phone; staff close access', async ({ page, browser, baseURL }) => {
+  test.setTimeout(90000);
+  const headers = { Origin: baseURL!, 'X-Ijara-Request': '1' };
+  await page.goto('/login');
+  await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
+  await page.getByLabel('Пароль', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  const rooms = await (await page.request.get('/api/rooms')).json() as { beds: { id: string; status: string }[] }[];
+  const bed = rooms.flatMap(r => r.beds).find(b => b.status === 'AVAILABLE')!;
+  const resident = await (await page.request.post('/api/residents', { headers, data: { fullName: 'Приложение Тестовый', phone: '+998901777001' } })).json();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const checkIn = await page.request.post('/api/occupancies/check-in', { headers, data: { residentId: resident.id, bedId: bed.id, moveInDate: today, monthlyPrice: '700000', paymentDay: 5, depositAmount: '0' } });
+  expect(checkIn.ok(), await checkIn.text()).toBe(true);
+
+  await page.goto(`/residents/${resident.id}`);
+  const panel = page.locator('section.app-account');
+  await expect(panel.getByText('Не приглашён')).toBeVisible();
+  await panel.getByRole('button', { name: 'Пригласить по ссылке' }).click();
+  const link = (await panel.locator('code').textContent())!;
+  expect(link).toMatch(/\/invite#[A-Za-z0-9_-]{32,}$/);
+
+  const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 } });
+  const tenant = await phone.newPage();
+  await tenant.goto(new URL(link).pathname + new URL(link).hash);
+  await expect(tenant.getByRole('heading', { name: 'Приложение, задайте пароль' })).toBeVisible();
+  expect(tenant.url()).not.toContain('#');
+  await tenant.getByLabel('Новый пароль').fill('Мой пароль жильца 1');
+  await tenant.getByLabel('Повторите пароль').fill('Мой пароль жильца 1');
+  await tenant.getByRole('button', { name: 'Сохранить пароль' }).click();
+  await expect(tenant.getByRole('heading', { name: 'Пароль задан' })).toBeVisible();
+  expect(await tenant.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await phone.close();
+
+  await page.reload();
+  await expect(panel.getByText('Пользуется приложением')).toBeVisible();
+  await panel.getByRole('button', { name: 'Закрыть доступ' }).click();
+  await panel.getByRole('button', { name: 'Да, закрыть доступ' }).click();
+  await expect(panel.getByText('Доступ закрыт')).toBeVisible();
+});

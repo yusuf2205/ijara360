@@ -30,3 +30,7 @@ label.remember-device small{margin-top:2px}
 .session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .session-row div{display:grid;gap:2px;min-width:0}
 .session-row small{color:var(--muted)}
+
+/* M5: tenant app account */
+.invite-link{display:grid;gap:8px;background:var(--green-soft);border-radius:12px;padding:12px;margin:10px 0}
+.invite-link code{overflow-wrap:anywhere;font-size:12px}
