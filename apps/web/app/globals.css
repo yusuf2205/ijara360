@@ -34,3 +34,19 @@ label.remember-device small{margin-top:2px}
 /* M5: tenant app account */
 .invite-link{display:grid;gap:8px;background:var(--green-soft);border-radius:12px;padding:12px;margin:10px 0}
 .invite-link code{overflow-wrap:anywhere;font-size:12px}
+
+/* M5: tenant tickets */
+.ticket-category{max-width:260px;margin-top:6px}
+.ticket-list{list-style:none;padding:0;margin:16px 0;display:grid;gap:10px}
+.ticket-row{display:grid;gap:6px;padding:15px 17px;border:1px solid var(--line);border-radius:13px;background:white;color:var(--ink)}
+.ticket-row strong{font-size:15px;overflow-wrap:anywhere}.ticket-row small{color:var(--muted);font-size:12px;line-height:1.6}
+.ticket-row .status-pill,.ticket-detail .status-pill{justify-self:start;width:max-content}
+.ticket-open{background:#fff4e5;color:#995c00}.ticket-in_progress{background:#e8f1fb;color:#2c5b8f}.ticket-rejected{background:#f4f4f4;color:#6b6b6b}
+.ticket-detail h2{overflow-wrap:anywhere}
+.ticket-thread{list-style:none;padding:0;margin:18px 0;display:grid;gap:10px}
+.ticket-thread li{padding:12px 14px;border-radius:12px;max-width:min(560px,92%);background:#f3f6f5}
+.ticket-thread li.staff{justify-self:end;background:#e8f4ee}
+.ticket-thread li>div{display:flex;gap:10px;justify-content:space-between;font-size:12px}.ticket-thread time{color:var(--muted)}
+.ticket-thread p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}
+.ticket-detail textarea{width:100%;min-height:96px;margin-top:7px}
+@media(max-width:700px){.mobile-nav a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

@@ -2,19 +2,20 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowLeft, ArrowRight, BedDouble, Building2, Check, ChevronRight, CircleHelp, DoorOpen, History, LayoutDashboard, LogOut, MapPin, Plus, Search, Settings2, ShieldCheck, Users, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeft, ArrowRight, BedDouble, Building2, Check, ChevronRight, CircleHelp, DoorOpen, History, LayoutDashboard, LogOut, MapPin, MessageSquare, Plus, Search, Settings2, ShieldCheck, Users, X } from 'lucide-react';
 import { api, ApiError, type Activity, type Property, type Room, type User, type Resident } from '../lib/api';
 
 import { ResidentsPanel, ResidentFlow, dateLabel, money, type ResidentAction } from './residents';
 import { FinancePanel } from './finance';
 import {ApplicationsPanel,ApplicationSummary,PermissionPanel} from './applications';
 import {SessionsPanel} from './sessions';
+import {TicketsPanel} from './tickets';
 import '../app/applications.css';
 
-type View = 'applications' | 'application' | 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident' | 'finance';
+type View = 'tickets' | 'ticket' | 'applications' | 'application' | 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident' | 'finance';
 type Modal = 'room' | 'edit-room' | 'bed' | 'admin' | 'password' | null;
-const titles: Record<View, string> = { applications:'Заявки', application:'Заявка', finance:'Финансы', residents: 'Жильцы', resident: 'Жилец', overview: 'Обзор дома', rooms: 'Комнаты', room: 'Комнаты', history: 'История действий', settings: 'Настройки' };
-const actionLabels: Record<string,string> = { APPLICATION_CREATED:'Начата заявка', APPLICATION_UPDATED:'Обновлена анкета', APPLICATION_PHONE_VERIFIED:'Подтверждён телефон заявки', APPLICATION_DOCUMENT_UPLOADED:'Загружен документ заявки', APPLICATION_SUBMITTED:'Подана заявка', APPLICATION_REVIEW_STARTED:'Начато рассмотрение заявки', APPLICATION_INFO_REQUESTED:'Запрошены данные', APPLICATION_APPROVED:'Заявка одобрена', APPLICATION_REJECTED:'Заявка отклонена', APPLICATION_CANCELLED:'Заявка отменена', APPLICATION_CONVERTED_TO_RESIDENT:'Заявитель заселён', APPLICATION_VIEWED_SENSITIVE_DATA:'Просмотрены данные заявки', DOCUMENT_VIEWED:'Просмотрен документ', BIOMETRIC_SOURCE_VIEWED:'Просмотрено фото лица', PERMISSION_GRANTED:'Выдано право доступа', PERMISSION_REVOKED:'Отозвано право доступа', ROOM_ARCHIVED:'Комната убрана в архив', ROOM_RESTORED:'Комната восстановлена', ROOM_DELETED:'Комната удалена',ROOMS_RENUMBERED:'Комнаты пронумерованы по порядку', CHARGE_CREATED:'Создано начисление', PAYMENT_RECORDED:'Записан платёж', RESIDENT_CREATED: 'Добавлен жилец', RESIDENT_UPDATED: 'Изменены данные жильца', OCCUPANCY_CHECKED_IN: 'Жилец заселён', OCCUPANCY_TRANSFERRED: 'Жилец переселён', OCCUPANCY_CHECKED_OUT: 'Жилец выселен', SETUP_COMPLETED: 'Дом настроен', ROOM_CREATED: 'Добавлена комната', ROOM_UPDATED: 'Изменена комната', BED_CREATED: 'Добавлено место', PROPERTY_UPDATED: 'Изменены данные дома', ADMIN_CREATED: 'Добавлен управляющий', ADMIN_ACCESS_CHANGED: 'Изменён доступ сотрудника', LOGIN: 'Вход в систему', PASSWORD_CHANGED: 'Пароль изменён' };
+const titles: Record<View, string> = { tickets:'Обращения', ticket:'Обращение', applications:'Заявки', application:'Заявка', finance:'Финансы', residents: 'Жильцы', resident: 'Жилец', overview: 'Обзор дома', rooms: 'Комнаты', room: 'Комнаты', history: 'История действий', settings: 'Настройки' };
+const actionLabels: Record<string,string> = { APPLICATION_CREATED:'Начата заявка', APPLICATION_UPDATED:'Обновлена анкета', APPLICATION_PHONE_VERIFIED:'Подтверждён телефон заявки', APPLICATION_DOCUMENT_UPLOADED:'Загружен документ заявки', APPLICATION_SUBMITTED:'Подана заявка', APPLICATION_REVIEW_STARTED:'Начато рассмотрение заявки', APPLICATION_INFO_REQUESTED:'Запрошены данные', APPLICATION_APPROVED:'Заявка одобрена', APPLICATION_REJECTED:'Заявка отклонена', APPLICATION_CANCELLED:'Заявка отменена', APPLICATION_CONVERTED_TO_RESIDENT:'Заявитель заселён', APPLICATION_VIEWED_SENSITIVE_DATA:'Просмотрены данные заявки', DOCUMENT_VIEWED:'Просмотрен документ', BIOMETRIC_SOURCE_VIEWED:'Просмотрено фото лица', PERMISSION_GRANTED:'Выдано право доступа', PERMISSION_REVOKED:'Отозвано право доступа', ROOM_ARCHIVED:'Комната убрана в архив', ROOM_RESTORED:'Комната восстановлена', ROOM_DELETED:'Комната удалена',ROOMS_RENUMBERED:'Комнаты пронумерованы по порядку',TICKET_CREATED:'Новое обращение жильца',TICKET_REPLIED:'Ответ на обращение',TICKET_STATUS_CHANGED:'Изменён статус обращения', CHARGE_CREATED:'Создано начисление', PAYMENT_RECORDED:'Записан платёж', RESIDENT_CREATED: 'Добавлен жилец', RESIDENT_UPDATED: 'Изменены данные жильца', OCCUPANCY_CHECKED_IN: 'Жилец заселён', OCCUPANCY_TRANSFERRED: 'Жилец переселён', OCCUPANCY_CHECKED_OUT: 'Жилец выселен', SETUP_COMPLETED: 'Дом настроен', ROOM_CREATED: 'Добавлена комната', ROOM_UPDATED: 'Изменена комната', BED_CREATED: 'Добавлено место', PROPERTY_UPDATED: 'Изменены данные дома', ADMIN_CREATED: 'Добавлен управляющий', ADMIN_ACCESS_CHANGED: 'Изменён доступ сотрудника', LOGIN: 'Вход в систему', PASSWORD_CHANGED: 'Пароль изменён' };
 
 function ModalDialog({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -24,7 +25,7 @@ function ModalDialog({ title, close, children }: { title: string; close: () => v
   </dialog>;
 }
 
-export default function Workspace({ view, roomId, capacityOnly = false, residentId, residentFilter, financeResidentId, applicationId, applicationStatusFilter }: { view: View; roomId?: string; capacityOnly?: boolean; residentId?: string; residentFilter?: string; financeResidentId?:string; applicationId?:string; applicationStatusFilter?:string }) {
+export default function Workspace({ view, roomId, capacityOnly = false, residentId, residentFilter, financeResidentId, applicationId, applicationStatusFilter, ticketId }: { view: View; ticketId?: string; roomId?: string; capacityOnly?: boolean; residentId?: string; residentFilter?: string; financeResidentId?:string; applicationId?:string; applicationStatusFilter?:string }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [permissions,setPermissions]=useState<string[]>([]);
@@ -125,6 +126,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         <Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={20}/>Жильцы</Link>
         <Link className={view === 'finance' ? 'active' : ''} href="/finance"><ShieldCheck size={20}/>Финансы</Link>
         {permissions.includes('APPLICATION_VIEW') && <Link className={view==='applications'||view==='application'?'active':''} href="/applications"><Users size={20}/>Заявки</Link>}
+        {(permissions.includes('TICKETS_VIEW')||permissions.includes('TICKETS_MANAGE')) && <Link className={view==='tickets'||view==='ticket'?'active':''} href="/tickets"><MessageSquare size={20}/>Обращения</Link>}
         <Link className={view === 'history' ? 'active' : ''} href="/history"><History size={20}/>История</Link>
       </nav>
       <div className="sidebar-bottom"><div className="foundation-tip"><ShieldCheck size={21}/><strong>Начинаем с порядка</strong><p>Жильцы, комнаты и история проживания всегда под рукой.</p></div>
@@ -137,6 +139,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
       <main className="main-content" id="main">
         {error && <div className="error global-error" role="alert">{error}<button className="button secondary" onClick={refresh}>Повторить</button></div>}
         {!loaded ? <div className="loading" role="status"><div className="skeleton title"/><div className="skeleton stats"/><div className="skeleton content"/>{!error && <span>Загружаем ваш дом…</span>}</div> : <>
+        {(view === 'tickets'||view==='ticket') && <TicketsPanel id={ticketId} permissions={permissions}/>}
         {(view === 'applications'||view==='application') && <ApplicationsPanel id={applicationId} permissions={permissions} rooms={rooms} initialStatus={applicationStatusFilter}/>}
         {view === 'finance' && user && <FinancePanel residents={residents} rooms={rooms} userId={user.id} initialResidentId={financeResidentId} onSaved={refresh}/>}
         {(view === 'overview' || view === 'rooms') && <>
@@ -186,7 +189,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         <footer className="page-footer"><span><ShieldCheck size={14}/>Данные сохранены на вашем сервере</span><span>Обновлено в {updatedAt}</span></footer>
         </>}
       </main>
-      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={21}/>Жильцы</Link><Link className={view === 'finance' ? 'active' : ''} href="/finance"><ShieldCheck size={21}/>Финансы</Link>{permissions.includes('APPLICATION_VIEW')&&<Link className={view==='applications'||view==='application'?'active':''} href="/applications"><Users size={21}/>Заявки</Link>}<Link className={view === 'history' ? 'active' : ''} href="/history"><History size={21}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={21}/>Настройки</Link></nav>
+      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={21}/>Жильцы</Link><Link className={view === 'finance' ? 'active' : ''} href="/finance"><ShieldCheck size={21}/>Финансы</Link>{permissions.includes('APPLICATION_VIEW')&&<Link className={view==='applications'||view==='application'?'active':''} href="/applications"><Users size={21}/>Заявки</Link>}{(permissions.includes('TICKETS_VIEW')||permissions.includes('TICKETS_MANAGE'))&&<Link className={view==='tickets'||view==='ticket'?'active':''} href="/tickets"><MessageSquare size={21}/>Обращения</Link>}<Link className={view === 'history' ? 'active' : ''} href="/history"><History size={21}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={21}/>Настройки</Link></nav>
     </div>
     {residentAction && <ResidentFlow action={residentAction} rooms={rooms} residents={residents} close={()=>setResidentAction(null)} saved={async id=>{await refresh();setToast('Данные сохранены');if(id&&(residentAction.mode==='create'||residentAction.mode==='check-in'&&view!=='room'))router.push(`/residents/${id}`);}}/>}
     {toast && <div className="toast" role="status"><Check size={19}/>{toast}</div>}

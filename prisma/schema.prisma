@@ -47,6 +47,7 @@ model User {
   payments Payment[]
   charges Charge[]
   permissions UserPermission[]
+  ticketMessages TicketMessage[]
   @@unique([id, propertyId])
   @@index([propertyId])
   @@map("users")
@@ -247,6 +248,7 @@ model Resident {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   occupancies Occupancy[]
   tenantAccount TenantAccount?
+  tickets Ticket[]
   @@unique([propertyId, phone])
   @@unique([id, propertyId])
   @@map("residents")
@@ -461,4 +463,36 @@ model TenantSession {
   @@index([accountId])
   @@index([expiresAt])
   @@map("tenant_sessions")
+}
+
+// M5 tickets. room_id has a composite FK to rooms(id, property_id) with ON DELETE SET NULL (room_id) in SQL.
+model Ticket {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  roomId String? @map("room_id") @db.Uuid
+  category String @db.VarChar(20)
+  status String @default("OPEN") @db.VarChar(20)
+  title String @db.VarChar(120)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(3)
+  resident Resident @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Restrict,onUpdate:Restrict)
+  messages TicketMessage[]
+  @@index([propertyId,status,createdAt])
+  @@index([residentId,createdAt])
+  @@map("tickets")
+}
+model TicketMessage {
+  id String @id @default(uuid()) @db.Uuid
+  ticketId String @map("ticket_id") @db.Uuid
+  authorType String @map("author_type") @db.VarChar(10)
+  staffUserId String? @map("staff_user_id") @db.Uuid
+  body String @db.VarChar(4000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  ticket Ticket @relation(fields:[ticketId],references:[id],onDelete:Restrict)
+  staff User? @relation(fields:[staffUserId],references:[id],onDelete:Restrict)
+  @@index([ticketId,createdAt])
+  @@map("ticket_messages")
 }

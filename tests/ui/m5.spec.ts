@@ -83,3 +83,58 @@ test('M5 staff invite a resident by link; the resident sets a password on a phon
   await panel.getByRole('button', { name: 'Да, закрыть доступ' }).click();
   await expect(panel.getByText('Доступ закрыт')).toBeVisible();
 });
+
+test('M5 tickets: the owner sees the author and answers; a ticket manager sees it anonymised on a phone', async ({ page, browser, baseURL }) => {
+  test.setTimeout(90000);
+  const headers = { Origin: baseURL!, 'X-Ijara-Request': '1' };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/login');
+  await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
+  await page.getByLabel('Пароль', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  const rooms = await (await page.request.get('/api/rooms')).json() as { beds: { id: string; status: string }[] }[];
+  const bed = rooms.flatMap(r => r.beds).find(b => b.status === 'AVAILABLE')!;
+  const resident = await (await page.request.post('/api/residents', { headers, data: { fullName: 'Автор Обращения', phone: '+998901777002' } })).json();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  expect((await page.request.post('/api/occupancies/check-in', { headers, data: { residentId: resident.id, bedId: bed.id, moveInDate: today, monthlyPrice: '700000', paymentDay: 5, depositAmount: '0' } })).ok()).toBe(true);
+  const link = (await (await page.request.post(`/api/residents/${resident.id}/app-invite`, { headers, data: { channel: 'LINK' } })).json()).link as string;
+  const app = await browser.newContext({ baseURL });
+  expect((await app.request.post('/api/tenant/invites/accept', { headers: { 'X-Ijara-Request': '1' }, data: { token: new URL(link).hash.slice(1), password: 'Пароль жильца для UI' } })).ok()).toBe(true);
+  const token = (await (await app.request.post('/api/tenant/auth/login', { headers: { 'X-Ijara-Request': '1' }, data: { phone: '+998901777002', password: 'Пароль жильца для UI', platform: 'ANDROID' } })).json()).token as string;
+  const auth = { 'X-Ijara-Request': '1', Authorization: `Bearer ${token}` };
+  const ticket = await (await app.request.post('/api/tenant/tickets', { headers: auth, data: { category: 'COMPLAINT', title: 'Шумят ночью', body: 'После полуночи очень шумно.' } })).json();
+
+  await page.goto('/tickets');
+  const row = page.locator('.ticket-row').filter({ hasText: 'Шумят ночью' });
+  await expect(row).toContainText('Автор Обращения');
+  await row.click();
+  await expect(page.getByRole('link', { name: 'Автор Обращения' })).toBeVisible();
+  await page.getByLabel('Ответ жильцу').fill('Поговорим с соседями сегодня.');
+  await page.getByRole('button', { name: 'Отправить ответ' }).click();
+  await expect(page.locator('.ticket-thread li.staff')).toContainText('Поговорим с соседями');
+  await expect(page.locator('.ticket-detail .status-pill')).toHaveText('В работе');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const seen = await (await app.request.get(`/api/tenant/tickets/${ticket.id}`, { headers: auth })).json();
+  expect(seen.messages.map((m: { name: string }) => m.name)).toEqual(['Вы', 'Администрация']);
+
+  const admin = await (await page.request.post('/api/users', { headers, data: { fullName: 'Диспетчер', phone: '+998901777003', password: 'Dispatcher UI test password 2026' } })).json();
+  expect((await page.request.put(`/api/permissions/users/${admin.id}`, { headers, data: { permissions: ['TICKETS_VIEW', 'TICKETS_MANAGE'] } })).ok()).toBe(true);
+  const phone = await browser.newContext({ baseURL, viewport: { width: 320, height: 700 } });
+  const staff = await phone.newPage();
+  await staff.goto('/login');
+  await staff.getByLabel('Телефон', { exact: true }).fill('+998901777003');
+  await staff.getByLabel('Пароль', { exact: true }).fill('Dispatcher UI test password 2026');
+  await staff.getByRole('button', { name: 'Войти', exact: true }).click();
+  await staff.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('link', { name: 'Обращения' }).click();
+  const anon = staff.locator('.ticket-row').filter({ hasText: 'Шумят ночью' });
+  await expect(anon).toBeVisible();
+  await expect(anon).not.toContainText('Автор Обращения');
+  await anon.click();
+  await expect(staff.getByText('Автор скрыт. Его видит только владелец.')).toBeVisible();
+  await expect(staff.locator('.ticket-thread li.tenant strong')).toHaveText('Жилец');
+  await staff.getByRole('button', { name: 'Решено' }).click();
+  await expect(staff.getByRole('button', { name: 'Открыть снова' })).toBeVisible();
+  expect(await staff.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await phone.close(); await app.close();
+});
