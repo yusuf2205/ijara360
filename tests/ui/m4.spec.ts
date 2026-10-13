@@ -5,7 +5,7 @@ import sharp from 'sharp';
 const origin=process.env.TEST_WEB_ORIGIN||'http://localhost:3000';
 const headers={Origin:origin,'X-Ijara-Request':'1'};
 const tashkentToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-async function login(page:Page,phone='+998900000010'){await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill(phone);await page.getByLabel('Пароль',{exact:true}).fill('UI test only strong password 2026');await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();}
+async function login(page:Page,phone='+998900000010'){await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill(phone);await page.getByLabel('Пароль',{exact:true}).fill('UI test only strong password 2026');await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();}
 function contact(token:string,phone:string){if(origin!=='http://100.126.164.29:3187')throw Error('NAS test gateway required for Telegram adapter');execFileSync('ssh',['-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','100.126.164.29','docker','exec','ijara360-m3-test-api','node','--env-file=/run/api.env','scripts/test-telegram-contact.cjs',token,phone],{stdio:'pipe',timeout:30000});}
 async function own(page:Page){return (await page.request.get('/api/public/applications/me')).json();}
 async function apiDraft(page:Page,phone:string,pinfl:string){

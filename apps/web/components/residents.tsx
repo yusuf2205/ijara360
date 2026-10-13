@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {ArrowLeft,ArrowRight,Plus,Search,Users,X} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, Search, Users, X, AlertCircle, Wallet, ShieldCheck } from 'lucide-react';
 import {api,type Resident,type Room} from '../lib/api';
 import { AppAccountPanel } from './tenant-account';
 
@@ -18,8 +18,8 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
   const active=resident.occupancies.find(o=>o.status==='ACTIVE');
   return <>
    <Link href="/residents" className="back-link"><ArrowLeft size={16}/>Все жильцы</Link>
-   <section className="panel resident-finance"><h2>Финансовый статус</h2><p>Остаток к оплате: {money(resident.totalDebt)}</p><p>Аванс: {money(resident.creditBalance)}</p><p>{resident.accessGranted ? 'Финансовый допуск разрешён' : 'Финансовый допуск ограничен: просрочка'}{resident.accessStatusReason==='GRACE_PERIOD'?' · Льготный период':''}</p><Link className="inline-link" href={`/finance?residentId=${resident.id}`}>Начисления и платежи <ArrowRight size={16}/></Link></section>
-   <div className="page-heading"><div><div className="heading-kicker">КАРТОЧКА ЖИЛЬЦА</div><h1>{resident.fullName}</h1><p><a href={`tel:${resident.phone}`}>{resident.phone}</a></p></div><button className="button secondary" onClick={()=>onAction({mode:'edit',resident})}>Изменить данные</button></div>
+   <div className="page-heading resident-head"><span className="avatar large">{resident.fullName.slice(0,1)}</span><div><div className="heading-kicker">КАРТОЧКА ЖИЛЬЦА</div><h1>{resident.fullName}</h1>{active&&<span className="status-pill"><span className="dot"/>Проживает · комната {active.room.number}, место {active.room.number}-{active.bed.number}</span>}<p><a href={`tel:${resident.phone}`}>{resident.phone}</a></p></div><button className="button secondary" onClick={()=>onAction({mode:'edit',resident})}>Изменить данные</button></div>
+   <section className="resident-finance"><div className="stat kpi"><span className="kpi-row"><span className={`chip ${Number(resident.totalDebt)>0?'c-red':'c-green'}`}><AlertCircle size={17}/></span><strong>{money(resident.totalDebt)}</strong></span><small>Остаток к оплате</small></div><div className="stat kpi"><span className="kpi-row"><span className="chip c-blue"><Wallet size={17}/></span><strong>{money(resident.creditBalance)}</strong></span><small>Аванс</small></div><div className="stat kpi"><span className="kpi-row"><span className={`chip ${resident.accessGranted?'c-green':'c-red'}`}><ShieldCheck size={17}/></span><strong>{resident.accessGranted?'Разрешён':'Ограничен'}</strong></span><small>{resident.accessGranted ? 'Финансовый допуск разрешён' : 'Финансовый допуск ограничен: просрочка'}{resident.accessStatusReason==='GRACE_PERIOD'?' · Льготный период':''}</small></div><Link className="inline-link" href={`/finance?residentId=${resident.id}`}>Начисления и платежи <ArrowRight size={16}/></Link></section>
    <div className="settings-grid"><section className="panel"><h2>Текущее проживание</h2>{active ? <>
     <p className="resident-location"><Link href={`/rooms/${active.roomId}`}>Комната {active.room.number} / Место {active.bed.number}</Link></p>
     <dl className="detail-grid"><dt>Статус</dt><dd>Проживает</dd><dt>Дата заселения</dt><dd>{dateLabel(active.moveInDate)}</dd><dt>Месячная цена</dt><dd>{money(active.monthlyPrice)}</dd><dt>День оплаты</dt><dd>{active.paymentDay}</dd><dt>Депозит</dt><dd>{money(active.depositAmount)}</dd></dl>

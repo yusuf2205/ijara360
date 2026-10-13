@@ -7,7 +7,7 @@ async function login(page: Page, account = phone) {
   await page.getByLabel('Телефон', { exact:true }).fill(account);
   await page.getByLabel('Пароль', { exact:true }).fill(password);
   await page.getByRole('button', {name:'Войти', exact:true}).click();
-  await expect(page.getByRole('heading', {name:'Дом под контролем'})).toBeVisible();
+  await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
 }
 test.describe.configure({mode:'serial'});
 test('first-run setup creates the owner and 7 rooms; login opens overview', async ({page, request}) => {
@@ -23,7 +23,7 @@ test('first-run setup creates the owner and 7 rooms; login opens overview', asyn
   await page.getByLabel('Количество комнат').fill('7');
   await page.getByLabel('Мест в каждой').fill('8');
   await page.getByRole('button',{name:'Создать дом'}).click();
-  await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   await expect(page.locator('.room-card')).toHaveCount(7);
   await expect(page.locator('.stat').nth(1).locator('strong')).toHaveText('56');
   const cookie=(await page.context().cookies()).find(c=>c.name==='ijara_session');
@@ -70,7 +70,8 @@ test('search, dashboard links and history navigation work on 320px screens', asy
   await page.getByRole('textbox',{name:'Найти комнату'}).fill('8');
   await expect(page.locator('.room-card')).toHaveCount(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.getByRole('navigation',{name:'Мобильная навигация'}).getByRole('link',{name:'История'}).click();
+  await page.getByRole('navigation',{name:'Мобильная навигация'}).getByRole('button',{name:'Ещё'}).click();
+  await page.getByRole('navigation',{name:'Ещё разделы'}).getByRole('link',{name:'История'}).click();
   await expect(page.getByRole('heading',{name:'История действий'})).toBeVisible();
   await expect(page.locator('.activity-list')).toContainText('Добавлено место');
 });

@@ -5,8 +5,8 @@ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'nume
 async function selectRoom(page:Page,number:string){const select=page.getByRole('combobox',{name:'Комната',exact:true});const value=await select.locator('option').filter({hasText:new RegExp('^Комната '+number+' ')}).getAttribute('value');await select.selectOption(value!);}
 let ownerCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 async function login(page:Page,phone='+998900000010') {
- if(phone==='+998900000010' && ownerCookies.length){await page.context().addCookies(ownerCookies);await page.goto('/');await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();return;}
- await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill(phone);await page.getByLabel('Пароль',{exact:true}).fill(password);await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();if(phone==='+998900000010')ownerCookies=await page.context().cookies();
+ if(phone==='+998900000010' && ownerCookies.length){await page.context().addCookies(ownerCookies);await page.goto('/');await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();return;}
+ await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill(phone);await page.getByLabel('Пароль',{exact:true}).fill(password);await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();if(phone==='+998900000010')ownerCookies=await page.context().cookies();
 }
 async function next(page:Page){await page.getByRole('dialog').getByRole('button',{name:'Продолжить',exact:true}).click();}
 async function resident(page:Page){await page.goto('/residents');await page.getByRole('link').filter({hasText:person}).click();await expect(page.getByRole('heading',{name:person,exact:true})).toBeVisible();}
@@ -31,7 +31,7 @@ test('M2 mobile check-in from a free bed shows real resident and counters after 
  await page.screenshot({path:'.local/screenshots/m2-checkin-390.png',fullPage:true});await noOverflow(page);
  await page.getByRole('button',{name:'Подтвердить заселение'}).click();await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.locator('.bed-card').first()).toContainText(person);
  await page.reload();await expect(page.locator('.bed-card').first()).toContainText('Занято');await expect(page.locator('.room-summary')).toContainText('1 занято');
- await page.goto('/');await expect(page.locator('.stat').filter({hasText:'Жильцов сейчас'}).locator('strong')).toHaveText('1');
+ await page.goto('/');await expect(page.locator('.stat').filter({hasText:'Занято'}).locator('strong')).toHaveText('1');
 });
 test('M2 transfer to another room preserves both stays and prices',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await login(page);await resident(page);await page.getByRole('button',{name:'Переселить',exact:true}).click();

@@ -5,7 +5,7 @@ test('owner archives, restores and deletes an unused room on mobile',async({page
   await page.getByLabel('Телефон',{exact:true}).fill('+998900000010');
   await page.getByLabel('Пароль',{exact:true}).fill('UI test only strong password 2026');
   await page.getByRole('button',{name:'Войти',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   await page.getByRole('button',{name:'Добавить комнату'}).click();
   await page.getByLabel('Номер комнаты').fill('ARCHIVE-TEST');
   await page.getByLabel('Вместимость',{exact:true}).fill('2');
@@ -39,7 +39,7 @@ test('a gap in room numbers can be closed in one tap and deleting a room keeps t
   await page.getByLabel('Телефон',{exact:true}).fill('+998900000010');
   await page.getByLabel('Пароль',{exact:true}).fill('UI test only strong password 2026');
   await page.getByRole('button',{name:'Войти',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   const count=(await (await page.request.get('/api/rooms')).json() as {number:string}[]).filter(r=>/^\d+$/.test(r.number)).length;
   await page.getByRole('button',{name:'Добавить комнату'}).click();
   await expect(page.getByLabel('Номер комнаты')).toHaveValue(String(count+1));

@@ -9,7 +9,7 @@ test('M5 remembered login lists this device and the owner ends another session',
   await page.getByLabel('Пароль', { exact: true }).fill(password);
   await page.getByRole('checkbox', { name: /Запомнить это устройство/ }).check();
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   const cookie = (await page.context().cookies()).find(c => c.name === 'ijara_session');
   expect(Math.round((cookie!.expires * 1000 - Date.now()) / 86400000)).toBe(30);
 
@@ -37,7 +37,7 @@ test('M5 settings at 390px keep the device list readable without horizontal scro
   await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: 'Мои устройства' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -50,7 +50,7 @@ test('M5 staff invite a resident by link; the resident sets a password on a phon
   await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   const rooms = await (await page.request.get('/api/rooms')).json() as { beds: { id: string; status: string }[] }[];
   const bed = rooms.flatMap(r => r.beds).find(b => b.status === 'AVAILABLE')!;
   const resident = await (await page.request.post('/api/residents', { headers, data: { fullName: 'Приложение Тестовый', phone: '+998901777001' } })).json();
@@ -92,7 +92,7 @@ test('M5 tickets: the owner sees the author and answers; a ticket manager sees i
   await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Дом под контролем' })).toBeVisible();
+  await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   const rooms = await (await page.request.get('/api/rooms')).json() as { beds: { id: string; status: string }[] }[];
   const bed = rooms.flatMap(r => r.beds).find(b => b.status === 'AVAILABLE')!;
   const resident = await (await page.request.post('/api/residents', { headers, data: { fullName: 'Автор Обращения', phone: '+998901777002' } })).json();
@@ -126,7 +126,8 @@ test('M5 tickets: the owner sees the author and answers; a ticket manager sees i
   await staff.getByLabel('Телефон', { exact: true }).fill('+998901777003');
   await staff.getByLabel('Пароль', { exact: true }).fill('Dispatcher UI test password 2026');
   await staff.getByRole('button', { name: 'Войти', exact: true }).click();
-  await staff.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('link', { name: 'Обращения' }).click();
+  await staff.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Ещё' }).click();
+  await staff.getByRole('navigation', { name: 'Ещё разделы' }).getByRole('link', { name: 'Обращения' }).click();
   const anon = staff.locator('.ticket-row').filter({ hasText: 'Шумят ночью' });
   await expect(anon).toBeVisible();
   await expect(anon).not.toContainText('Автор Обращения');

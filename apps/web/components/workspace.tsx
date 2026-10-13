@@ -2,14 +2,15 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowLeft, ArrowRight, BedDouble, Building2, Check, ChevronRight, CircleHelp, DoorOpen, History, LayoutDashboard, LogOut, MapPin, MessageSquare, Plus, Search, Settings2, ShieldCheck, Users, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeft, ArrowRight, BedDouble, Building2, Check, ChevronRight, CircleHelp, DoorOpen, History, LayoutDashboard, LogOut, MapPin, MessageSquare, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Users, X } from 'lucide-react';
 import { api, ApiError, type Activity, type Property, type Room, type User, type Resident } from '../lib/api';
 
 import { ResidentsPanel, ResidentFlow, dateLabel, money, type ResidentAction } from './residents';
 import { FinancePanel } from './finance';
-import {ApplicationsPanel,ApplicationSummary,PermissionPanel} from './applications';
+import {ApplicationsPanel,PermissionPanel} from './applications';
 import {SessionsPanel} from './sessions';
 import {TicketsPanel} from './tickets';
+import {Dashboard} from './dashboard';
 import '../app/applications.css';
 
 type View = 'tickets' | 'ticket' | 'applications' | 'application' | 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident' | 'finance';
@@ -47,6 +48,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<Modal>(null);
   const [busy, setBusy] = useState(false);
+  const [more, setMore] = useState(false);
   const [formError, setFormError] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
   const currentRoom = allRooms.find(r => r.id === roomId);
@@ -129,7 +131,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         {(permissions.includes('TICKETS_VIEW')||permissions.includes('TICKETS_MANAGE')) && <Link className={view==='tickets'||view==='ticket'?'active':''} href="/tickets"><MessageSquare size={20}/>Обращения</Link>}
         <Link className={view === 'history' ? 'active' : ''} href="/history"><History size={20}/>История</Link>
       </nav>
-      <div className="sidebar-bottom"><div className="foundation-tip"><ShieldCheck size={21}/><strong>Начинаем с порядка</strong><p>Жильцы, комнаты и история проживания всегда под рукой.</p></div>
+      <div className="sidebar-bottom">
         <Link className={`settings-link ${view === 'settings' ? 'active' : ''}`} href="/settings"><Settings2 size={19}/>Настройки</Link>
         <div className="sidebar-user"><span className="avatar">{user?.fullName?.slice(0,1) || '·'}</span><div><strong>{user?.fullName || 'Подключение…'}</strong><small>{owner ? 'Владелец' : 'Управляющий'}</small></div><button aria-label="Выйти" className="icon-button" onClick={logout}><LogOut size={18}/></button></div>
       </div>
@@ -142,18 +144,9 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         {(view === 'tickets'||view==='ticket') && <TicketsPanel id={ticketId} permissions={permissions}/>}
         {(view === 'applications'||view==='application') && <ApplicationsPanel id={applicationId} permissions={permissions} rooms={rooms} initialStatus={applicationStatusFilter}/>}
         {view === 'finance' && user && <FinancePanel residents={residents} rooms={rooms} userId={user.id} initialResidentId={financeResidentId} onSaved={refresh}/>}
-        {(view === 'overview' || view === 'rooms') && <>
-          <div className="page-heading"><div><div className="heading-kicker">{view === 'overview' ? 'ОБЗОР ОБЪЕКТА' : 'КОМНАТЫ И СПАЛЬНЫЕ МЕСТА'}</div><h1>{view === 'overview' ? 'Дом под контролем' : 'Комнаты'}</h1><p>{view === 'overview' ? 'Все комнаты и места — в одном пространстве.' : 'Посмотрите план комнат или добавьте новые места.'}</p></div><div className="resident-actions"><button className="button primary" onClick={()=>setResidentAction({mode:'check-in'})}><Plus size={19}/>Заселить</button>{canRooms && <button className="button secondary" onClick={() => open('room')}>Добавить комнату</button>}{canRooms && numberGaps && <button className="button secondary" disabled={busy} onClick={() => void renumberRooms()}>Упорядочить номера</button>}</div></div>
-          <div className="stats-grid">
-            <Link href="/rooms" className="stat"><div><span>Комнат</span><Building2 size={21}/></div><strong>{rooms.length}<ArrowRight size={20}/></strong><small>В вашем доме</small></Link>
-            <Link href="/rooms" className="stat"><div><span>Спальных мест</span><BedDouble size={22}/></div><strong>{totalBeds}<ArrowRight size={20}/></strong><small>Создано и готово к учёту</small></Link>
-            <Link href="/rooms" className="stat accent"><div><span>Свободных мест</span><DoorOpen size={22}/></div><strong>{totalBeds-occupiedBeds}<ArrowRight size={20}/></strong><small><span className="dot"/> По данным системы</small></Link>
-            <Link href="/residents?filter=active" className="stat"><div><span>Занято мест</span><Users size={22}/></div><strong>{occupiedBeds}<ArrowRight size={20}/></strong><small>Активные проживания</small></Link>
-            <Link href="/residents?filter=active" className="stat"><div><span>Жильцов сейчас</span><Users size={22}/></div><strong>{occupiedBeds}<ArrowRight size={20}/></strong><small>Сейчас живут в доме</small></Link>
-            <Link href="/rooms?filter=space" className="stat"><div><span>Можно добавить</span><Plus size={22}/></div><strong>{totalCapacity - totalBeds}<ArrowRight size={20}/></strong><small>В пределах вместимости</small></Link>
-          </div>
-          {view==='overview' && permissions.includes('APPLICATION_VIEW') && <ApplicationSummary/>}
-          {view === 'overview' && <div className="setup-banner"><span className="banner-icon"><ShieldCheck size={25}/></span><div><strong>Кто живёт в доме — видно сразу</strong><p>Заселяйте на свободные места, переселяйте и сохраняйте историю проживания.</p></div><span className="phase-badge">Учёт проживания</span></div>}
+        {view === 'overview' && user && <Dashboard name={user.fullName} rooms={rooms} permissions={permissions} events={<ActivityList items={activity.slice(0,5)}/>} actions={<><button className="button primary" onClick={()=>setResidentAction({mode:'check-in'})}><Plus size={19}/>Заселить</button>{canRooms && <button className="button secondary" onClick={() => open('room')}>Добавить комнату</button>}{canRooms && numberGaps && <button className="button secondary" disabled={busy} onClick={() => void renumberRooms()}>Упорядочить номера</button>}</>}/>}
+        {view === 'rooms' && <>
+          <div className="page-heading"><div><div className="heading-kicker">КОМНАТЫ И СПАЛЬНЫЕ МЕСТА</div><h1>Комнаты</h1><p>{rooms.length} комнат · {totalBeds} мест · свободно {totalBeds-occupiedBeds}</p></div><div className="resident-actions"><button className="button primary" onClick={()=>setResidentAction({mode:'check-in'})}><Plus size={19}/>Заселить</button>{canRooms && <button className="button secondary" onClick={() => open('room')}>Добавить комнату</button>}{canRooms && numberGaps && <button className="button secondary" disabled={busy} onClick={() => void renumberRooms()}>Упорядочить номера</button>}</div></div>
           {view==='rooms' && <div className="resident-actions" aria-label="Список комнат"><button className={`button ${!showArchive?'primary':'secondary'}`} onClick={()=>setShowArchive(false)}>Активные комнаты</button><button className={`button ${showArchive?'primary':'secondary'}`} onClick={()=>setShowArchive(true)}>Архив комнат ({allRooms.filter(r=>r.archivedAt).length})</button></div>}
           <section className="room-section"><div className="section-heading"><div><h2>{showArchive && view==='rooms' ? "Архив комнат" : capacityOnly ? "Можно добавить места" : "Ваши комнаты"} <span>{filtered.length}</span></h2><p>Каждое место на своём месте</p></div><label className="search-field"><Search size={18}/><input aria-label="Найти комнату" placeholder="Найти комнату…" value={query} onChange={e => setQuery(e.target.value)}/></label></div>
             {filtered.length ? <div className="room-grid">{filtered.map(room => <Link href={`/rooms/${room.id}`} className="room-card" key={room.id}>
@@ -163,7 +156,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
               <div className="room-card-bottom"><span><strong>{room.availableBeds}</strong> свободно <span className="separator">/</span> <strong>{room.occupiedBeds}</strong> занято</span><span className="arrow-circle"><ArrowRight size={17}/></span></div>
             </Link>)}</div> : <div className="empty"><Building2 size={38}/><h3>{query ? 'Комната не найдена' : showArchive ? 'Архив пуст' : 'Здесь появятся ваши комнаты'}</h3><p>{query ? 'Попробуйте другой номер.' : showArchive ? 'Здесь будут комнаты, убранные из рабочего списка.' : 'Добавьте первую комнату и укажите количество мест.'}</p>{!query && canRooms && !showArchive && <button className="button primary" onClick={() => open('room')}>Добавить комнату</button>}</div>}
           </section>
-          {view === 'overview' && <section className="recent-section"><div className="section-heading"><div><h2>Последние действия</h2><p>История изменений в вашем доме</p></div><Link className="inline-link" href="/history">Вся история <ArrowRight size={16}/></Link></div><ActivityList items={activity.slice(0,4)}/></section>}
+          
         </>}
         {view === 'room' && (currentRoom ? <>
           <Link className="back-link" href="/rooms"><ArrowLeft size={16}/>Все комнаты</Link>
@@ -189,7 +182,8 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         <footer className="page-footer"><span><ShieldCheck size={14}/>Данные сохранены на вашем сервере</span><span>Обновлено в {updatedAt}</span></footer>
         </>}
       </main>
-      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={21}/>Жильцы</Link><Link className={view === 'finance' ? 'active' : ''} href="/finance"><ShieldCheck size={21}/>Финансы</Link>{permissions.includes('APPLICATION_VIEW')&&<Link className={view==='applications'||view==='application'?'active':''} href="/applications"><Users size={21}/>Заявки</Link>}{(permissions.includes('TICKETS_VIEW')||permissions.includes('TICKETS_MANAGE'))&&<Link className={view==='tickets'||view==='ticket'?'active':''} href="/tickets"><MessageSquare size={21}/>Обращения</Link>}<Link className={view === 'history' ? 'active' : ''} href="/history"><History size={21}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={21}/>Настройки</Link></nav>
+      <nav className="mobile-nav" aria-label="Мобильная навигация"><Link className={view === 'overview' ? 'active' : ''} href="/"><LayoutDashboard size={21}/>Главная</Link><Link className={view === 'rooms' || view === 'room' ? 'active' : ''} href="/rooms"><Building2 size={21}/>Комнаты</Link><Link className={view === 'residents' || view === 'resident' ? 'active' : ''} href="/residents"><Users size={21}/>Жильцы</Link><Link className={view === 'finance' ? 'active' : ''} href="/finance"><ShieldCheck size={21}/>Финансы</Link><button type="button" className={`more-toggle ${['applications','application','tickets','ticket','history','settings'].includes(view)?'active':''}`} aria-expanded={more} aria-controls="mobile-more" onClick={()=>setMore(m=>!m)}><MoreHorizontal size={21}/>Ещё</button></nav>
+      {more && <div className="mobile-more-bg" onClick={()=>setMore(false)}><nav id="mobile-more" className="mobile-more" aria-label="Ещё разделы" onClick={e=>e.stopPropagation()}>{permissions.includes('APPLICATION_VIEW')&&<Link className={view==='applications'||view==='application'?'active':''} href="/applications"><Users size={20}/>Заявки</Link>}{(permissions.includes('TICKETS_VIEW')||permissions.includes('TICKETS_MANAGE'))&&<Link className={view==='tickets'||view==='ticket'?'active':''} href="/tickets"><MessageSquare size={20}/>Обращения</Link>}<Link className={view === 'history' ? 'active' : ''} href="/history"><History size={20}/>История</Link><Link className={view === 'settings' ? 'active' : ''} href="/settings"><Settings2 size={20}/>Настройки</Link></nav></div>}
     </div>
     {residentAction && <ResidentFlow action={residentAction} rooms={rooms} residents={residents} close={()=>setResidentAction(null)} saved={async id=>{await refresh();setToast('Данные сохранены');if(id&&(residentAction.mode==='create'||residentAction.mode==='check-in'&&view!=='room'))router.push(`/residents/${id}`);}}/>}
     {toast && <div className="toast" role="status"><Check size={19}/>{toast}</div>}
@@ -211,7 +205,9 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   </div>;
 }
 
+const activityTone = (entity: string) => ({ Payment: 'c-green', Charge: 'c-orange', RentalApplication: 'c-violet', Application: 'c-violet', Ticket: 'c-violet', Occupancy: 'c-green', Resident: 'c-green', User: 'c-gray' } as Record<string,string>)[entity] || 'c-blue';
+const activityIcon = (entity: string) => entity === 'Payment' || entity === 'Charge' ? <ShieldCheck size={18}/> : entity === 'Ticket' ? <MessageSquare size={18}/> : ['Occupancy','Resident','User','RentalApplication','Application'].includes(entity) ? <Users size={18}/> : <Building2 size={18}/>;
 function ActivityList({ items }: { items: Activity[] }) {
   if (!items.length) return <div className="empty compact"><History size={25}/><p>Пока нет действий. Все изменения появятся здесь.</p></div>;
-  return <div className="activity-list">{items.map(item => <div className="activity-row" key={item.id}><span className="activity-icon">{item.entity === 'User' ? <Users size={18}/> : <Building2 size={18}/>}</span><div><strong>{actionLabels[item.action] || item.action}{typeof item.metadata.number === 'string' && ` №${item.metadata.number}`}</strong><small>{item.actor?.fullName || 'Заявитель'}</small></div><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })}</time></div>)}</div>;
+  return <div className="activity-list">{items.map(item => <div className="activity-row" key={item.id}><span className={`activity-icon ${activityTone(item.entity)}`}>{activityIcon(item.entity)}</span><div><strong>{actionLabels[item.action] || item.action}{typeof item.metadata.number === 'string' && ` №${item.metadata.number}`}</strong><small>{item.actor?.fullName || 'Заявитель'}</small></div><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('ru', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })}</time></div>)}</div>;
 }

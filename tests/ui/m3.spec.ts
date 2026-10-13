@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 const password='UI test only strong password 2026';
 const headers={Origin:'http://localhost:3000','X-Ijara-Request':'1'};
 const day=(offset=0)=>{const value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());return new Date(new Date(value+'T00:00:00Z').getTime()+offset*86400000).toISOString().slice(0,10);};
-async function login(page:Page){await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill('+998900000011');await page.getByLabel('Пароль',{exact:true}).fill(password);await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:'Дом под контролем'})).toBeVisible();}
+async function login(page:Page){await page.goto('/login');await page.getByLabel('Телефон',{exact:true}).fill('+998900000011');await page.getByLabel('Пароль',{exact:true}).fill(password);await page.getByRole('button',{name:'Войти',exact:true}).click();await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();}
 let residentId:string;
 test.describe.configure({mode:'serial'});
 test('M3 empty finance, create overdue charge on mobile and show financial denial',async({page})=>{
