@@ -7,6 +7,7 @@ import {Database} from './database';
 import {PermissionCode} from './permission-policy';
 import {Tenant,TenantGuard,TenantModule,TenantRequest} from './tenant';
 import {TelegramError,TelegramModule,TelegramService} from './telegram';
+import {publish} from './realtime';
 
 const PAGE=30;
 const MAX_ATTEMPTS=6;
@@ -44,11 +45,14 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
     if(!a)return;
     const n=await tx.notification.create({data:{propertyId:a.propertyId,tenantAccountId:a.id,...m}});
     if(a.telegramUserId)await tx.notificationDelivery.create({data:{notificationId:n.id,chatId:a.telegramUserId}});
+    await publish(tx,{p:a.propertyId,topic:'notifications',type:'created',residents:[residentId],staff:false});
   }
   /** To every active staff member who may use any of the given functions (owners always). Feed only until staff link Telegram. */
   async staff(tx:Tx,propertyId:string,any:PermissionCode[],m:Message){
     const users=await tx.user.findMany({where:{propertyId,active:true,OR:[{role:{in:['OWNER','SUPER_ADMIN']}},{permissions:{some:{permissionCode:{in:any}}}}]},select:{id:true}});
-    if(users.length)await tx.notification.createMany({data:users.map(u=>({propertyId,userId:u.id,...m}))});
+    if(!users.length)return;
+    await tx.notification.createMany({data:users.map(u=>({propertyId,userId:u.id,...m}))});
+    await publish(tx,{p:propertyId,topic:'notifications',type:'created',users:users.map(u=>u.id)});
   }
 
   // Event texts in one place, so wording stays consistent between the feed and Telegram.

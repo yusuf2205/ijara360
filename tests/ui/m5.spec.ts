@@ -148,3 +148,17 @@ test('M5 tickets: the owner sees the author and answers; a ticket manager sees i
   expect(await staff.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await phone.close(); await app.close();
 });
+
+test('M5 live updates: a room added elsewhere appears on the open home page without reload', async ({ page, baseURL }) => {
+  const headers = { Origin: baseURL!, 'X-Ijara-Request': '1' };
+  await page.goto('/login');
+  await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
+  await page.getByLabel('Пароль', { exact: true }).fill(password);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), / })).toBeVisible();
+  await expect(page.getByText('Обновляется сразу')).toBeVisible();
+  const room = await (await page.request.post('/api/rooms', { headers, data: { number: 'LIVE-1', capacity: 1 } })).json();
+  await expect(page.getByRole('heading', { name: 'Комната №LIVE-1', exact: true })).toBeVisible();
+  expect((await page.request.delete(`/api/rooms/${room.id}`, { headers, data: { version: room.version } })).ok()).toBe(true);
+  await expect(page.getByRole('heading', { name: 'Комната №LIVE-1', exact: true })).toHaveCount(0);
+});

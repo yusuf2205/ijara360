@@ -121,15 +121,16 @@ test('audit failure rolls back conversion and produces no resident or occupancy'
  try{await send(owner,'post',`/applications/${a.id}/convert`).send({version:a.version,bedId:room.beds[0].id,moveInDate:'2026-01-01',monthlyPrice:'10',paymentDay:1,depositAmount:'0'}).expect(500);assert.equal(await db.resident.count(),0);assert.equal(await db.occupancy.count(),0);assert.equal((await db.rentalApplication.findUnique({where:{id:a.id}})).status,'APPROVED');}
  finally{await db.$executeRawUnsafe('DROP TRIGGER test_application_audit ON audit_logs');await db.$executeRawUnsafe('DROP FUNCTION test_application_audit()');}
 });
-test('authenticated WebSocket emits submitted only after commit; no application rights rejects connection',async()=>{
+test('authenticated WebSocket emits submitted only after commit; staff without application rights get no application events',async()=>{
  const login=await send(owner,'post','/auth/login').send({phone:'+998900000001',password});const cookie=login.headers['set-cookie'][0].split(';')[0];
  const ws=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/events`,{headers:{Origin:origin,Cookie:cookie}});
  await new Promise((resolve,reject)=>{ws.once('message',resolve);ws.once('error',reject);});
- const received=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('No submitted event')),5000);ws.on('message',async raw=>{const event=JSON.parse(raw);if(event.type==='application.submitted'){clearTimeout(timer);const stored=await db.rentalApplication.findUnique({where:{id:event.applicationId}});assert.equal(stored.status,'SUBMITTED');resolve();}});});
- await submitted();await received;ws.close();
+ const received=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('No submitted event')),5000);ws.on('message',async raw=>{const event=JSON.parse(raw);if(event.topic==='applications'&&event.type==='submitted'){clearTimeout(timer);assert.deepEqual(Object.keys(event).sort(),['id','topic','type']);const stored=await db.rentalApplication.findUnique({where:{id:event.id}});assert.equal(stored.status,'SUBMITTED');resolve();}});});
  const {agent}=await admin();const result=await send(agent,'post','/auth/login').send({phone:'+998900000002',password});
- const denied=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/events`,{headers:{Origin:origin,Cookie:result.headers['set-cookie'][0].split(';')[0]}});
- await new Promise((resolve,reject)=>{denied.once('error',resolve);denied.once('open',()=>reject(Error('Unauthorized socket accepted')));});
+ const other=new WebSocket(`ws://127.0.0.1:${server.address().port}/api/events`,{headers:{Origin:origin,Cookie:result.headers['set-cookie'][0].split(';')[0]}});
+ const seen=[];await new Promise((resolve,reject)=>{other.once('message',resolve);other.once('error',reject);});other.on('message',raw=>seen.push(JSON.parse(raw)));
+ await submitted();await received;await new Promise(r=>setTimeout(r,300));ws.close();other.close();
+ assert.equal(seen.filter(e=>e.topic==='applications').length,0,'no application events without APPLICATION_VIEW');
 });
 test('approved-today filter keeps converted approvals and ignores other statuses',async()=>{
  let {a}=await approved();

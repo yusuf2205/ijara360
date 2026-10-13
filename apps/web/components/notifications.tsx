@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Bell, CheckCheck, FileText, MessageSquare, Wallet } from 'lucide-react';
 import { api } from '../lib/api';
+import { useRealtime } from '../lib/realtime';
 
 type Item = { id: string; kind: string; title: string; body: string; link: string | null; readAt: string | null; createdAt: string };
 type Feed = { items: Item[]; total: number; unread: number; page: number; pageSize: number };
@@ -17,6 +18,7 @@ export function NotificationsPanel({ onChange }: { onChange?: () => void }) {
   const [error, setError] = useState('');
   async function load() { try { setFeed(await api<Feed>(`/notifications?page=${page}`)); setError(''); } catch (e) { setError((e as Error).message); } }
   useEffect(() => { void load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+  useRealtime(['notifications'], load);
   async function read(ids?: string[]) { await api('/notifications/read', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }); onChange?.(); await load(); }
   async function open(n: Item) { try { if (!n.readAt) await read([n.id]); if (n.link) router.push(n.link); } catch (e) { setError((e as Error).message); } }
   return <>

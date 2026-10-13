@@ -13,7 +13,7 @@ import { allowedOrigins } from './origins';
 import { ResidentsModule } from './residents';
 import { FinanceModule } from './finance';
 import { ApplicationsModule } from './applications';
-import { ApplicationEvents } from './application-events';
+import { RealtimeHub, RealtimeModule } from './realtime';
 import { TenantModule } from './tenant';
 import { TenantFinanceModule } from './tenant-finance';
 import { TicketsModule } from './tickets';
@@ -27,7 +27,7 @@ class HealthController {
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
   }
 }
-@Module({ imports: [DatabaseModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()
@@ -81,7 +81,7 @@ export async function createApp() {
   app.use(json({ limit: '32kb' }));
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true, errorHttpStatusCode: 422 }));
   app.useGlobalFilters(new ErrorFilter());
-  app.get(ApplicationEvents).attach(app.getHttpServer());
+  app.get(RealtimeHub).attach(app.getHttpServer());
   app.enableShutdownHooks();
   return app;
 }

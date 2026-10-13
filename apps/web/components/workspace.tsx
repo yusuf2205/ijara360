@@ -12,6 +12,7 @@ import {SessionsPanel} from './sessions';
 import {TicketsPanel} from './tickets';
 import {Dashboard} from './dashboard';
 import {NotificationsPanel} from './notifications';
+import {useRealtime} from '../lib/realtime';
 import '../app/applications.css';
 
 type View = 'notifications' | 'tickets' | 'ticket' | 'applications' | 'application' | 'overview' | 'rooms' | 'room' | 'history' | 'settings' | 'residents' | 'resident' | 'finance';
@@ -77,6 +78,9 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   }
   useEffect(() => { void refresh(); }, [view, roomId, residentId, applicationId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); } }, [toast]);
+  // Rooms, beds and residents change under other staff; the bell follows personal notifications.
+  const live = useRealtime(['house','finance'], refresh);
+  useRealtime(['notifications'], loadUnread);
   function open(kind: Modal) { setFormError(''); setModal(kind); }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setFormError('');
@@ -140,7 +144,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
       </div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><div><Building2 className="mobile-logo" size={22}/><span>Мой дом</span><ChevronRight size={14}/><strong>{titles[view]}</strong></div><div className="topbar-right"><div className="connection"><span className={error ? 'dot warning' : 'dot'}/>{error ? 'Нет актуальных данных' : loaded ? 'Сервер подключён' : 'Подключение…'}</div><Link href="/notifications" className={`bell ${view==='notifications'?'active':''}`} aria-label={unread ? `Уведомления: ${unread} новых` : 'Уведомления'}><Bell size={20}/>{unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}</Link></div></header>
+      <header className="topbar"><div><Building2 className="mobile-logo" size={22}/><span>Мой дом</span><ChevronRight size={14}/><strong>{titles[view]}</strong></div><div className="topbar-right"><div className="connection"><span className={error ? 'dot warning' : 'dot'}/>{error ? 'Нет актуальных данных' : !loaded ? 'Подключение…' : live ? 'Обновляется сразу' : 'Сервер подключён'}</div><Link href="/notifications" className={`bell ${view==='notifications'?'active':''}`} aria-label={unread ? `Уведомления: ${unread} новых` : 'Уведомления'}><Bell size={20}/>{unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}</Link></div></header>
       <main className="main-content" id="main">
         {error && <div className="error global-error" role="alert">{error}<button className="button secondary" onClick={refresh}>Повторить</button></div>}
         {!loaded ? <div className="loading" role="status"><div className="skeleton title"/><div className="skeleton stats"/><div className="skeleton content"/>{!error && <span>Загружаем ваш дом…</span>}</div> : <>

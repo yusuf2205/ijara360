@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
+import { useRealtime } from '../lib/realtime';
 
 type Item = { id: string; category: string; status: string; title: string; version: number; createdAt: string; updatedAt: string; closedAt: string | null; messages: number; room: string | null; author: { residentId: string; fullName: string } | null };
 type Detail = Item & { thread: { id: string; author: 'TENANT' | 'STAFF'; name: string; body: string; createdAt: string }[] };
@@ -30,6 +31,7 @@ export function TicketsPanel({ id, permissions }: { id?: string; permissions: st
     } catch (e) { setError((e as Error).message); }
   }
   useEffect(() => { void refresh(); }, [id, status, category, page]);
+  useRealtime(['tickets'], refresh);
   async function run(fn: () => Promise<Detail>) { setBusy(true); setError(''); try { setDetail(await fn()); } catch (e) { setError((e as Error).message); await refresh(); } finally { setBusy(false); } }
   function send(e: FormEvent) { e.preventDefault(); if (!detail || !reply.trim()) return; void run(async () => { const d = await api<Detail>(`/tickets/${detail.id}/messages`, { method: 'POST', body: JSON.stringify({ body: reply }) }); setReply(''); return d; }); }
   const setTo = (next: string) => detail && run(() => api<Detail>(`/tickets/${detail.id}`, { method: 'PATCH', body: JSON.stringify({ status: next, version: detail.version }) }));

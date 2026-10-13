@@ -1,4 +1,5 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { publish } from './realtime';
 import { Prisma } from '@prisma/client';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
@@ -26,7 +27,9 @@ export class ResidentsService {
         // Same property lock as room edits; recheck access after waiting for the lock.
         await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
         await requireAccess(tx,actor,'RESIDENTS_MANAGE');
-        return action(tx);
+        const result = await action(tx);
+        await publish(tx,{p:actor.propertyId,topic:'house',type:'changed'});
+        return result;
       }, {maxWait:10000,timeout:15000});
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -83,6 +86,7 @@ export class ResidentsService {
     return this.write(actor,tx=>this.checkInTransaction(tx,actor,dto));
   }
   async checkInTransaction(tx:Prisma.TransactionClient,actor:Actor,dto:CheckInDto) {
+    await publish(tx,{p:actor.propertyId,topic:'house',type:'changed'});
     const date = businessDate(dto.moveInDate);
     if (Boolean(dto.residentId) === Boolean(dto.resident)) throw new UnprocessableEntityException('Выберите существующего жильца или заполните данные нового.');
       const resident = dto.residentId ? await tx.resident.findFirst({where:{id:dto.residentId,propertyId:actor.propertyId}}) : await this.insert(tx,actor,dto.resident!);

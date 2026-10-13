@@ -5,6 +5,7 @@ import { Database } from './database';
 import { PermissionCode, requireAccess } from './permission-policy';
 import { ChargeDto, FinanceQuery, PaymentDto } from './finance.dto';
 import { NotificationsModule, NotificationsService } from './notifications';
+import { publish } from './realtime';
 
 export function financeDate(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -78,6 +79,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       const charge = await tx.charge.create({data:{...dto,amount,billingPeriodStart,billingPeriodEnd,dueDate,propertyId:actor.propertyId,roomId:bed.roomId,createdByUserId:actor.id}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'CHARGE_CREATED',entity:'Charge',entityId:charge.id,metadata:{residentId:dto.residentId,amount:amount.toFixed(2),type:dto.type}}});
       await this.notifications.chargeCreated(tx,charge);
+      await publish(tx,{p:actor.propertyId,topic:'finance',type:'charge',id:charge.id,need:['FINANCE_VIEW'],residents:[dto.residentId]});
       // AFTER INSERT may consume existing credit, so re-read the resulting charge.
       return tx.charge.findUniqueOrThrow({where:{id:charge.id}});
     });
@@ -96,6 +98,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       const result=paymentResult(await tx.payment.findUniqueOrThrow({where:{id:payment.id},include:paymentInclude}));
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'PAYMENT_RECORDED',entity:'Payment',entityId:payment.id,metadata:{residentId:dto.residentId,chargeId:dto.chargeId||null,amount:amount.toFixed(2),method:dto.method,unallocatedAmount:result.unallocatedAmount.toFixed(2),allocations:result.allocations.map(a=>({chargeId:a.chargeId,amount:a.amount.toFixed(2)}))}}});
       await this.notifications.paymentRecorded(tx,result);
+      await publish(tx,{p:actor.propertyId,topic:'finance',type:'payment',id:payment.id,need:['FINANCE_VIEW'],residents:[dto.residentId]});
       return result;
     });
   }

@@ -5,6 +5,7 @@ import { Database } from './database';
 import { DEFAULT_ADMIN_PERMISSIONS, PermissionCode, requireAccess } from './permission-policy';
 import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
+import { publish } from './realtime';
 
 const numbered = (n: string) => /^\d{1,6}$/.test(n);
 const roomInclude =Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
@@ -16,7 +17,9 @@ export class InventoryService {
     return this.db.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM properties WHERE id = ${actor.propertyId}::uuid FOR UPDATE`;
       await requireAccess(tx, actor, need);
-      return action(tx);
+      const result = await action(tx);
+      await publish(tx, { p: actor.propertyId, topic: 'house', type: 'changed' });
+      return result;
     });
   }
   async audit(tx: Prisma.TransactionClient, actor: Actor, action: string, entity: string, entityId: string, metadata: Prisma.InputJsonObject) {

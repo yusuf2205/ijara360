@@ -8,7 +8,7 @@ import {Database} from './database';
 import {PermissionService} from './permissions';
 import {PermissionCode} from './permission-policy';
 import {PrivateStorage} from './private-storage';
-import {ApplicationEvents} from './application-events';
+import {publish} from './realtime';
 import {ApplicationProfile,ConvertDto,DraftDto,ReviewDto,StartApplicationDto,conversionCheckIn,validateProfile} from './applications.dto';
 import {digest,makeToken,normalizePhone} from './security';
 import {ResidentsService} from './residents';
@@ -19,7 +19,7 @@ const mutable=(a:RentalApplication)=>{if(!['DRAFT','NEEDS_INFO'].includes(a.stat
 const version=(a:RentalApplication,v:number)=>{if(a.version!==v)throw new ConflictException('Заявка уже была изменена. Откройте её заново.');};
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly notifications:NotificationsService,private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly events:ApplicationEvents,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
+  constructor(private readonly notifications:NotificationsService,private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
   profile(a:RentalApplication){return this.storage.open<ApplicationProfile>(a.profileCipher,`application:${a.id}`);}
   async config(){
     const property=process.env.APPLICATION_PROPERTY_ID?await this.db.property.findFirst({where:{id:process.env.APPLICATION_PROPERTY_ID,active:true}}):await this.db.property.findFirst({where:{active:true},orderBy:{createdAt:'asc'}});
@@ -42,7 +42,8 @@ export class ApplicationService {
   async audit(tx:Prisma.TransactionClient,a:RentalApplication,action:string,actorId:string|null=null,metadata:Prisma.InputJsonObject={}){
     await tx.auditLog.create({data:{propertyId:a.propertyId,actorId,action,entity:'Application',entityId:a.id,metadata}});
   }
-  async event(a:RentalApplication,type:string){await this.events.emit(a.propertyId,`application.${type}`,a.id);}
+  // Published after commit (the callers' transactions have finished); only staff who may view applications get it.
+  async event(a:RentalApplication,type:string){await publish(this.db,{p:a.propertyId,topic:'applications',type,id:a.id,need:['APPLICATION_VIEW']});}
   async start(dto:StartApplicationDto,ip:string){
     if(!(await this.config()).enabled)throw new ServiceUnavailableException('Приём заявок ещё не настроен.');
     await this.auth.rateLimit('application-start-ip',ip,10);

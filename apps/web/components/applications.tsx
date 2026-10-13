@@ -1,4 +1,5 @@
 'use client';
+import {useRealtime} from '../lib/realtime';
 import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
 import {useRouter} from 'next/navigation';
@@ -11,12 +12,7 @@ const permissionGroups:[string,string[]][]=[['Дом и жильцы',['ROOMS_MA
 type Item={id:string;status:string;version:number;fullName:string;phone:string;occupationType:string;organization?:string;requestedMoveInDate:string;submittedAt:string};
 type Queue={items:Item[];total:number;page:number;counts:Record<string,number>;approvedToday:number};
 type Detail=Item&{phoneVerified:boolean;profile:Record<string,string>;documents:{id:string;kind:string}[];duplicates:{applications:{id:string;status:string}[];resident:{id:string;fullName:string}|null};feedback:{reason:string;requiredFields?:string}|null;history:{fromStatus:string;toStatus:string;createdAt:string}[];residentId:string|null};
-function useApplicationUpdates(refresh:()=>Promise<void>){
-  const callback=useRef(refresh);callback.current=refresh;const [connected,setConnected]=useState(false);
-  useEffect(()=>{let stopped=false;let ws:WebSocket|undefined;let timer:ReturnType<typeof setTimeout>;let delay=1000;
-    const connect=()=>{ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/events`);ws.onmessage=()=>{setConnected(true);delay=1000;void callback.current();};ws.onclose=()=>{setConnected(false);if(!stopped)void callback.current();if(!stopped){timer=setTimeout(connect,delay);delay=Math.min(delay*2,15000);}};ws.onerror=()=>ws?.close();};connect();return()=>{stopped=true;clearTimeout(timer);ws?.close();};},[]);
-  return connected;
-}
+const useApplicationUpdates=(refresh:()=>Promise<void>)=>useRealtime(['applications'],refresh);
 export function ApplicationSummary(){
   const [queue,setQueue]=useState<Queue|null>(null);const [error,setError]=useState('');
   async function refresh(){try{setQueue(await api('/applications'));setError('');}catch(e){setError((e as Error).message);}}

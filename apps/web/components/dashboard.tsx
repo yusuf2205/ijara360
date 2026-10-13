@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, BedDouble, Building2, CheckCircle2, DoorOpen, FileText, MessageSquare, Plus, Users } from 'lucide-react';
 import { api, type Room } from '../lib/api';
+import { useRealtime } from '../lib/realtime';
 
 type Summary = { charged: string; paid: string; outstanding: string; overdue: string; blockedResidents: number };
 type Extra = { finance?: Summary & { debtors: number }; applications?: number; tickets?: number };
@@ -18,6 +19,8 @@ const today = () => new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent'
 export function Dashboard({ name, rooms, permissions, actions, events }: { name: string; rooms: Room[]; permissions: string[]; actions: ReactNode; events: ReactNode }) {
   const [extra, setExtra] = useState<Extra>({});
   const can = (p: string) => permissions.includes(p);
+  const [tick, setTick] = useState(0);
+  useRealtime(['finance', 'applications', 'tickets'], () => setTick(t => t + 1));
   useEffect(() => {
     let live = true;
     (async () => {
@@ -31,7 +34,7 @@ export function Dashboard({ name, rooms, permissions, actions, events }: { name:
       if (live) setExtra(next);
     })();
     return () => { live = false; };
-  }, [permissions.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [permissions.join(','), tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const beds = rooms.reduce((n, r) => n + r.totalBeds, 0);
   const busy = rooms.reduce((n, r) => n + r.occupiedBeds, 0);

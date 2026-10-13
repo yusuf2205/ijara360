@@ -1,4 +1,5 @@
 'use client';
+import { useRealtime } from '../lib/realtime';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Plus, Wallet, X } from 'lucide-react';
@@ -33,7 +34,7 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     try{const q=new URLSearchParams({page:String(page)});if(residentId)q.set('residentId',residentId);if(status)q.set('status',status);setData(await api<Snapshot>('/finance?'+q));setError('');}
     catch(e){setError((e as Error).message);setData(null);}
   }
-  useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),60000);return()=>clearInterval(timer);},[residentId,status,page]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{void refresh();},[residentId,status,page]);useRealtime(['finance'],refresh); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{try{const saved=sessionStorage.getItem(storageKey);if(saved){const p=JSON.parse(saved) as Pending;if(['/finance/charges','/finance/payments'].includes(p.path)&&p.body?.idempotencyKey)setPending(p);}}catch{setError('Не удалось прочитать незавершённую запись. Проверьте журнал перед новой оплатой.');}},[storageKey]);
   async function submit(request:Pending) {
     setBusy(true);setError('');setNotice('');

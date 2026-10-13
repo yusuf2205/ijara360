@@ -7,6 +7,8 @@ import {Database} from './database';
 import {requireAccess} from './permission-policy';
 import {Tenant,TenantGuard,TenantModule,TenantRequest} from './tenant';
 import {NotificationsModule,NotificationsService} from './notifications';
+import {publish} from './realtime';
+const ticketEvent=(tx:Prisma.TransactionClient,p:string,type:string,id:string,residentId:string)=>publish(tx,{p,topic:'tickets',type,id,need:['TICKETS_VIEW','TICKETS_MANAGE'],residents:[residentId]});
 
 const categoryLabel:Record<string,string>={COMPLAINT:'Жалоба',SUGGESTION:'Предложение',REPAIR:'Поломка'};
 const snippet=(s:string)=>s.length>200?s.slice(0,199)+'…':s;
@@ -67,6 +69,7 @@ export class TicketsService{
       await tx.auditLog.create({data:{propertyId:t.propertyId,actorId:null,action:'TICKET_CREATED',entity:'Ticket',entityId:ticket.id,metadata:{category:dto.category}}});
       // Staff see what was written and where to go, never who wrote it.
       await this.notifications.staff(tx,t.propertyId,['TICKETS_VIEW','TICKETS_MANAGE'],{kind:'TICKET_CREATED',title:'Новое обращение',body:`${categoryLabel[dto.category]}: «${dto.title}»`,link:`/tickets/${ticket.id}`,entity:'Ticket',entityId:ticket.id});
+      await ticketEvent(tx,t.propertyId,'created',ticket.id,t.residentId);
       return this.mine(t,ticket.id,tx);
     });
   }
@@ -91,6 +94,7 @@ export class TicketsService{
       await tx.ticketMessage.create({data:{ticketId:id,authorType:'TENANT',body:dto.body}});
       await this.notifications.staff(tx,t.propertyId,['TICKETS_VIEW','TICKETS_MANAGE'],{kind:'TICKET_MESSAGE',title:'Новое сообщение в обращении',body:`«${ticket.title}»`,link:`/tickets/${id}`,entity:'Ticket',entityId:id});
       await tx.ticket.update({where:{id},data:{updatedAt:new Date()}});
+      await ticketEvent(tx,t.propertyId,'message',id,t.residentId);
       return this.mine(t,id,tx);
     });
   }
@@ -126,6 +130,7 @@ export class TicketsService{
       // The first answer takes an open ticket into work.
       await tx.ticket.update({where:{id},data:{updatedAt:new Date(),...(ticket.status==='OPEN'?{status:'IN_PROGRESS',version:{increment:1}}:{})}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_REPLIED',entity:'Ticket',entityId:id,metadata:{}}});
+      await ticketEvent(tx,actor.propertyId,'message',id,ticket.residentId);
       return this.detail(actor,id,tx);
     });
   }
@@ -139,6 +144,7 @@ export class TicketsService{
       const closed=!OPEN.includes(dto.status);
       await tx.ticket.update({where:{id},data:{status:dto.status,closedAt:closed?new Date():null,version:{increment:1}}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_STATUS_CHANGED',entity:'Ticket',entityId:id,metadata:{from:ticket.status,to:dto.status}}});
+      await ticketEvent(tx,actor.propertyId,'status',id,ticket.residentId);
       const told:Record<string,string>={IN_PROGRESS:'Обращение взято в работу',RESOLVED:'Обращение решено',REJECTED:'Обращение отклонено'};
       if(told[dto.status])await this.notifications.tenant(tx,ticket.residentId,{kind:'TICKET_STATUS',title:told[dto.status],body:`«${ticket.title}»`,link:`/app/tickets/${id}`,entity:'Ticket',entityId:id});
       return this.detail(actor,id,tx);
