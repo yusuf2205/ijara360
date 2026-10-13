@@ -53,6 +53,11 @@ model User {
   @@index([propertyId])
   @@map("users")
   notifications Notification[]
+  telegramUserId String? @unique @map("telegram_user_id") @db.VarChar(30)
+  telegramLinkedAt DateTime? @map("telegram_linked_at") @db.Timestamptz(3)
+  telegramLinks StaffTelegramLink[]
+  trustedDevices TrustedDevice[]
+  loginApprovals LoginApproval[]
 }
 
 model Session {
@@ -537,4 +542,46 @@ model NotificationDelivery {
   notification Notification @relation(fields:[notificationId],references:[id],onDelete:Restrict)
   @@index([notificationId])
   @@map("notification_deliveries")
+}
+
+// M5 staff access from the internet: Telegram linking, trusted devices and login approvals.
+model StaffTelegramLink {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+  telegramUserId String? @map("telegram_user_id") @db.VarChar(30)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId],references:[id],onDelete:Restrict)
+  @@index([userId])
+  @@index([telegramUserId])
+  @@map("staff_telegram_links")
+}
+model TrustedDevice {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+  label String @db.VarChar(120)
+  platform String @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId],references:[id],onDelete:Restrict)
+  @@index([userId])
+  @@map("trusted_devices")
+}
+model LoginApproval {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  pollTokenHash String @unique @map("poll_token_hash") @db.Char(64)
+  status String @default("PENDING") @db.VarChar(20)
+  platform String @db.VarChar(20)
+  deviceName String @map("device_name") @db.VarChar(120)
+  remembered Boolean @default(false)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields:[userId],references:[id],onDelete:Restrict)
+  @@index([userId])
+  @@map("login_approvals")
 }

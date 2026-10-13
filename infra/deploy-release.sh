@@ -30,13 +30,19 @@ docker exec -i ijara360-db-1 psql -X -q -t -A -v ON_ERROR_STOP=1 -U ijara_owner 
 diff -u "$record/before.txt" "$record/after.txt"
 # UGOS itself does not resolve MagicDNS; retain TLS hostname verification.
 curl --fail --silent --show-error --max-time 30 --resolve mynas.tail4bf75c.ts.net:8446:100.126.164.29 https://mynas.tail4bf75c.ts.net:8446/api/health
-# Public applicant surface (Funnel upstream): form and its API only, everything else 404.
-code() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "http://127.0.0.1:8448$1"; }
-test "$(code /apply)" = 200
-test "$(code /api/public/applications/config)" = 200
-for path in /login / /settings /api/health /api/auth/me /api/applications /api/events /api/telegram/webhook; do
-  test "$(code "$path")" = 404 || { echo "Public surface exposes $path" >&2; exit 1; }
+# Public surface (Funnel upstream): the whole site, with the bot webhook and health check closed,
+# and the internet marker set by Caddy whatever the client sends.
+code() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$@"; }
+for path in /apply /login /invite /api/public/applications/config /api/auth/setup-status; do
+  test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
 done
+for path in /api/health /api/telegram/webhook; do
+  test "$(code "http://127.0.0.1:8448$path")" = 404 || { echo "Public surface exposes $path" >&2; exit 1; }
+done
+test "$(code -X POST -H 'Content-Type: application/json' -H 'X-Ijara-Request: 1' -H 'X-Ijara-Channel: private' --data '{}' http://127.0.0.1:8448/api/telegram/webhook)" = 404
+# A client cannot pretend to be inside: the public listener always says internet, the tailnet one never does.
+curl --fail --silent --max-time 30 -H 'X-Ijara-Channel: private' http://127.0.0.1:8448/api/auth/channel | grep -q '"internet":true'
+curl --fail --silent --max-time 30 -H 'X-Ijara-Channel: public' http://127.0.0.1:8447/api/auth/channel | grep -q '"internet":false'
 printf '%s' "$revision" > "$root/DEPLOYED_COMMIT.new"
 mv "$root/DEPLOYED_COMMIT.new" "$root/DEPLOYED_COMMIT"
 docker compose --env-file "$secret" -f "$source/compose.yaml" ps

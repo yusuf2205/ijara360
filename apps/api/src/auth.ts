@@ -2,7 +2,9 @@ import { Body, CanActivate, ConflictException, Controller, Delete, ExecutionCont
 import { Role } from '@prisma/client';
 import { Request, Response } from 'express';
 import { Database } from './database';
-import { LoginDto, PasswordDto, SetupDto } from './dto';
+import { LoginApprovalDto, LoginDto, PasswordDto, SetupDto } from './dto';
+import { StaffTelegramService } from './staff-telegram';
+import { TelegramModule } from './telegram';
 import { digest, hashPassword, makeToken, normalizePhone, safeTokenEqual, verifyPassword } from './security';
 
 export type Actor = { id: string; propertyId: string; fullName: string; phone: string; role: Role };
@@ -29,7 +31,7 @@ export function deviceLabel(userAgent: string | undefined) {
 @Injectable()
 export class AuthService {
   private dummyHash = hashPassword(makeToken());
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database, private readonly staffTelegram: StaffTelegramService) {}
   async rateLimit(label: string, value: string, maximum: number) {
     const window = Math.floor(Date.now() / 900000);
     const key = digest(`${label}:${window}:${value}`);
@@ -61,25 +63,65 @@ export class AuthService {
       return { user, property };
     }, { timeout: 20000 });
   }
-  async login(dto: LoginDto, ip: string, userAgent?: string) {
+  /**
+   * From the internet (Funnel), an unknown device needs a Telegram confirmation before any session exists.
+   * From the LAN or the tailnet the password is enough, and the device becomes trusted for later internet use.
+   */
+  async login(dto: LoginDto, ip: string, userAgent: string | undefined, ctx: { publicChannel: boolean; deviceToken?: string }) {
     const phone = normalizePhone(dto.phone);
     await this.rateLimit('login-ip', ip, 40);
     await this.rateLimit('login-phone', phone, 10);
     const user = await this.db.user.findUnique({ where: { phone }, include: { property: true } });
     const valid = await verifyPassword(dto.password, user?.passwordHash || await this.dummyHash);
     if (!valid || !user?.active || !user.property.active) throw new UnauthorizedException('Неверный телефон или пароль.');
+    const device = { platform: dto.platform ?? 'WEB', deviceName: dto.deviceName || deviceLabel(userAgent), remembered: Boolean(dto.remember) };
+    const trusted = ctx.deviceToken ? await this.db.trustedDevice.findFirst({ where: { tokenHash: digest(ctx.deviceToken), userId: user.id } }) : null;
+    if (ctx.publicChannel && !trusted) {
+      if (!user.telegramUserId) throw new ForbiddenException('Вход из интернета с нового устройства подтверждается в Telegram. Войдите из дома (Wi-Fi или Tailscale) и привяжите Telegram в настройках.');
+      return { kind: 'approval' as const, approval: await this.staffTelegram.requestApproval({ id: user.id, propertyId: user.propertyId, telegramUserId: user.telegramUserId }, device) };
+    }
+    return this.issue(user, device, trusted?.id ?? null, { channel: ctx.publicChannel ? 'public' : 'private' });
+  }
+  /** The browser or app polls until the Telegram button is pressed; an approved request yields exactly one session. */
+  async completeApproval(dto: LoginApprovalDto, ctx: { deviceToken?: string }) {
+    await this.rateLimit('login-approval', dto.id, 200);
+    const a = await this.db.loginApproval.findUnique({ where: { id: dto.id }, include: { user: true } });
+    if (!a || !safeTokenEqual(digest(dto.pollToken), a.pollTokenHash)) throw new NotFoundException('Запрос на вход не найден.');
+    if (a.status === 'DENIED') throw new ForbiddenException('Вход отклонён в Telegram.');
+    if (a.status === 'USED' || (a.status === 'PENDING' && a.expiresAt <= new Date())) throw new HttpException('Время на подтверждение истекло. Войдите снова.', 410);
+    if (a.status === 'PENDING') return { kind: 'pending' as const };
+    const used = await this.db.loginApproval.updateMany({ where: { id: a.id, status: 'APPROVED' }, data: { status: 'USED' } });
+    if (!used.count || !a.user.active) throw new HttpException('Время на подтверждение истекло. Войдите снова.', 410);
+    const trusted = ctx.deviceToken ? await this.db.trustedDevice.findFirst({ where: { tokenHash: digest(ctx.deviceToken), userId: a.userId } }) : null;
+    return this.issue(a.user, { platform: a.platform, deviceName: a.deviceName, remembered: a.remembered }, trusted?.id ?? null, { channel: 'public', approved: true });
+  }
+  private async issue(user: { id: string; propertyId: string; fullName: string; phone: string; role: Role }, device: { platform: string; deviceName: string; remembered: boolean }, trustedId: string | null, meta: Record<string, string | boolean>) {
     const token = makeToken();
+    const deviceToken = trustedId ? null : makeToken();
     const now = new Date();
-    const remembered = Boolean(dto.remember);
-    const expiresAt = new Date(now.getTime() + (remembered ? 30 : 1) * DAY);
-    const platform = dto.platform ?? 'WEB';
-    const deviceName = dto.deviceName || deviceLabel(userAgent);
+    const expiresAt = new Date(now.getTime() + (device.remembered ? 30 : 1) * DAY);
     await this.db.$transaction(async tx => {
-      await tx.session.create({ data: { tokenHash: digest(token), userId: user.id, expiresAt, platform, deviceName, remembered, lastSeenAt: now } });
-      await tx.auditLog.create({ data: { propertyId: user.propertyId, actorId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id, metadata: { platform, deviceName, remembered } } });
+      await tx.session.create({ data: { tokenHash: digest(token), userId: user.id, expiresAt, platform: device.platform, deviceName: device.deviceName, remembered: device.remembered, lastSeenAt: now } });
+      if (trustedId) await tx.trustedDevice.update({ where: { id: trustedId }, data: { lastUsedAt: now } });
+      else {
+        await tx.trustedDevice.create({ data: { userId: user.id, tokenHash: digest(deviceToken!), label: device.deviceName, platform: device.platform } });
+        // Keep the 20 most recently used devices per person.
+        const stale = await tx.trustedDevice.findMany({ where: { userId: user.id }, orderBy: { lastUsedAt: 'desc' }, skip: 20, select: { id: true } });
+        if (stale.length) await tx.trustedDevice.deleteMany({ where: { id: { in: stale.map(d => d.id) } } });
+      }
+      await tx.auditLog.create({ data: { propertyId: user.propertyId, actorId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id, metadata: { platform: device.platform, deviceName: device.deviceName, remembered: device.remembered, newDevice: !trustedId, ...meta } } });
       await tx.session.deleteMany({ where: { expiresAt: { lt: now } } });
     });
-    return { token, expiresAt, platform, user: { id: user.id, propertyId: user.propertyId, fullName: user.fullName, phone: user.phone, role: user.role } };
+    return { kind: 'session' as const, token, deviceToken, expiresAt, platform: device.platform, user: { id: user.id, propertyId: user.propertyId, fullName: user.fullName, phone: user.phone, role: user.role } };
+  }
+  devices(actor: Actor) {
+    return this.db.trustedDevice.findMany({ where: { userId: actor.id }, select: { id: true, label: true, platform: true, createdAt: true, lastUsedAt: true }, orderBy: { lastUsedAt: 'desc' } });
+  }
+  async forgetDevice(actor: Actor, id: string) {
+    const gone = await this.db.trustedDevice.deleteMany({ where: { id, userId: actor.id } });
+    if (!gone.count) throw new NotFoundException('Устройство не найдено.');
+    await this.db.auditLog.create({ data: { propertyId: actor.propertyId, actorId: actor.id, action: 'TRUSTED_DEVICE_REMOVED', entity: 'User', entityId: actor.id, metadata: { deviceId: id } } });
+    return { removed: true };
   }
   async sessions(actor: Actor, currentId: string) {
     const rows = await this.db.session.findMany({ where: { userId: actor.id, expiresAt: { gt: new Date() } }, select: sessionSelect, orderBy: [{ lastSeenAt: 'desc' }, { createdAt: 'desc' }] });
@@ -123,20 +165,43 @@ export class SessionGuard implements CanActivate {
   }
 }
 
+/** Caddy marks requests from the public Funnel listener and overwrites any client value on every listener. */
+const fromInternet = (req: Request) => req.headers['x-ijara-channel'] === 'public';
+const deviceToken = (req: Request, fromBody?: string) => typeof req.cookies?.ijara_device === 'string' ? req.cookies.ijara_device as string : fromBody;
+const DEVICE_COOKIE = { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'strict' as const, path: '/api/auth', maxAge: 180 * DAY };
+function sessionResponse(r: { token: string; deviceToken: string | null; expiresAt: Date; platform: string; user: object }, res: Response) {
+  if (r.platform !== 'WEB') return { token: r.token, user: r.user, expiresAt: r.expiresAt, ...(r.deviceToken ? { deviceToken: r.deviceToken } : {}) };
+  res.cookie('ijara_session', r.token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'strict', path: '/', expires: r.expiresAt });
+  if (r.deviceToken) res.cookie('ijara_device', r.deviceToken, DEVICE_COOKIE);
+  return { user: r.user, expiresAt: r.expiresAt };
+}
+
 @Controller('auth')
 class AuthController {
-  constructor(private readonly auth: AuthService, private readonly db: Database) {}
+  constructor(private readonly auth: AuthService, private readonly db: Database, private readonly staffTelegram: StaffTelegramService) {}
+  /** Where this request came from, as Caddy marked it; the login page uses it to explain the Telegram step. */
+  @Get('channel') channel(@Req() req: Request) { return { internet: fromInternet(req) }; }
   @Get('setup-status') async status() { return { configured: (await this.db.property.count()) > 0 }; }
   @Post('setup') setup(@Body() dto: SetupDto, @Headers('x-setup-token') token: string, @Req() req: Request) {
     return this.auth.setup(dto, token, req.ip || 'unknown');
   }
   @Post('login') @HttpCode(200)
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const result = await this.auth.login(dto, req.ip || 'unknown', req.headers['user-agent']);
-    if (result.platform !== 'WEB') return { token: result.token, user: result.user, expiresAt: result.expiresAt };
-    res.cookie('ijara_session', result.token, { httpOnly: true, secure: process.env.COOKIE_SECURE !== 'false', sameSite: 'strict', path: '/', expires: result.expiresAt });
-    return { user: result.user, expiresAt: result.expiresAt };
+    const result = await this.auth.login(dto, req.ip || 'unknown', req.headers['user-agent'], { publicChannel: fromInternet(req), deviceToken: deviceToken(req, dto.deviceToken) });
+    if (result.kind === 'approval') { res.status(202); return { approval: result.approval }; }
+    return sessionResponse(result, res);
   }
+  @Post('login/approval') @HttpCode(200)
+  async approval(@Body() dto: LoginApprovalDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.auth.completeApproval(dto, { deviceToken: deviceToken(req, dto.deviceToken) });
+    if (result.kind === 'pending') { res.status(202); return { status: 'PENDING' }; }
+    return sessionResponse(result, res);
+  }
+  @Get('devices') @UseGuards(SessionGuard) devices(@Req() req: AuthRequest) { return this.auth.devices(req.actor); }
+  @Delete('devices/:id') @UseGuards(SessionGuard) forget(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) { return this.auth.forgetDevice(req.actor, id); }
+  @Get('telegram') @UseGuards(SessionGuard) telegramStatus(@Req() req: AuthRequest) { return this.staffTelegram.status(req.actor.id); }
+  @Post('telegram/link') @UseGuards(SessionGuard) async telegramLink(@Req() req: AuthRequest) { await this.auth.rateLimit('telegram-link', req.actor.id, 10); return this.staffTelegram.createLink(req.actor.id); }
+  @Delete('telegram') @UseGuards(SessionGuard) telegramUnlink(@Req() req: AuthRequest) { return this.staffTelegram.unlink(req.actor.id, req.actor.propertyId); }
   @Get('me') @UseGuards(SessionGuard) me(@Req() req: AuthRequest) { return req.actor; }
   @Get('sessions') @UseGuards(SessionGuard) sessions(@Req() req: AuthRequest) { return this.auth.sessions(req.actor, req.sessionId); }
   @Get('staff-sessions') @UseGuards(SessionGuard) staffSessions(@Req() req: AuthRequest) { return this.auth.staffSessions(req.actor, req.sessionId); }
@@ -157,10 +222,12 @@ class AuthController {
       const changed = await tx.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash, active: true }, data: { passwordHash } });
       if (!changed.count) throw new ConflictException('Учётная запись изменилась. Войдите повторно.');
       await tx.session.deleteMany({ where: { userId: user.id } });
+      // A new password also forgets trusted devices: the next internet login needs Telegram again.
+      await tx.trustedDevice.deleteMany({ where: { userId: user.id } });
       await tx.auditLog.create({ data: { propertyId: user.propertyId, actorId: user.id, action: 'PASSWORD_CHANGED', entity: 'User', entityId: user.id, metadata: {} } });
     });
   }
 }
 
-@Module({ providers: [AuthService, SessionGuard], controllers: [AuthController], exports: [SessionGuard, AuthService] })
+@Module({ imports: [TelegramModule], providers: [AuthService, SessionGuard, StaffTelegramService], controllers: [AuthController], exports: [SessionGuard, AuthService, StaffTelegramService] })
 export class AuthModule {}

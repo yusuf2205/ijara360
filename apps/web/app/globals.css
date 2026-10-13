@@ -146,3 +146,10 @@ label.remember-device small{margin-top:2px}
 .notice-row time{font-size:11px;color:var(--muted);white-space:nowrap}
 .unread-dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex:none}
 @media(max-width:700px){.notice-row{align-items:flex-start}.notice-row time{display:none}.bell{width:36px;height:36px}}
+
+/* M5 internet access */
+.approval-wait{display:grid;gap:12px;justify-items:start;padding:8px 0}
+.approval-wait h3{font-size:20px}.approval-wait p{color:var(--muted);font-size:13px;line-height:1.7}
+.approval-icon{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;background:var(--green-soft);color:var(--green)}
+.internet-hint{display:flex;gap:8px;align-items:flex-start;margin:0 0 14px}
+.telegram-panel .button{margin-top:6px}

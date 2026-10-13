@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested, IsUUID } from 'class-validator';
 
 export class LoginDto {
   @IsString() @Length(8, 30) phone!: string;
@@ -10,6 +10,8 @@ export class LoginDto {
   @IsOptional() @IsIn(['WEB','ANDROID','IOS','WINDOWS']) platform?: 'WEB'|'ANDROID'|'IOS'|'WINDOWS';
   @IsOptional() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 120) deviceName?: string;
+  // Apps send back the device token they received after their first login; browsers keep it in a cookie.
+  @IsOptional() @IsString() @Length(32, 100) deviceToken?: string;
 }
 export class RoomDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toUpperCase() : value)
@@ -55,4 +57,10 @@ export class PropertyDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 120) name!: string;
   @IsOptional() @IsString() @Length(0, 500) address?: string;
+}
+
+export class LoginApprovalDto {
+  @IsUUID('4') id!: string;
+  @IsString() @Length(32, 100) pollToken!: string;
+  @IsOptional() @IsString() @Length(32, 100) deviceToken?: string;
 }

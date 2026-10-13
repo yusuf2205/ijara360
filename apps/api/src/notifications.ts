@@ -47,11 +47,15 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
     if(a.telegramUserId)await tx.notificationDelivery.create({data:{notificationId:n.id,chatId:a.telegramUserId}});
     await publish(tx,{p:a.propertyId,topic:'notifications',type:'created',residents:[residentId],staff:false});
   }
-  /** To every active staff member who may use any of the given functions (owners always). Feed only until staff link Telegram. */
+  /** To every active staff member who may use any of the given functions (owners always). */
   async staff(tx:Tx,propertyId:string,any:PermissionCode[],m:Message){
-    const users=await tx.user.findMany({where:{propertyId,active:true,OR:[{role:{in:['OWNER','SUPER_ADMIN']}},{permissions:{some:{permissionCode:{in:any}}}}]},select:{id:true}});
+    const users=await tx.user.findMany({where:{propertyId,active:true,OR:[{role:{in:['OWNER','SUPER_ADMIN']}},{permissions:{some:{permissionCode:{in:any}}}}]},select:{id:true,telegramUserId:true}});
     if(!users.length)return;
-    await tx.notification.createMany({data:users.map(u=>({propertyId,userId:u.id,...m}))});
+    // Staff who linked Telegram in settings also get a copy there.
+    for(const u of users){
+      const n=await tx.notification.create({data:{propertyId,userId:u.id,...m}});
+      if(u.telegramUserId)await tx.notificationDelivery.create({data:{notificationId:n.id,chatId:u.telegramUserId}});
+    }
     await publish(tx,{p:propertyId,topic:'notifications',type:'created',users:users.map(u=>u.id)});
   }
 

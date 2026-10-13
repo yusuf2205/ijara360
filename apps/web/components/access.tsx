@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Building2, ShieldCheck, Check, BedDouble } from 'lucide-react';
+import { ArrowRight, Building2, ShieldCheck, Check, BedDouble, Send } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function Access() {
@@ -19,6 +19,26 @@ export default function Access() {
   const [address, setAddress] = useState('');
   const [rooms, setRooms] = useState(7);
   const [beds, setBeds] = useState(8);
+  const [internet, setInternet] = useState(false);
+  const [approval, setApproval] = useState<{ id: string; pollToken: string; expiresAt: string } | null>(null);
+  const [left, setLeft] = useState(0);
+  useEffect(() => { api<{ internet: boolean }>('/auth/channel').then(r => setInternet(r.internet)).catch(() => undefined); }, []);
+  // While a Telegram confirmation is pending, ask the server every two seconds; the session exists only after the button.
+  useEffect(() => {
+    if (!approval) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      setLeft(Math.max(0, Math.round((new Date(approval.expiresAt).getTime() - Date.now()) / 1000)));
+      try {
+        const r = await api<{ status?: string }>('/auth/login/approval', { method: 'POST', body: JSON.stringify({ id: approval.id, pollToken: approval.pollToken }) });
+        if (r.status !== 'PENDING') { stopped = true; router.replace('/'); return; }
+      } catch (e) { stopped = true; setApproval(null); setError((e as Error).message); return; }
+      if (!stopped) setTimeout(() => void tick(), 2000);
+    };
+    void tick();
+    return () => { stopped = true; };
+  }, [approval, router]);
   const check = () => api<{configured: boolean}>('/auth/setup-status').then(r => { setConfigured(r.configured); setError(''); }).catch(e => setError(e.message));
   useEffect(() => { void check(); }, []);
   async function submit(event: FormEvent) {
@@ -32,7 +52,8 @@ export default function Access() {
         // Setup is committed already. A failed login must not retry setup.
         setConfigured(true);
       }
-      await api('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember }) });
+      const r = await api<{ approval?: { id: string; pollToken: string; expiresAt: string } }>('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember }) });
+      if (r.approval) { setApproval(r.approval); return; }
       router.replace('/');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
@@ -51,7 +72,13 @@ export default function Access() {
         <span className="eyebrow">{configured ? 'С ВОЗВРАЩЕНИЕМ' : 'НАЧНЁМ С ОСНОВНОГО'}</span>
         <h2>{configured ? 'Войти в свой дом' : 'Настроить Ijara360'}</h2>
         <p className="muted">{configured ? 'Укажите телефон и пароль вашей учётной записи.' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>
-        {configured === null ? <div className="notice">{error || 'Подключаемся к серверу…'}{error && <button className="button secondary" onClick={check}>Повторить</button>}</div> :
+        {approval ? <div className="approval-wait" role="status">
+          <div className="approval-icon"><Send size={26}/></div>
+          <h3>Подтвердите вход в Telegram</h3>
+          <p>Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я», и вход продолжится сам.</p>
+          <p className="form-hint">Ждём ещё {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}. Если сообщения нет, проверьте, что Telegram привязан в настройках кабинета.</p>
+          <button className="button secondary wide" type="button" onClick={() => setApproval(null)}>Отмена</button>
+        </div> : configured === null ? <div className="notice">{error || 'Подключаемся к серверу…'}{error && <button className="button secondary" onClick={check}>Повторить</button>}</div> :
         <form onSubmit={submit}>
           {!configured && <div className="steps"><span className={step === 1 ? 'current' : ''}>1. Владелец</span><span className={step === 2 ? 'current' : ''}>2. Дом и комнаты</span></div>}
           {(configured || step === 1) ? <>
@@ -66,6 +93,7 @@ export default function Access() {
             <div className="form-grid"><label>Количество комнат<input type="number" value={rooms} min={1} max={30} required onChange={e => setRooms(Number(e.target.value))}/></label><label>Мест в каждой<input type="number" value={beds} min={1} max={100} required onChange={e => setBeds(Number(e.target.value))}/></label></div>
             <div className="notice">Будет создано {rooms} комнат и {rooms * beds} свободных мест. Настройки отдельных комнат можно изменить позже.</div>
           </>}
+          {configured && internet && <p className="form-hint internet-hint"><ShieldCheck size={15}/>Вход через интернет: с нового устройства нужно будет подтвердить вход в Telegram.</p>}
           {error && <div className="error" role="alert">{error}</div>}
           <button className="button primary wide" disabled={busy}>{busy ? 'Сохраняем…' : configured ? 'Войти' : step === 1 ? 'Продолжить' : 'Создать дом'}<ArrowRight size={18}/></button>
           {!configured && step === 2 && <button className="button text wide" type="button" onClick={() => setStep(1)}>Назад</button>}

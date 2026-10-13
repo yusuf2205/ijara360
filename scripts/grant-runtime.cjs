@@ -28,6 +28,9 @@ async function grantRuntime(db) {
   await db.$executeRawUnsafe('GRANT SELECT,INSERT ON ticket_messages TO ijara_app');
   // M5 notifications: marked read, never deleted by the app; the outbox updates delivery state.
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON notifications,notification_deliveries TO ijara_app');
+  // M5 staff internet access: links and approvals are consumed or decided; trusted devices can be removed.
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON staff_telegram_links,login_approvals TO ijara_app');
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON trusted_devices TO ijara_app');
    console.log('Runtime database privileges applied.');
 }
 module.exports = { grantRuntime };

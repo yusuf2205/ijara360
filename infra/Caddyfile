@@ -19,6 +19,8 @@
     }
 }
 (application) {
+    # Private listeners (LAN, tailnet): overwrite whatever the client sent.
+    request_header X-Ijara-Channel private
     encode zstd gzip
     handle /api/* {
         reverse_proxy api:4000
@@ -36,20 +38,23 @@ https://192.168.1.105 {
 http://:8080 {
     import application
 }
-# Public applicant surface, only published on NAS loopback behind Tailscale Funnel HTTPS.
-# Exposes the application form and its API; staff pages, staff API and events are 404.
+# Public surface, only published on NAS loopback behind Tailscale Funnel HTTPS (internet).
+# Serves the whole site; the API learns the request came from the internet and asks staff on a new
+# device to confirm the login in Telegram. The bot webhook and health check stay private.
 http://:8081 {
+    request_header X-Ijara-Channel public
     encode zstd gzip
-    @applicantApi path /api/public/applications /api/public/applications/* /api/tenant/*
-    handle @applicantApi {
+    handle /api/telegram/* {
+        respond "Not found" 404
+    }
+    handle /api/health {
+        respond "Not found" 404
+    }
+    handle /api/* {
         reverse_proxy api:4000
     }
-    @applicantWeb path /apply /invite /_next/static/*
-    handle @applicantWeb {
-        reverse_proxy web:3000
-    }
     handle {
-        respond "Not found" 404
+        reverse_proxy web:3000
     }
     import security_headers
     header Strict-Transport-Security "max-age=31536000"
