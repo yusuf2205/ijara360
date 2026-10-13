@@ -25,3 +25,4 @@ dist/
 test-results/
 playwright-report/
 coverage/
+apps/web/public/app/

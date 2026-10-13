@@ -11,6 +11,8 @@ test -f "$root/releases/$revision/COMPLETE"
 test -f "$secret"
 cd "$root/releases/$revision"
 sha256sum -c manifest.sha256
+# The Flutter web app shipped with the release must be built from this very commit.
+test "$(cat "$source/apps/web/public/app/COMMIT")" = "$revision"
 mkdir -p "$root/deployments"
 chmod 700 "$root/deployments"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
@@ -34,6 +36,9 @@ curl --fail --silent --show-error --max-time 30 --resolve mynas.tail4bf75c.ts.ne
 # and the internet marker set by Caddy whatever the client sends.
 code() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$@"; }
 for path in /apply /login /invite /api/public/applications/config /api/auth/setup-status; do
+  test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
+done
+for path in /app /app/main.dart.js; do
   test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
 done
 for path in /api/health /api/telegram/webhook; do

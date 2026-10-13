@@ -18,6 +18,8 @@ RUN npm run build -w @ijara360/api
 CMD ["node", "apps/api/dist/main.js"]
 
 FROM base AS web
+# apps/web/public/app is the Flutter web build shipped with the release (scripts/Publish-Project.ps1).
+RUN test -f apps/web/public/app/index.html
 RUN npm run build -w @ijara360/web
 RUN chown -R node:node /app/apps/web/.next
 CMD ["node", "node_modules/next/dist/bin/next", "start", "apps/web", "-p", "3000"]

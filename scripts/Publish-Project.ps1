@@ -24,13 +24,20 @@ New-Item -ItemType Directory -Force -Path $transferDir | Out-Null
 $archive = Join-Path $transferDir 'source.tar'
 $bundle = Join-Path $transferDir 'repository.bundle'
 $manifest = Join-Path $transferDir 'manifest.sha256'
+$appArchive = Join-Path $transferDir 'mobile-web.tar'
 Invoke-Git -GitArgs @('archive', '--format=tar', "--output=$archive", $revision) | Out-Null
+# The Flutter web app is built here (the NAS has no Flutter SDK) and travels with the release.
+& (Join-Path $PSScriptRoot 'Build-MobileWeb.ps1') -Revision $revision
+if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw 'Flutter web build failed.' }
+& tar -cf $appArchive -C (Join-Path $projectRoot 'apps/web/public') app
+if ($LASTEXITCODE -ne 0) { throw 'Cannot pack the Flutter web build.' }
 Invoke-Git -GitArgs @('bundle', 'create', $bundle, 'main') | Out-Null
 Invoke-Git -GitArgs @('bundle', 'verify', $bundle) | Out-Null
 $archiveHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 $bundleHash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+$appHash = (Get-FileHash -LiteralPath $appArchive -Algorithm SHA256).Hash.ToLowerInvariant()
 $utf8 = New-Object System.Text.UTF8Encoding($false)
-[IO.File]::WriteAllText($manifest, "$archiveHash  source.tar`n$bundleHash  repository.bundle`n", $utf8)
+[IO.File]::WriteAllText($manifest, "$archiveHash  source.tar`n$bundleHash  repository.bundle`n$appHash  mobile-web.tar`n", $utf8)
 
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $remotes = @('github')
@@ -60,9 +67,9 @@ try {
         & ssh @sshOptions $nasTarget "set -eu; mkdir -p /volume1/docker/ijara360/releases; mkdir $release; mkdir $release/source"
         if ($LASTEXITCODE -ne 0) { throw 'Cannot create new NAS release directory.' }
         # UGOS SFTP exposes a different root; legacy SCP uses the verified SSH path.
-        & scp -O @sshOptions $archive $bundle $manifest "${nasTarget}:${release}/"
+        & scp -O @sshOptions $archive $bundle $appArchive $manifest "${nasTarget}:${release}/"
         if ($LASTEXITCODE -ne 0) { throw 'NAS transfer failed; incomplete directory retained for inspection.' }
-        & ssh @sshOptions $nasTarget "set -eu; cd $release; sha256sum -c manifest.sha256; tar -xf source.tar -C source; touch COMPLETE"
+        & ssh @sshOptions $nasTarget "set -eu; cd $release; sha256sum -c manifest.sha256; tar -xf source.tar -C source; tar -xf mobile-web.tar -C source/apps/web/public; test \"\$(cat source/apps/web/public/app/COMMIT)\" = $revision; touch COMPLETE"
         if ($LASTEXITCODE -ne 0) { throw 'NAS checksum or extraction failed.' }
     } elseif ($state -ne 'existing') {
         throw 'Unexpected NAS response.'

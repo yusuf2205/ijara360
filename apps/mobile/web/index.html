@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Ijara360: жильцам — оплаты и обращения, сотрудникам — весь дом. На телефоне, планшете и компьютере.">
+  <meta name="theme-color" content="#111111">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Ijara360">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="manifest" href="manifest.json">
+  <title>Ijara360</title>
+  <style>
+    html,body{margin:0;height:100%;background:#111111}
+    /* Shown until the app paints its first frame: logo and a thin yellow progress line. */
+    #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:#111111;transition:opacity .25s}
+    #splash img{width:96px;height:96px;border-radius:24px}
+    #splash i{display:block;width:120px;height:4px;border-radius:4px;background:#2a2a2d;overflow:hidden;position:relative}
+    #splash i::after{content:'';position:absolute;inset:0;width:40%;background:#FEC123;border-radius:4px;animation:go 1.1s ease-in-out infinite}
+    @keyframes go{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+    @media (prefers-reduced-motion:reduce){#splash i::after{animation:none;width:100%}}
+  </style>
+</head>
+<body>
+  <div id="splash" aria-label="Ijara360 загружается" role="status"><img src="icons/Icon-192.png" alt=""><i></i></div>
+  <script>
+    // Remove the splash once Flutter shows its first frame.
+    window.addEventListener('flutter-first-frame', function () { var s = document.getElementById('splash'); if (s) { s.style.opacity = '0'; setTimeout(function () { s.remove(); }, 300); } });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
