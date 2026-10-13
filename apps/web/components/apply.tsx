@@ -1,4 +1,5 @@
 'use client';
+import { Logo } from './brand';
 import {useEffect,useRef,useState} from 'react';
 import {api,ApiError} from '../lib/api';
 
@@ -32,7 +33,7 @@ export default function Apply(){
   function input(key:string,label:string,type='text',maxLength=160){return <label>{label}<input type={type} maxLength={maxLength} value={String(profile[key]||'')} onChange={e=>change(key,e.target.value)} disabled={busy}/></label>;}
   async function upload(kind:string,file:File|undefined){if(!file)return;await work(async()=>{await persist();if(file.size>8*1024*1024)throw Error('Максимальный размер — 8 МБ.');const response=await fetch(`/api/public/applications/documents/${kind}`,{method:'PUT',headers:{'Content-Type':file.type,'X-Ijara-Request':'1'},body:file,credentials:'same-origin'});if(!response.ok){const d=await response.json();throw Error(d.message||'Не удалось загрузить документ.');}await load();});}
   function file(kind:string,label:string){const doc=app?.documents.find(d=>d.kind===kind);return <section className="application-file"><label>{label}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy||!app?.phoneVerified} onChange={e=>void upload(kind,e.target.files?.[0])}/></label>{doc&&<><p>Загружено</p><img alt={label} src={`/api/public/applications/documents/${kind}?v=${app?.version}`}/></>}</section>;}
-  return <main className="apply-shell"><header><a className="apply-brand" href="/apply">ijara360</a><span>{config?.propertyName||'Анкета арендатора'}</span></header><section className="apply-card">
+  return <main className="apply-shell"><header><a className="apply-brand" href="/apply" aria-label="ijara360"><Logo size={28}/></a><span>{config?.propertyName||'Анкета арендатора'}</span></header><section className="apply-card">
     <h1>Заявка на проживание</h1>{error&&<div className="error" role="alert">{error}</div>}
     {!loaded?<p>Загружаем анкету…</p>:!app?<><p>Заполните анкету и отправьте документы администрации. Заселение оформляется после рассмотрения.</p>{!config?.enabled?<p>Приём заявок пока не настроен. Обратитесь к администрации.</p>:<form onSubmit={e=>{e.preventDefault();void work(async()=>{await api('/public/applications',{method:'POST',body:JSON.stringify({phone,channel:new URLSearchParams(window.location.search).get('channel')==='TELEGRAM'?'TELEGRAM':'WEB'})});await load();});}}><label>Ваш телефон<input type="tel" required value={phone} maxLength={30} onChange={e=>setPhone(e.target.value)} placeholder="+998 90 123 45 67"/></label><p className="form-hint">Используйте номер, привязанный к вашему Telegram. Черновик будет доступен в этом браузере 30 дней.</p><button className="button primary" disabled={busy}>Начать анкету</button></form>}</>:<>
       <p className="status-pill">{statuses[app.status]}</p>

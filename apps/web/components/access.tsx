@@ -1,4 +1,5 @@
 'use client';
+import { Logo, LogoMark } from './brand';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Building2, ShieldCheck, Check, BedDouble, Send } from 'lucide-react';
@@ -59,16 +60,16 @@ export default function Access() {
   }
   return <main className="access-page">
     <section className="access-story">
-      <div className="brand light"><span className="brand-mark"><Building2 size={24} /></span>ijara<span>360</span></div>
+      <div className="brand light"><Logo size={40} light/></div>
       <div><span className="eyebrow light">ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.</span><h1>Меньше записей.<br />Больше порядка.</h1><p>Один понятный инструмент для управления студенческим домом.</p>
         <div className="story-rooms" aria-hidden="true">{[1,2,3].map(n => <div key={n}><Building2 size={23}/><strong>Комната {n}</strong><div>{[1,2,3,4].map(b => <BedDouble size={20} key={b}/>)}</div><span><Check size={13}/> Всё под контролем</span></div>)}</div>
       </div>
       <span className="story-foot"><ShieldCheck size={17}/> Данные хранятся на вашем сервере</span>
     </section>
     <section className="access-form-area">
-      <div className="access-mobile-brand brand"><Building2/> ijara360</div>
+      <div className="access-mobile-brand brand"><Logo size={36}/></div>
       <div className="access-card">
-        <div className="access-icon"><Building2 size={27}/></div>
+        <div className="access-icon"><LogoMark size={34}/></div>
         <span className="eyebrow">{configured ? 'С ВОЗВРАЩЕНИЕМ' : 'НАЧНЁМ С ОСНОВНОГО'}</span>
         <h2>{configured ? 'Войти в свой дом' : 'Настроить Ijara360'}</h2>
         <p className="muted">{configured ? 'Укажите телефон и пароль вашей учётной записи.' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>

@@ -153,3 +153,73 @@ label.remember-device small{margin-top:2px}
 .approval-icon{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;background:var(--green-soft);color:var(--green)}
 .internet-hint{display:flex;gap:8px;align-items:flex-start;margin:0 0 14px}
 .telegram-panel .button{margin-top:6px}
+
+/* Brand v3 (owner logo and palette, 2026-10-14): yellow #FEC123 is the accent and is only used as a fill
+   with ink text on it; text and outlines stay ink or gray so contrast holds. Semantic red/orange/green stay. */
+:root{--ink:#111111;--brand:#FEC123;--brand-dark:#E9AC0C;--brand-soft:#FFF5D6;--bg:#F7F7F8;--surface-2:#F1F1F3;--line:#E6E6E9;--line-strong:#D1D1D4;--muted:#7A7A80;
+  --green:#111111;--green-dark:#000000;--green-soft:#F1F1F3;--nav:#111111;--nav-ink:#B9B9BE;--nav-active:#FEC123;--violet:#111111;--violet-soft:#F1F1F3}
+body{background:var(--bg);color:var(--ink)}
+::selection{background:var(--brand-soft)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px;box-shadow:0 0 0 5px var(--brand)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ink);border-color:transparent}
+input,select,textarea{border-color:var(--line-strong)}
+.button.primary,.primary{background:var(--brand);border-color:var(--brand);color:var(--ink);box-shadow:none}
+.button.primary:hover,.primary:hover{background:var(--brand-dark);border-color:var(--brand-dark)}
+.button.secondary,.secondary{background:#fff;border-color:var(--line-strong);color:var(--ink)}
+.button.secondary:hover,.secondary:hover{background:var(--surface-2)}
+.heading-kicker,.eyebrow{color:var(--muted)}
+.inline-link,.card>h2 a,.button.text{color:var(--ink);text-decoration:underline;text-decoration-color:var(--brand);text-decoration-thickness:2px;text-underline-offset:4px}
+.avatar{background:var(--brand);color:var(--ink);border-color:#fff}
+/* logo */
+.logo{display:inline-flex;align-items:flex-end;gap:0;font-weight:800;letter-spacing:-.04em;line-height:1;color:var(--ink)}
+.logo-light{color:#fff}
+.logo-mark{flex:none}
+.logo-word{display:inline-flex;align-items:baseline;margin-left:-.12em;margin-bottom:.06em}
+.logo-o{display:inline-block;width:.62em;height:.62em;border-radius:50%;border:.15em solid currentColor;background:radial-gradient(circle,var(--brand) 0 32%,transparent 34%);margin-left:.04em;box-sizing:border-box}
+.brand{gap:0}.brand .brand-mark{display:none}
+.mobile-logo{display:none;line-height:0}
+/* sidebar */
+.sidebar{background:var(--nav)}
+.property-switch{border-color:#ffffff1f;background:#ffffff0a}.property-icon{background:#ffffff14;color:#d9d9dc}
+.sidebar nav a,.settings-link{color:var(--nav-ink)}
+.sidebar nav a:hover,.settings-link:hover{background:#1f1f22;color:#fff}
+.sidebar nav a.active,.settings-link.active{background:var(--brand);color:var(--ink)}
+.nav-count{background:var(--brand);color:var(--ink)}
+.sidebar nav a.active .nav-count{background:var(--ink);color:#fff}
+.sidebar-user .avatar{border-color:var(--nav)}
+/* chips, cards and charts */
+.c-blue{background:var(--brand-soft);color:var(--ink)}
+.c-violet,.c-gray{background:var(--surface-2);color:var(--ink)}
+.ring-track{stroke:var(--surface-2)}.ring-value{stroke:var(--brand)}
+.legend .sw.busy{background:var(--brand)}.legend .sw.free{background:var(--surface-2)}.sw.space{background:var(--line-strong)}
+.sw.free{background:var(--ok)}
+.plan-tile.free{background:var(--ok-soft);color:var(--ok)}
+.plan-tile.empty{background:var(--surface-2);color:var(--muted)}
+.kpi:hover{box-shadow:0 0 0 2px var(--brand),var(--shadow)}
+.bell.active{border-color:var(--ink);color:var(--ink)}
+.bell-count{background:var(--brand);color:var(--ink);border-color:#fff}
+.unread-dot{background:var(--brand);box-shadow:0 0 0 1px var(--ink)}
+.notice-row.unread{box-shadow:inset 3px 0 0 var(--brand),var(--shadow)}
+.status-pill{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.mobile-nav a.active,.more-toggle.active{color:var(--ink)}
+.mobile-nav a.active svg{fill:var(--brand)}
+.mobile-more a.active{background:var(--brand-soft);color:var(--ink)}
+.dot{background:var(--ok)}
+.bed-add{border-color:var(--line-strong);background:var(--surface-2);color:var(--ink)}
+.empty{border-color:var(--line-strong);background:#fff;color:var(--muted)}
+.notice{background:var(--brand-soft);border-color:#F6DE9A;color:var(--ink)}
+.approval-icon{background:var(--brand);color:var(--ink)}
+/* login story panel */
+.access-story{background:var(--nav)}
+.eyebrow.light{color:var(--brand)}
+.story-rooms>div{border-color:#ffffff22;background:#ffffff08}
+.story-rooms>div>div{color:var(--brand)}
+.story-foot{color:#B9B9BE}
+.access-icon{background:var(--brand-soft);border-color:#F6DE9A}
+.access-mobile-brand{color:var(--ink)}
+.apply-brand{display:inline-flex;line-height:0}
+.brand>span.logo,.brand.light>span.logo{color:var(--ink)}
+.brand>span.logo-light,.brand.light>span.logo-light{color:#fff}
+.logo .logo-word{color:var(--ink)}.logo.logo-light .logo-word{color:#fff}
+.property-switch small,.sidebar-user small{color:#B9B9BE}
+@media(max-width:700px){.mobile-logo{display:inline-flex}}

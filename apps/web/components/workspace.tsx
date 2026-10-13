@@ -1,4 +1,5 @@
 'use client';
+import { Logo, LogoMark } from './brand';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -126,7 +127,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   const filtered = (view === 'rooms' && showArchive ? allRooms.filter(r=>r.archivedAt) : rooms).filter(r => (!capacityOnly || r.totalBeds < r.capacity) && r.number.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   return <div className="app-shell">
     <aside className="sidebar">
-      <Link href="/" className="brand"><span className="brand-mark"><Building2 size={23}/></span>ijara<span>360</span></Link>
+      <Link href="/" className="brand" aria-label="ijara360 — главная"><Logo size={36} light/></Link>
       <div className="property-switch"><span className="property-icon"><Building2 size={19}/></span><div><strong>{property?.name || 'Ваш дом'}</strong><small>Управление объектом</small></div></div>
       <span className="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</span>
       <nav aria-label="Основная навигация">
@@ -144,7 +145,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
       </div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><div><Building2 className="mobile-logo" size={22}/><span>Мой дом</span><ChevronRight size={14}/><strong>{titles[view]}</strong></div><div className="topbar-right"><div className="connection"><span className={error ? 'dot warning' : 'dot'}/>{error ? 'Нет актуальных данных' : !loaded ? 'Подключение…' : live ? 'Обновляется сразу' : 'Сервер подключён'}</div><Link href="/notifications" className={`bell ${view==='notifications'?'active':''}`} aria-label={unread ? `Уведомления: ${unread} новых` : 'Уведомления'}><Bell size={20}/>{unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}</Link></div></header>
+      <header className="topbar"><div><span className="mobile-logo"><LogoMark size={26}/></span><span>Мой дом</span><ChevronRight size={14}/><strong>{titles[view]}</strong></div><div className="topbar-right"><div className="connection"><span className={error ? 'dot warning' : 'dot'}/>{error ? 'Нет актуальных данных' : !loaded ? 'Подключение…' : live ? 'Обновляется сразу' : 'Сервер подключён'}</div><Link href="/notifications" className={`bell ${view==='notifications'?'active':''}`} aria-label={unread ? `Уведомления: ${unread} новых` : 'Уведомления'}><Bell size={20}/>{unread > 0 && <span className="bell-count">{unread > 99 ? '99+' : unread}</span>}</Link></div></header>
       <main className="main-content" id="main">
         {error && <div className="error global-error" role="alert">{error}<button className="button secondary" onClick={refresh}>Повторить</button></div>}
         {!loaded ? <div className="loading" role="status"><div className="skeleton title"/><div className="skeleton stats"/><div className="skeleton content"/>{!error && <span>Загружаем ваш дом…</span>}</div> : <>

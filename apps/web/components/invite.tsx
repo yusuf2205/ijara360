@@ -1,4 +1,5 @@
 'use client';
+import { Logo } from './brand';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 
@@ -28,7 +29,7 @@ export default function Invite() {
     try { setDone((await api<{ phone: string }>('/tenant/invites/accept', { method: 'POST', body: JSON.stringify({ token, password }) })).phone); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <main className="apply-shell"><header><span className="apply-brand">ijara360</span><span>{info?.propertyName || 'Приложение жильца'}</span></header>
+  return <main className="apply-shell"><header><span className="apply-brand"><Logo size={28}/></span><span>{info?.propertyName || 'Приложение жильца'}</span></header>
     <section className="apply-card">
       <h1>{done ? 'Пароль задан' : info ? `${info.firstName}, задайте пароль` : 'Приложение жильца'}</h1>
       {error && <div className="error" role="alert">{error}</div>}
