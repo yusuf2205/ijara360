@@ -140,3 +140,11 @@ test('approved-today filter keeps converted approvals and ignores other statuses
  const today=await list('status=APPROVED&today=1');assert.equal(today.total,1);assert.equal(today.approvedToday,1);assert.equal(today.items[0].status,'CONVERTED_TO_RESIDENT');
  assert.equal((await list('status=SUBMITTED&today=1')).total,0);
 });
+
+test('a submitted application notifies staff who may view applications, without the applicant data',async()=>{
+ const {a}=await submitted();
+ const feed=(await send(owner,'get','/notifications').expect(200)).body;
+ assert.equal(feed.items[0].title,'Новая заявка на проживание');assert.equal(feed.items[0].link,`/applications/${a.id}`);
+ const text=JSON.stringify(feed);for(const pii of ['Test Applicant','900000022','12345678901234','1234567'])assert.ok(!text.includes(pii),'no applicant data in notifications');
+ const {agent:viewer}=await admin(['APPLICATION_VIEW']);assert.equal((await send(viewer,'get','/notifications').expect(200)).body.total,0,'only staff who existed at submit time are notified');
+});

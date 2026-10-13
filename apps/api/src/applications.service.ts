@@ -1,4 +1,5 @@
 import {ConflictException,ForbiddenException,Injectable,NotFoundException,ServiceUnavailableException,UnauthorizedException,UnprocessableEntityException} from '@nestjs/common';
+import {NotificationsService} from './notifications';
 import {DocumentKind,Prisma,RentalApplication} from '@prisma/client';
 import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
@@ -18,7 +19,7 @@ const mutable=(a:RentalApplication)=>{if(!['DRAFT','NEEDS_INFO'].includes(a.stat
 const version=(a:RentalApplication,v:number)=>{if(a.version!==v)throw new ConflictException('Заявка уже была изменена. Откройте её заново.');};
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly events:ApplicationEvents,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
+  constructor(private readonly notifications:NotificationsService,private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly events:ApplicationEvents,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
   profile(a:RentalApplication){return this.storage.open<ApplicationProfile>(a.profileCipher,`application:${a.id}`);}
   async config(){
     const property=process.env.APPLICATION_PROPERTY_ID?await this.db.property.findFirst({where:{id:process.env.APPLICATION_PROPERTY_ID,active:true}}):await this.db.property.findFirst({where:{active:true},orderBy:{createdAt:'asc'}});
@@ -98,7 +99,9 @@ export class ApplicationService {
       if(duplicate)throw new ConflictException('На этот телефон уже подана заявка. Обратитесь к администрации.');
       await tx.applicationStatusHistory.create({data:{applicationId:a.id,fromStatus:current.status,toStatus:'SUBMITTED'}});
       const next=await tx.rentalApplication.update({where:{id:a.id},data:{status:'SUBMITTED',submittedAt:new Date(),version:{increment:1}}});
-      await this.audit(tx,current,'APPLICATION_SUBMITTED');return next;
+      await this.audit(tx,current,'APPLICATION_SUBMITTED');
+      await this.notifications.staff(tx,a.propertyId,['APPLICATION_VIEW'],{kind:'APPLICATION_SUBMITTED',title:'Новая заявка на проживание',body:'Анкета с документами ждёт рассмотрения.',link:`/applications/${a.id}`,entity:'RentalApplication',entityId:a.id});
+      return next;
     });await this.event(updated,'submitted');return this.own(updated);
   }
   async cancel(a:RentalApplication,v:number){

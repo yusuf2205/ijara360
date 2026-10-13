@@ -4,6 +4,7 @@ import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
 import { PermissionCode, requireAccess } from './permission-policy';
 import { ChargeDto, FinanceQuery, PaymentDto } from './finance.dto';
+import { NotificationsModule, NotificationsService } from './notifications';
 
 export function financeDate(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -27,7 +28,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private running?: Promise<void>;
   private readonly logger = new Logger(FinanceService.name);
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database, private readonly notifications: NotificationsService) {}
   onModuleInit() {
     // Tests drive refresh explicitly; production catches up after downtime without a NAS cron dependency.
     if (process.env.NODE_ENV !== 'test') {
@@ -76,6 +77,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       }
       const charge = await tx.charge.create({data:{...dto,amount,billingPeriodStart,billingPeriodEnd,dueDate,propertyId:actor.propertyId,roomId:bed.roomId,createdByUserId:actor.id}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'CHARGE_CREATED',entity:'Charge',entityId:charge.id,metadata:{residentId:dto.residentId,amount:amount.toFixed(2),type:dto.type}}});
+      await this.notifications.chargeCreated(tx,charge);
       // AFTER INSERT may consume existing credit, so re-read the resulting charge.
       return tx.charge.findUniqueOrThrow({where:{id:charge.id}});
     });
@@ -93,6 +95,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       const payment = await tx.payment.create({data:{...dto,amount,propertyId:actor.propertyId,createdByUserId:actor.id}});
       const result=paymentResult(await tx.payment.findUniqueOrThrow({where:{id:payment.id},include:paymentInclude}));
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'PAYMENT_RECORDED',entity:'Payment',entityId:payment.id,metadata:{residentId:dto.residentId,chargeId:dto.chargeId||null,amount:amount.toFixed(2),method:dto.method,unallocatedAmount:result.unallocatedAmount.toFixed(2),allocations:result.allocations.map(a=>({chargeId:a.chargeId,amount:a.amount.toFixed(2)}))}}});
+      await this.notifications.paymentRecorded(tx,result);
       return result;
     });
   }
@@ -128,5 +131,5 @@ class FinanceController {
   @Post('payments') payment(@Req() req: AuthRequest,@Body() dto: PaymentDto) {return this.service.createPayment(req.actor,dto);}
   @Get('residents/:id/access') access(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) {return this.service.access(req.actor,id);}
 }
-@Module({imports:[AuthModule],providers:[FinanceService],controllers:[FinanceController],exports:[FinanceService]})
+@Module({imports:[AuthModule,NotificationsModule],providers:[FinanceService],controllers:[FinanceController],exports:[FinanceService]})
 export class FinanceModule {}

@@ -133,3 +133,16 @@ label.remember-device small{margin-top:2px}
 .resident-finance .kpi-row strong{font-size:18px}
 @media(max-width:700px){.resident-finance{grid-template-columns:1fr 1fr}.resident-finance .stat:last-of-type{grid-column:1/-1}.resident-head .button{width:100%}}
 .brand.light>span:last-child{color:#8fb0ff}.eyebrow.light{color:#9fb6ee}.story-rooms>div>div{color:#a9c1ff}.story-foot{color:#a9b6d6}.access-icon{background:var(--green-soft);border-color:#dbe5ff}
+
+/* M5 notifications */
+.topbar-right{display:flex;align-items:center;gap:14px}
+.bell{position:relative;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--paper);border:1px solid var(--line);color:var(--ink)}
+.bell.active{color:var(--green);border-color:var(--green)}
+.bell-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--bad);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;border:2px solid var(--paper)}
+.notice-list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.notice-row{width:100%;display:flex;align-items:center;gap:12px;text-align:left;background:var(--paper);border:0;border-radius:14px;box-shadow:var(--shadow);padding:14px 16px;color:var(--ink)}
+.notice-row.unread{box-shadow:inset 3px 0 0 var(--green),var(--shadow)}
+.notice-text{flex:1;min-width:0;display:grid;gap:2px}.notice-text strong{font-size:14px}.notice-text small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.notice-row time{font-size:11px;color:var(--muted);white-space:nowrap}
+.unread-dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex:none}
+@media(max-width:700px){.notice-row{align-items:flex-start}.notice-row time{display:none}.bell{width:36px;height:36px}}

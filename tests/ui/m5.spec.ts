@@ -105,6 +105,15 @@ test('M5 tickets: the owner sees the author and answers; a ticket manager sees i
   const auth = { 'X-Ijara-Request': '1', Authorization: `Bearer ${token}` };
   const ticket = await (await app.request.post('/api/tenant/tickets', { headers: auth, data: { category: 'COMPLAINT', title: 'Шумят ночью', body: 'После полуночи очень шумно.' } })).json();
 
+  await page.goto('/');
+  await expect(page.locator('.bell-count')).toBeVisible();
+  await page.getByRole('link', { name: /^Уведомления: \d+ новых$/ }).click();
+  const notice = page.locator('.notice-row.unread').filter({ hasText: 'Шумят ночью' });
+  await expect(notice).toContainText('Новое обращение');
+  await expect(notice).not.toContainText('Автор Обращения');
+  await notice.click();
+  await expect(page).toHaveURL(new RegExp(`/tickets/${ticket.id}$`));
+
   await page.goto('/tickets');
   const row = page.locator('.ticket-row').filter({ hasText: 'Шумят ночью' });
   await expect(row).toContainText('Автор Обращения');

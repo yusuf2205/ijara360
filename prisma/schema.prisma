@@ -29,6 +29,7 @@ model Property {
   payments Payment[]
   applications RentalApplication[]
   @@map("properties")
+  notifications Notification[]
 }
 
 model User {
@@ -51,6 +52,7 @@ model User {
   @@unique([id, propertyId])
   @@index([propertyId])
   @@map("users")
+  notifications Notification[]
 }
 
 model Session {
@@ -435,6 +437,7 @@ model TenantAccount {
   @@unique([residentId, propertyId])
   @@index([propertyId])
   @@map("tenant_accounts")
+  notifications Notification[]
 }
 model TenantInvite {
   id String @id @default(uuid()) @db.Uuid
@@ -495,4 +498,43 @@ model TicketMessage {
   staff User? @relation(fields:[staffUserId],references:[id],onDelete:Restrict)
   @@index([ticketId,createdAt])
   @@map("ticket_messages")
+}
+
+// M5 notifications: exactly one recipient (tenant account or staff user). Deliveries are the Telegram outbox.
+model Notification {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  tenantAccountId String? @map("tenant_account_id") @db.Uuid
+  userId String? @map("user_id") @db.Uuid
+  kind String @db.VarChar(40)
+  title String @db.VarChar(160)
+  body String @db.VarChar(1000)
+  link String? @db.VarChar(300)
+  entity String? @db.VarChar(40)
+  entityId String? @map("entity_id") @db.Uuid
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  property Property @relation(fields:[propertyId],references:[id],onDelete:Restrict)
+  tenantAccount TenantAccount? @relation(fields:[tenantAccountId],references:[id],onDelete:Restrict)
+  user User? @relation(fields:[userId],references:[id],onDelete:Restrict)
+  deliveries NotificationDelivery[]
+  @@index([tenantAccountId,createdAt])
+  @@index([userId,createdAt])
+  @@map("notifications")
+}
+model NotificationDelivery {
+  id String @id @default(uuid()) @db.Uuid
+  notificationId String @map("notification_id") @db.Uuid
+  channel String @default("TELEGRAM") @db.VarChar(20)
+  chatId String @map("chat_id") @db.VarChar(30)
+  status String @default("PENDING") @db.VarChar(20)
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedAt DateTime? @map("locked_at") @db.Timestamptz(3)
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(3)
+  lastError String? @map("last_error") @db.VarChar(40)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  notification Notification @relation(fields:[notificationId],references:[id],onDelete:Restrict)
+  @@index([notificationId])
+  @@map("notification_deliveries")
 }

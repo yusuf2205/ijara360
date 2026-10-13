@@ -6,6 +6,10 @@ import {Actor,AuthModule,AuthRequest,AuthService,SessionGuard} from './auth';
 import {Database} from './database';
 import {requireAccess} from './permission-policy';
 import {Tenant,TenantGuard,TenantModule,TenantRequest} from './tenant';
+import {NotificationsModule,NotificationsService} from './notifications';
+
+const categoryLabel:Record<string,string>={COMPLAINT:'Жалоба',SUGGESTION:'Предложение',REPAIR:'Поломка'};
+const snippet=(s:string)=>s.length>200?s.slice(0,199)+'…':s;
 
 const CATEGORIES=['COMPLAINT','SUGGESTION','REPAIR'] as const;
 const STATUSES=['OPEN','IN_PROGRESS','RESOLVED','REJECTED'] as const;
@@ -31,7 +35,7 @@ type MessageRow={id:string;authorType:string;body:string;createdAt:Date;staff:{f
 
 @Injectable()
 export class TicketsService{
-  constructor(private readonly db:Database,private readonly auth:AuthService){}
+  constructor(private readonly db:Database,private readonly auth:AuthService,private readonly notifications:NotificationsService){}
   private async rooms(ids:(string|null)[]){
     const list=[...new Set(ids.filter((x):x is string=>!!x))];
     const rows=list.length?await this.db.room.findMany({where:{id:{in:list}},select:{id:true,number:true}}):[];
@@ -61,6 +65,8 @@ export class TicketsService{
         messages:{create:{authorType:'TENANT',body:dto.body}}}});
       // The audit trail records that a ticket exists, never who wrote it or what it says.
       await tx.auditLog.create({data:{propertyId:t.propertyId,actorId:null,action:'TICKET_CREATED',entity:'Ticket',entityId:ticket.id,metadata:{category:dto.category}}});
+      // Staff see what was written and where to go, never who wrote it.
+      await this.notifications.staff(tx,t.propertyId,['TICKETS_VIEW','TICKETS_MANAGE'],{kind:'TICKET_CREATED',title:'Новое обращение',body:`${categoryLabel[dto.category]}: «${dto.title}»`,link:`/tickets/${ticket.id}`,entity:'Ticket',entityId:ticket.id});
       return this.mine(t,ticket.id,tx);
     });
   }
@@ -83,6 +89,7 @@ export class TicketsService{
       if(!ticket)throw new NotFoundException('Обращение не найдено.');
       if(!OPEN.includes(ticket.status))throw new ConflictException('Обращение закрыто. Если вопрос остался, создайте новое.');
       await tx.ticketMessage.create({data:{ticketId:id,authorType:'TENANT',body:dto.body}});
+      await this.notifications.staff(tx,t.propertyId,['TICKETS_VIEW','TICKETS_MANAGE'],{kind:'TICKET_MESSAGE',title:'Новое сообщение в обращении',body:`«${ticket.title}»`,link:`/tickets/${id}`,entity:'Ticket',entityId:id});
       await tx.ticket.update({where:{id},data:{updatedAt:new Date()}});
       return this.mine(t,id,tx);
     });
@@ -115,6 +122,7 @@ export class TicketsService{
       if(!ticket)throw new NotFoundException('Обращение не найдено.');
       if(!OPEN.includes(ticket.status))throw new ConflictException('Обращение закрыто. Чтобы ответить, сначала откройте его снова.');
       await tx.ticketMessage.create({data:{ticketId:id,authorType:'STAFF',staffUserId:actor.id,body:dto.body}});
+      await this.notifications.tenant(tx,ticket.residentId,{kind:'TICKET_REPLIED',title:'Ответ на обращение',body:`«${ticket.title}»: ${snippet(dto.body)}`,link:`/app/tickets/${id}`,entity:'Ticket',entityId:id});
       // The first answer takes an open ticket into work.
       await tx.ticket.update({where:{id},data:{updatedAt:new Date(),...(ticket.status==='OPEN'?{status:'IN_PROGRESS',version:{increment:1}}:{})}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_REPLIED',entity:'Ticket',entityId:id,metadata:{}}});
@@ -131,6 +139,8 @@ export class TicketsService{
       const closed=!OPEN.includes(dto.status);
       await tx.ticket.update({where:{id},data:{status:dto.status,closedAt:closed?new Date():null,version:{increment:1}}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_STATUS_CHANGED',entity:'Ticket',entityId:id,metadata:{from:ticket.status,to:dto.status}}});
+      const told:Record<string,string>={IN_PROGRESS:'Обращение взято в работу',RESOLVED:'Обращение решено',REJECTED:'Обращение отклонено'};
+      if(told[dto.status])await this.notifications.tenant(tx,ticket.residentId,{kind:'TICKET_STATUS',title:told[dto.status],body:`«${ticket.title}»`,link:`/app/tickets/${id}`,entity:'Ticket',entityId:id});
       return this.detail(actor,id,tx);
     });
   }
@@ -154,5 +164,5 @@ class StaffTicketsController{
   @Patch(':id') status(@Req() req:AuthRequest,@Param('id',ParseUUIDPipe) id:string,@Body() dto:StatusDto){return this.service.setStatus(req.actor,id,dto);}
 }
 
-@Module({imports:[AuthModule,TenantModule],providers:[TicketsService],controllers:[TenantTicketsController,StaffTicketsController]})
+@Module({imports:[AuthModule,TenantModule,NotificationsModule],providers:[TicketsService],controllers:[TenantTicketsController,StaffTicketsController]})
 export class TicketsModule{}

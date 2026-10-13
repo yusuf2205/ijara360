@@ -1,4 +1,5 @@
 import {Body,Controller,Get,Headers,Module,Param,ParseEnumPipe,ParseUUIDPipe,Patch,Post,Put,Query,Req,Res,UseGuards} from '@nestjs/common';
+import {NotificationsModule} from './notifications';
 import {DocumentKind} from '@prisma/client';
 import {Request,Response} from 'express';
 import {AuthModule,AuthRequest,SessionGuard} from './auth';
@@ -43,5 +44,5 @@ class TelegramController {
   constructor(private readonly phone:PhoneVerificationService){}
   @Post('webhook') webhook(@Headers('x-telegram-bot-api-secret-token') secret:string,@Body() update:unknown){return this.phone.webhook(secret,update as Parameters<PhoneVerificationService['webhook']>[1]);}
 }
-@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule],providers:[ApplicationService,ApplicationEvents,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController],exports:[ApplicationEvents]})
+@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule,NotificationsModule],providers:[ApplicationService,ApplicationEvents,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController],exports:[ApplicationEvents]})
 export class ApplicationsModule{}

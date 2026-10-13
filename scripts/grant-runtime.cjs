@@ -26,6 +26,8 @@ async function grantRuntime(db) {
   // M5 tickets: status changes only; messages are append-only.
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON tickets TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT ON ticket_messages TO ijara_app');
+  // M5 notifications: marked read, never deleted by the app; the outbox updates delivery state.
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON notifications,notification_deliveries TO ijara_app');
    console.log('Runtime database privileges applied.');
 }
 module.exports = { grantRuntime };

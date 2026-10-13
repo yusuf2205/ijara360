@@ -57,3 +57,21 @@
 Обезличивание делает сервер, а не интерфейс. В журнал пишется только факт и тип обращения (`TICKET_CREATED`, `actorId = null`), без автора и текста. Сообщения нельзя менять: у приложения есть права только на `SELECT, INSERT`. Если комнату удаляют, у обращения стирается только ссылка на комнату.
 
 API жильца: `POST/GET /api/tenant/tickets`, `GET /api/tenant/tickets/:id`, `POST /api/tenant/tickets/:id/messages`. API сотрудника: `GET /api/tickets?status=ACTIVE|CLOSED|…&category=`, `GET /api/tickets/:id`, `POST /api/tickets/:id/messages`, `PATCH /api/tickets/:id`.
+
+## Уведомления (этап 5)
+
+Уведомление создаётся в той же транзакции, что и событие. Если действие откатилось, уведомления нет. Копия в Telegram пишется в очередь `notification_deliveries` тоже внутри транзакции, а отправляет её фоновая задача API после commit: проверка каждые 10 секунд, до 20 штук за раз, `FOR UPDATE SKIP LOCKED`.
+
+| Событие | Кому | Telegram |
+|---|---|---|
+| Новое начисление (`CHARGE_CREATED`) | Жилец | Да, если Telegram привязан |
+| Оплата зачтена, с суммой в аванс (`PAYMENT_RECORDED`) | Жилец | Да |
+| Ответ на обращение, смена статуса (`TICKET_REPLIED`, `TICKET_STATUS`) | Жилец | Да |
+| Новое обращение, сообщение жильца (`TICKET_CREATED`, `TICKET_MESSAGE`) | Сотрудники с `TICKETS_*` и владелец, без автора | После привязки Telegram сотрудником (этап 7) |
+| Новая заявка (`APPLICATION_SUBMITTED`) | Сотрудники с `APPLICATION_VIEW` и владелец, без данных заявителя | Этап 7 |
+
+Повторы: 30 с, 2 мин, 10 мин, 1 ч, 6 ч. После 6 попыток `FAILED`. Если Telegram отвечает 403 или 400 (бот заблокирован, чата нет), сразу `FAILED` с причиной `CHAT_UNAVAILABLE`. Строки, зависшие в `SENDING` дольше 5 минут, возвращаются в очередь. В лог попадают только id и номер попытки.
+
+Приглашение в приложение уходит в Telegram отдельно и в ленту не пишется: ссылка в нём секретная, и хранить её в базе нельзя.
+
+API: `GET /api/tenant/notifications?page=`, `POST /api/tenant/notifications/read {ids?}`, `GET /api/notifications?page=`, `POST /api/notifications/read {ids?}`. Каждый видит и отмечает только свои уведомления. В кабинете колокольчик с числом непрочитанных ведёт на страницу `/notifications`, клик по уведомлению открывает связанный раздел.
