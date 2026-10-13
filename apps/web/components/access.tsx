@@ -69,7 +69,7 @@ export default function Access() {
     <section className="access-form-area">
       <div className="access-mobile-brand brand"><Logo size={36}/></div>
       <div className="access-card">
-        <div className="access-icon"><LogoMark size={34}/></div>
+        <img className="access-app-icon" src="/brand/app-icon-192.png" alt="" width={56} height={56}/>
         <span className="eyebrow">{configured ? 'С ВОЗВРАЩЕНИЕМ' : 'НАЧНЁМ С ОСНОВНОГО'}</span>
         <h2>{configured ? 'Войти в свой дом' : 'Настроить Ijara360'}</h2>
         <p className="muted">{configured ? 'Укажите телефон и пароль вашей учётной записи.' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>

@@ -1,21 +1,15 @@
+/* eslint-disable @next/next/no-img-element -- static brand files, already sized; no optimisation needed */
 /**
- * Ijara360 brand mark: the "i" (dot and stem) runs into the "j" bowl, which carries a house with a yellow roof.
- * Drawn on a 96×96 grid so it stays crisp from a favicon to the login page.
+ * The owner's logo, cut from the approved brand board (docs/BRAND.md). `logo.png` for light surfaces,
+ * `logo-light.png` (white letters) for the dark sidebar and login panel, `mark.png` for the symbol alone.
  */
-export function LogoMark({ size = 40, ink = '#111111', roof = '#FEC123', title }: { size?: number; ink?: string; roof?: string; title?: string }) {
-  return <svg width={size} height={size} viewBox="0 0 96 96" role={title ? 'img' : undefined} aria-hidden={title ? undefined : true} aria-label={title} className="logo-mark">
-    <circle cx="21" cy="14" r="10" fill={ink}/>
-    <path d="M21 30V58a25 25 0 0 0 50 0V40" fill="none" stroke={ink} strokeWidth="18"/>
-    <path d="M33 46 57 25l23 20" fill="none" stroke={roof} strokeWidth="12" strokeLinejoin="miter" strokeLinecap="butt"/>
-    <g fill={ink}><rect x="43" y="50" width="8" height="8"/><rect x="53" y="50" width="8" height="8"/><rect x="43" y="60" width="8" height="8"/><rect x="53" y="60" width="8" height="8"/></g>
-  </svg>;
+const RATIO = { logo: 980 / 260, light: 445 / 133, mark: 0.87 };
+
+export function Logo({ size = 34, light = false, className = '' }: { size?: number; light?: boolean; className?: string }) {
+  const width = Math.round(size * (light ? RATIO.light : RATIO.logo));
+  return <img className={`logo ${className}`} src={light ? '/brand/logo-light.png' : '/brand/logo.png'} alt="ijara360" width={width} height={size}/>;
 }
 
-/** Full logo: the mark stands for "ij", followed by "ara36" and an "0" with the yellow centre. */
-export function Logo({ size = 34, light = false, className = '' }: { size?: number; light?: boolean; className?: string }) {
-  const ink = light ? '#FFFFFF' : '#111111';
-  return <span className={`logo ${light ? 'logo-light' : ''} ${className}`} style={{ fontSize: size * 0.9 }} aria-label="ijara360" role="img">
-    <LogoMark size={size} ink={ink}/>
-    <span className="logo-word" aria-hidden="true">ara36<span className="logo-o"/></span>
-  </span>;
+export function LogoMark({ size = 40 }: { size?: number }) {
+  return <img className="logo-mark" src="/brand/mark.png" alt="" aria-hidden="true" width={Math.round(size * RATIO.mark)} height={size}/>;
 }
