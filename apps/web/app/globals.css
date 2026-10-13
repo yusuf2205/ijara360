@@ -227,3 +227,5 @@ input,select,textarea{border-color:var(--line-strong)}
 img.logo,img.logo-mark{display:block;height:auto;max-width:100%}
 .sidebar>.brand{margin:4px 10px 30px}
 .access-app-icon{display:block;width:56px;height:56px;border-radius:14px;margin-bottom:22px;box-shadow:0 6px 18px #11111126}
+.story-rooms>div>span{color:#B9B9BE}
+@media(max-width:700px){.access-app-icon{display:none}}

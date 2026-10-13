@@ -127,7 +127,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   const filtered = (view === 'rooms' && showArchive ? allRooms.filter(r=>r.archivedAt) : rooms).filter(r => (!capacityOnly || r.totalBeds < r.capacity) && r.number.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   return <div className="app-shell">
     <aside className="sidebar">
-      <Link href="/" className="brand" aria-label="ijara360 — главная"><Logo size={36} light/></Link>
+      <Link href="/" className="brand" aria-label="ijara360 — главная"><Logo size={44} light/></Link>
       <div className="property-switch"><span className="property-icon"><Building2 size={19}/></span><div><strong>{property?.name || 'Ваш дом'}</strong><small>Управление объектом</small></div></div>
       <span className="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</span>
       <nav aria-label="Основная навигация">

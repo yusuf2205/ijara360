@@ -60,14 +60,14 @@ export default function Access() {
   }
   return <main className="access-page">
     <section className="access-story">
-      <div className="brand light"><Logo size={40} light/></div>
+      <div className="brand light"><Logo size={60} light/></div>
       <div><span className="eyebrow light">ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.</span><h1>Меньше записей.<br />Больше порядка.</h1><p>Один понятный инструмент для управления студенческим домом.</p>
         <div className="story-rooms" aria-hidden="true">{[1,2,3].map(n => <div key={n}><Building2 size={23}/><strong>Комната {n}</strong><div>{[1,2,3,4].map(b => <BedDouble size={20} key={b}/>)}</div><span><Check size={13}/> Всё под контролем</span></div>)}</div>
       </div>
       <span className="story-foot"><ShieldCheck size={17}/> Данные хранятся на вашем сервере</span>
     </section>
     <section className="access-form-area">
-      <div className="access-mobile-brand brand"><Logo size={36}/></div>
+      <div className="access-mobile-brand brand"><Logo size={46}/></div>
       <div className="access-card">
         <img className="access-app-icon" src="/brand/app-icon-192.png" alt="" width={56} height={56}/>
         <span className="eyebrow">{configured ? 'С ВОЗВРАЩЕНИЕМ' : 'НАЧНЁМ С ОСНОВНОГО'}</span>
