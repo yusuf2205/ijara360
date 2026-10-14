@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {evaluate,backupResult,diskResult,formatBytes,local}=require('../../../scripts/watchdog.cjs');
+const {evaluate,backupResult,offsiteResult,diskResult,formatBytes,local}=require('../../../scripts/watchdog.cjs');
 
 // 2026-10-14 05:00 UTC = 10:00 in Tashkent; 02:00 UTC = 07:00 (before the morning summary).
 const morning=Date.parse('2026-10-14T02:00:00Z');
@@ -95,4 +95,17 @@ test('messages never carry phone numbers, names or ids',()=>{
   assert.equal(r.messages.length,1);
   assert.doesNotMatch(text,/\+?\d{9,}|[0-9a-f]{8}-[0-9a-f]{4}/i);
   assert.equal(text.split('\n').length,8);
+});
+
+test('offsite copies: not configured is grey, a failure or 30 hours of silence is red, a recent copy is green',()=>{
+  const now=Date.parse('2026-10-15T05:00:00Z');
+  assert.equal(offsiteResult(null,now,now-HOUR).ok,null);
+  assert.equal(offsiteResult(null,now,now-3*HOUR).ok,false);
+  assert.deepEqual(offsiteResult({ok:null,at:'2026-10-15T04:00:00Z',detail:'Google Drive не подключён'},now,0),{ok:null,detail:'Google Drive не подключён'});
+  assert.deepEqual(offsiteResult({ok:false,at:'2026-10-14T22:40:00Z',detail:'не удалось отправить'},now,0),{ok:false,detail:'не удалось отправить (15.10 03:40)'});
+  assert.match(offsiteResult({ok:true,at:'2026-10-13T20:00:00Z',detail:'6,9 МБ'},now,0).detail,/последняя отправка 33 ч назад/);
+  assert.deepEqual(offsiteResult({ok:true,at:'2026-10-14T22:40:00Z',detail:'6,9 МБ, дисков: 1'},now,0),{ok:true,detail:'15.10 03:40, 6,9 МБ, дисков: 1'});
+  let r=evaluate({summaryDay:'2026-10-15'},{usb:{ok:false,detail:'нет USB-диска с папкой Ijara360-backup'}},now);
+  r=evaluate(r.state,{usb:{ok:false,detail:'нет USB-диска с папкой Ijara360-backup'}},now+MIN);
+  assert.match(r.messages[0],/Копия на USB-диске: нет USB-диска с папкой Ijara360-backup/);
 });

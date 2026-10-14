@@ -13,6 +13,7 @@ const HOUR = 60 * MINUTE;
 const REPEAT_AFTER = 6 * HOUR;
 const BACKUP_MAX_AGE = 26 * HOUR;
 const BACKUP_GRACE = 2 * HOUR;
+const OFFSITE_MAX_AGE = 30 * HOUR;
 const SUMMARY_HOUR = 9;
 const DISK_MIN_FREE = 20 * 1024 ** 3;
 const DISK_MIN_SHARE = 0.05;
@@ -25,6 +26,8 @@ const LABELS = {
   internet: 'Вход из интернета',
   lan: 'Вход из домашней сети',
   backup: 'Ночная резервная копия',
+  cloud: 'Копия в облаке',
+  usb: 'Копия на USB-диске',
   disk: 'Место на диске',
 };
 
@@ -55,6 +58,16 @@ function backupResult(record, now, startedAt) {
   if (!record.ok) return { ok: false, detail: `не удалась (${local(at).text})` };
   if (!(now - at < BACKUP_MAX_AGE)) return { ok: false, detail: `последняя копия ${duration(now - at)} назад` };
   return { ok: true, detail: `${local(at).text}, ${formatBytes(record.bytes || 0)}`, at: record.at, bytes: record.bytes, documents: record.documents };
+}
+
+/** Offsite target status (offsite-cloud.json / offsite-usb.json written by scripts/offsite-service.sh). */
+function offsiteResult(record, now, startedAt) {
+  if (!record) return now - startedAt < BACKUP_GRACE ? { ok: null, detail: 'ждём первую отправку' } : { ok: false, detail: 'нет данных об отправке' };
+  const at = Date.parse(record.at);
+  if (record.ok === null) return { ok: null, detail: String(record.detail || 'не настроено') };
+  if (!record.ok) return { ok: false, detail: `${record.detail || 'не удалась'} (${local(at).text})` };
+  if (!(now - at < OFFSITE_MAX_AGE)) return { ok: false, detail: `последняя отправка ${duration(now - at)} назад` };
+  return { ok: true, detail: `${local(at).text}, ${record.detail || ''}`.replace(/, $/, '') };
 }
 
 function diskResult(free, total) {
@@ -190,6 +203,8 @@ async function main() {
       results.database = { ok: false, detail: 'нет подключения' };
     }
     results.backup = backupResult(readJson(path.join(dir, 'backup.json')), now, startedAt);
+    results.cloud = offsiteResult(readJson(path.join(dir, 'offsite-cloud.json')), now, startedAt);
+    results.usb = offsiteResult(readJson(path.join(dir, 'offsite-usb.json')), now, startedAt);
     try {
       const s = fs.statfsSync(dir);
       results.disk = diskResult(s.bavail * s.bsize, s.blocks * s.bsize);
@@ -222,5 +237,5 @@ async function main() {
   }
 }
 
-module.exports = { evaluate, backupResult, diskResult, formatBytes, local, LABELS };
+module.exports = { evaluate, backupResult, offsiteResult, diskResult, formatBytes, local, LABELS };
 if (require.main === module) main();

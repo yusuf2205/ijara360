@@ -132,6 +132,26 @@ services:
     depends_on:
       db: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
+  offsite:
+    build: { context: ., dockerfile: infra/offsite.Dockerfile }
+    image: ijara360-offsite:${RELEASE_TAG:-local}
+    restart: unless-stopped
+    # Encrypts each nightly backup with the owner's age public key and sends it to Google Drive and to
+    # USB drives that carry an "Ijara360-backup" folder (docs/M6-OFFSITE.md). It cannot decrypt anything.
+    environment:
+      OFFSITE_AGE_RECIPIENT: ${OFFSITE_AGE_RECIPIENT:-}
+      OFFSITE_REMOTE: gdrive:Ijara360-backup
+      RCLONE_CONFIG_GDRIVE_TYPE: drive
+      RCLONE_CONFIG_GDRIVE_SCOPE: drive.file
+      RCLONE_CONFIG_GDRIVE_TOKEN: ${OFFSITE_GDRIVE_TOKEN:-}
+      RCLONE_DRIVE_USE_TRASH: "false"
+    volumes:
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/backups:/backups:ro
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/status
+      # UGOS mounts USB drives here; rslave lets a drive plugged in later appear without a restart.
+      - /mnt/@usb:/usb:rslave
+    depends_on:
+      migrate: {condition: service_completed_successfully}
   watchdog:
     image: ijara360-api:${RELEASE_TAG:-local}
     restart: unless-stopped
