@@ -69,7 +69,7 @@ try {
         # UGOS SFTP exposes a different root; legacy SCP uses the verified SSH path.
         & scp -O @sshOptions $archive $bundle $appArchive $manifest "${nasTarget}:${release}/"
         if ($LASTEXITCODE -ne 0) { throw 'NAS transfer failed; incomplete directory retained for inspection.' }
-        & ssh @sshOptions $nasTarget "set -eu; cd $release; sha256sum -c manifest.sha256; tar -xf source.tar -C source; tar -xf mobile-web.tar -C source/apps/web/public; test \"\$(cat source/apps/web/public/app/COMMIT)\" = $revision; touch COMPLETE"
+        & ssh @sshOptions $nasTarget "set -eu; cd $release; sha256sum -c manifest.sha256; tar -xf source.tar -C source; tar -xf mobile-web.tar -C source/apps/web/public; grep -qx $revision source/apps/web/public/app/COMMIT; touch COMPLETE"
         if ($LASTEXITCODE -ne 0) { throw 'NAS checksum or extraction failed.' }
     } elseif ($state -ne 'existing') {
         throw 'Unexpected NAS response.'
