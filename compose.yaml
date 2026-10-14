@@ -21,10 +21,12 @@ services:
     image: ijara360-api:${RELEASE_TAG:-local}
     environment:
       DATABASE_URL: postgresql://ijara_owner:${POSTGRES_PASSWORD}@db:5432/ijara360?schema=public
-    # Runs as root once per deploy: prepares the private KYC directory for the non-root API.
-    command: ["sh", "-c", "install -d -m 700 -o node -g node /var/lib/ijara360/kyc && node node_modules/prisma/build/index.js migrate deploy && node scripts/grant-runtime.cjs"]
+    # Runs as root once per deploy: prepares the private KYC directory and the server status
+    # directory (written by the watchdog and the nightly backup, read by the API) for non-root users.
+    command: ["sh", "-c", "install -d -m 700 -o node -g node /var/lib/ijara360/kyc && install -d -m 755 -o node -g node /var/lib/ijara360/status && node node_modules/prisma/build/index.js migrate deploy && node scripts/grant-runtime.cjs"]
     volumes:
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/var/lib/ijara360/kyc
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/var/lib/ijara360/status
     depends_on:
       db: {condition: service_healthy}
     restart: "no"
@@ -48,8 +50,10 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_MODE: ${TELEGRAM_MODE:-polling}
+      SERVER_STATUS_PATH: /var/lib/ijara360/status
     volumes:
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/var/lib/ijara360/kyc
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/var/lib/ijara360/status:ro
     command: ["node", "apps/api/dist/main.js"]
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -77,12 +81,12 @@ services:
   gateway:
     image: caddy:2
     restart: unless-stopped
-    # 8448: public applicant surface for Tailscale Funnel only (see docs/M4-APPLICATIONS.md).
-    ports: ["192.168.1.105:8446:443", "127.0.0.1:8447:8080", "127.0.0.1:8448:8081"]
+    # Tailscale Serve (8447, tailnet) and Funnel (8448, internet) upstreams, NAS loopback only.
+    # See docs/M4-APPLICATIONS.md and docs/M6-RELIABILITY.md.
+    ports: ["127.0.0.1:8447:8080", "127.0.0.1:8448:8081"]
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy:/data
-      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy-config:/config
+      - ./infra/common.caddy:/etc/caddy/common.caddy:ro
     depends_on:
       web: {condition: service_healthy}
     healthcheck:
@@ -90,3 +94,56 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+  gateway-lan:
+    image: caddy:2
+    restart: unless-stopped
+    # Home network. Separate from "gateway": if the NAS loses this address only the LAN entrance stops.
+    # Started after "gateway", which frees 8446 when an older single-gateway release is replaced.
+    ports: ["192.168.1.105:8446:443"]
+    volumes:
+      - ./infra/Caddyfile.lan:/etc/caddy/Caddyfile:ro
+      - ./infra/common.caddy:/etc/caddy/common.caddy:ro
+      # Keeps the local certificate authority the home devices already trust.
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy:/data
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/caddy-config:/config
+    depends_on:
+      web: {condition: service_healthy}
+      gateway: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://localhost/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  backup:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    # Nightly pg_dump + encrypted documents, restore-verified in a private throwaway cluster.
+    # Same directory and file names as the deploy backup (scripts/backup-nas.sh).
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Tashkent
+      BACKUP_AT: "03:30"
+    command: ["sh", "/opt/ijara360/backup-service.sh", "loop"]
+    volumes:
+      - ./scripts/backup-service.sh:/opt/ijara360/backup-service.sh:ro
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/kyc:ro
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/backups:/backups
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/status
+    depends_on:
+      db: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+  watchdog:
+    image: ijara360-api:${RELEASE_TAG:-local}
+    restart: unless-stopped
+    user: node
+    # Checks every entrance, the database, the nightly backup and free space; tells the owners in Telegram.
+    # Depends only on migrate, so it keeps running and reporting when the site itself is down.
+    environment:
+      DATABASE_URL: postgresql://ijara_app:${APP_DB_PASSWORD}@db:5432/ijara360?schema=public
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SERVER_STATUS_PATH: /var/lib/ijara360/status
+    command: ["node", "scripts/watchdog.cjs"]
+    volumes:
+      - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/var/lib/ijara360/status
+    depends_on:
+      migrate: {condition: service_completed_successfully}

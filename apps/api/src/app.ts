@@ -18,6 +18,7 @@ import { TenantModule } from './tenant';
 import { TenantFinanceModule } from './tenant-finance';
 import { TicketsModule } from './tickets';
 import { NotificationsModule } from './notifications';
+import { SystemModule } from './system';
 
 @Controller('health')
 class HealthController {
@@ -27,7 +28,7 @@ class HealthController {
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
   }
 }
-@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()

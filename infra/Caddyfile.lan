@@ -1,0 +1,13 @@
+{
+    auto_https disable_redirects
+    default_sni 192.168.1.105
+}
+import /etc/caddy/common.caddy
+# Home network only. The LAN listener stays untrusted, so Caddy replaces any
+# client-supplied X-Forwarded-For with the real LAN address.
+# "localhost" exists only for the container health check: busybox wget always sends SNI,
+# and the local certificate authority has no certificate for 127.0.0.1.
+https://192.168.1.105, https://localhost {
+    tls internal
+    import application
+}

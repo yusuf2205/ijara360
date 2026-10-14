@@ -233,3 +233,18 @@ img.logo,img.logo-mark{display:block;height:auto;max-width:100%}
 .app-links{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}
 .app-links .button{margin:0;min-height:44px;font-size:12px}
 @media(max-width:380px){.app-links{grid-template-columns:1fr}}
+/* M6 server panel (owner): one line verdict, then each check with a coloured dot. */
+.server-summary{font-weight:800;font-size:15px;margin-bottom:14px;padding:10px 14px;border-radius:12px}
+.server-summary.good{background:var(--ok-soft);color:var(--ink)}
+.server-summary.bad{background:var(--bad-soft);color:var(--ink)}
+.server-checks{list-style:none;display:grid;gap:2px;margin:0 0 16px;padding:0}
+.server-checks li{display:flex;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+.server-checks li>span:last-child{display:grid;gap:2px;min-width:0}
+.server-checks strong{font-size:13px}
+.server-checks small{color:var(--muted);font-size:12px}
+.server-checks .dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.server-checks .dot.ok{background:var(--ok)}.server-checks .dot.bad{background:var(--bad)}.server-checks .dot.wait{background:var(--line-strong)}
+.server-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 12px}
+.server-facts div{background:var(--bg);border-radius:12px;padding:10px 12px;min-width:0}
+.server-facts dt{font-size:11px;color:var(--muted)}.server-facts dd{margin:3px 0 0;font-size:13px;font-weight:700}
+@media(max-width:640px){.server-facts{grid-template-columns:1fr}}

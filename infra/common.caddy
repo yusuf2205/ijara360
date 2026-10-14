@@ -1,0 +1,19 @@
+(security_headers) {
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+        X-Frame-Options DENY
+    }
+}
+(application) {
+    # Private listeners (LAN, tailnet): overwrite whatever the client sent.
+    request_header X-Ijara-Channel private
+    encode zstd gzip
+    handle /api/* {
+        reverse_proxy api:4000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+    import security_headers
+}

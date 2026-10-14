@@ -13,6 +13,20 @@ cd "$root/releases/$revision"
 sha256sum -c manifest.sha256
 # The Flutter web app shipped with the release must be built from this very commit.
 test "$(cat "$source/apps/web/public/app/COMMIT")" = "$revision"
+# Preflight: stop before anything is built, backed up or replaced, so a predictable problem
+# cannot leave the running site down (M6). The home entrance listens on this exact address.
+lan=192.168.1.105
+if ! ip -4 -o addr show | grep -q " $lan/"; then
+  echo "PREFLIGHT FAIL: у NAS нет адреса домашней сети $lan." >&2
+  echo "Закрепите $lan за NAS в роутере (резервирование DHCP) или задайте его в UGOS и повторите выпуск." >&2
+  echo "Ничего не изменено, рабочая версия продолжает работать." >&2
+  exit 1
+fi
+free_kb=$(df -Pk "$root" | awk 'NR==2 {print $4}')
+if [ "$free_kb" -lt 5242880 ]; then
+  echo "PREFLIGHT FAIL: на диске NAS свободно меньше 5 ГБ. Ничего не изменено." >&2
+  exit 1
+fi
 mkdir -p "$root/deployments"
 chmod 700 "$root/deployments"
 stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
@@ -26,7 +40,7 @@ chmod 600 "$record/backup-path"
 sh "$source/scripts/verify-backup-nas.sh" "$(cat "$record/backup-path")"
 sh "$source/scripts/verify-migration-nas.sh" "$(cat "$record/backup-path")" "ijara360-api:$revision"
 docker exec -i ijara360-db-1 psql -X -q -t -A -v ON_ERROR_STOP=1 -U ijara_owner -d ijara360 < "$source/scripts/production-fingerprint.sql" > "$record/before.txt"
-chmod 644 "$source/infra/init-db.sql" "$source/infra/Caddyfile"
+chmod 644 "$source/infra/init-db.sql" "$source/infra/Caddyfile" "$source/infra/Caddyfile.lan" "$source/infra/common.caddy" "$source/scripts/backup-service.sh"
 docker compose --env-file "$secret" -f "$source/compose.yaml" up -d --wait --wait-timeout 240
 docker exec -i ijara360-db-1 psql -X -q -t -A -v ON_ERROR_STOP=1 -U ijara_owner -d ijara360 < "$source/scripts/production-fingerprint.sql" > "$record/after.txt"
 diff -u "$record/before.txt" "$record/after.txt"
@@ -34,6 +48,9 @@ diff -u "$record/before.txt" "$record/after.txt"
 curl --fail --silent --show-error --max-time 30 --resolve mynas.tail4bf75c.ts.net:8446:100.126.164.29 https://mynas.tail4bf75c.ts.net:8446/api/health
 # Public surface (Funnel upstream): the whole site, with the bot webhook and health check closed,
 # and the internet marker set by Caddy whatever the client sends.
+# Home network entrance (own gateway, local certificate authority): healthy and marked private whatever the client sends.
+curl --fail --silent --show-error --max-time 30 --insecure https://$lan:8446/api/health
+curl --fail --silent --max-time 30 --insecure -H 'X-Ijara-Channel: public' https://$lan:8446/api/auth/channel | grep -q '"internet":false'
 code() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$@"; }
 for path in /apply /login /invite /api/public/applications/config /api/auth/setup-status; do
   test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
