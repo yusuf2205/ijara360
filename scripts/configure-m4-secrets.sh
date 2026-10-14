@@ -1,6 +1,8 @@
 #!/bin/sh
 # One-time M4 configuration of the private production.env. Run on the NAS as root:
 #   sudo sh scripts/configure-m4-secrets.sh
+# Replacing the bot token after "Revoke current token" in @BotFather (the same bot must answer):
+#   sudo sh scripts/configure-m4-secrets.sh --replace-telegram-token
 # Never prints secret values. Existing values are kept; the KYC key is never rotated here.
 set -eu
 umask 077
@@ -35,7 +37,13 @@ esac
 test -n "$(current PUBLIC_APP_ORIGIN)" || set_var PUBLIC_APP_ORIGIN "$public_origin"
 test -n "$(current TELEGRAM_MODE)" || set_var TELEGRAM_MODE polling
 
-if [ -n "$(current TELEGRAM_BOT_TOKEN)" ]; then
+replace=no
+test "${1:-}" = --replace-telegram-token && replace=yes
+old_username=$(current TELEGRAM_BOT_USERNAME)
+if [ "$replace" = yes ] && ! [ -t 0 ]; then
+  echo 'Run in a terminal: the new token is typed with hidden input.' >&2; exit 1
+fi
+if [ -n "$(current TELEGRAM_BOT_TOKEN)" ] && [ "$replace" = no ]; then
   echo 'TELEGRAM_BOT_TOKEN: already present, kept unchanged.'
 elif [ -t 0 ]; then
   printf 'Telegram bot token from @BotFather (input hidden, empty = skip): '
@@ -47,9 +55,14 @@ elif [ -t 0 ]; then
     # Confirms the token with Telegram; the URL is built inside curl's config, not argv.
     username=$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$token" | curl -sf --max-time 20 -K - | sed -n 's/.*"username":"\([A-Za-z0-9_]*\)".*/\1/p')
     test -n "$username" || { echo 'Telegram rejected the token; nothing saved.' >&2; exit 1; }
+    # Links already sent to residents and staff name the bot: a replacement must be the same bot.
+    if [ "$replace" = yes ] && [ -n "$old_username" ] && [ "$username" != "$old_username" ]; then
+      echo "This token belongs to @$username, not @$old_username; nothing saved." >&2; exit 1
+    fi
     set_var TELEGRAM_BOT_TOKEN "$token"
     set_var TELEGRAM_BOT_USERNAME "$username"
     echo "TELEGRAM_BOT_TOKEN: saved and confirmed for @$username."
+    [ "$replace" = yes ] && echo 'Run the deploy again so the API and the watchdog start with the new token.'
   fi
   unset token
 fi
