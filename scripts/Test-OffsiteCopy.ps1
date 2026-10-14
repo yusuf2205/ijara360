@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # An offsite copy downloaded from Google Drive or taken from the USB drive (ijara360-….tar.age).
     [Parameter(Mandatory)][string]$Copy,
