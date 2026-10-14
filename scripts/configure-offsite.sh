@@ -47,11 +47,21 @@ token=''
 if [ -n "$(current OFFSITE_GDRIVE_TOKEN)" ]; then
   printf 'Google Drive уже подключён. Вставьте новый токен, чтобы заменить, или нажмите Enter (ввод скрыт): '
 else
-  printf 'Токен Google Drive из rclone authorize, строка {"access_token":…} (ввод скрыт, Enter — пропустить): '
+  printf 'Строка из rclone authorize, между ---> и <---End paste (ввод скрыт, Enter — пропустить): '
 fi
 stty -echo; IFS= read -r token || token=''; stty echo; printf '\n'
-token=$(printf '%s' "$token" | sed 's/\x1b\[20[01]~//g' | tr -d '\r\n')
+token=$(printf '%s' "$token" | sed 's/\x1b\[20[01]~//g' | tr -d ' \t\r\n')
 if [ -n "$token" ]; then
+  # rclone 1.6x+ prints a base64 blob between "--->" and "<---End paste" instead of the JSON itself.
+  # Decode it inside the API image (node), passing the value on stdin, never as an argument.
+  case "$token" in
+    '{'*) ;;
+    *) token=$(printf '%s' "$token" | docker run --rm -i --network none "ijara360-api:$revision" node -e '
+         let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{
+           const j=JSON.parse(Buffer.from(s.trim().replace(/-/g,"+").replace(/_/g,"/"),"base64").toString("utf8"));
+           const t=typeof j.token==="string"?j.token:JSON.stringify(j.token||j);JSON.parse(t);process.stdout.write(t);
+         }catch{process.exit(1);}});') || { echo 'Не удалось прочитать строку из rclone authorize: скопируйте её целиком. Ничего не сохранено.' >&2; exit 1; } ;;
+  esac
   printf '%s' "$token" | grep -q '"refresh_token":"' || { echo 'В токене нет refresh_token: скопируйте всю строку {…} из rclone authorize. Ничего не сохранено.' >&2; exit 1; }
   case "$token" in *"'"*) echo 'Неожиданный символ в токене. Ничего не сохранено.' >&2; exit 1 ;; esac
   # Test write and delete in the app's own folder; the token goes through a private env file.
