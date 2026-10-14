@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -153,6 +154,14 @@ class _LoginScreenState extends State<LoginScreen> {
           )
         else
           Text('Вход из интернета с нового устройства подтверждается в Telegram.', textAlign: TextAlign.center, style: t.bodySmall),
+        if (kIsWeb) ...[
+          const Gap(12),
+          OutlinedButton.icon(
+            onPressed: () => launchUrl(Uri.parse('${apiOrigin()}/app/ijara360.apk')),
+            icon: const Icon(Icons.android_rounded),
+            label: const Text('Скачать приложение для Android'),
+          ),
+        ],
         const Gap(14),
         Text(who == Audience.tenant ? 'Нет пароля? Попросите администрацию прислать приглашение.' : 'Забыли пароль? Обратитесь к владельцу дома.', textAlign: TextAlign.center, style: t.bodySmall),
       ]),

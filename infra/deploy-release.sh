@@ -38,7 +38,7 @@ code() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code
 for path in /apply /login /invite /api/public/applications/config /api/auth/setup-status; do
   test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
 done
-for path in /app /app/main.dart.js; do
+for path in /app /app/main.dart.js /app/ijara360.apk; do
   test "$(code "http://127.0.0.1:8448$path")" = 200 || { echo "Public surface does not serve $path" >&2; exit 1; }
 done
 for path in /api/health /api/telegram/webhook; do

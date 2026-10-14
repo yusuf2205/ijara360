@@ -99,6 +99,7 @@ export default function Access() {
           <button className="button primary wide" disabled={busy}>{busy ? 'Сохраняем…' : configured ? 'Войти' : step === 1 ? 'Продолжить' : 'Создать дом'}<ArrowRight size={18}/></button>
           {!configured && step === 2 && <button className="button text wide" type="button" onClick={() => setStep(1)}>Назад</button>}
         </form>}
+        <div className="app-links"><a className="button secondary" href="/app">Открыть приложение</a><a className="button secondary" href="/app/ijara360.apk" download>Скачать для Android</a></div>
         <p className="access-caption">Доступ только для владельца и управляющего.<br/>Роль определяется вашей учётной записью.</p>
       </div>
       <span className="access-footer">Ijara360 · Управление домом без лишних забот</span>
