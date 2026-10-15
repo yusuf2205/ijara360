@@ -151,9 +151,10 @@ function evaluate(state, results, now) {
 // --- I/O -----------------------------------------------------------------------------------
 
 function httpStatus(url, { host, timeout = 10_000 } = {}) {
-  if (url.startsWith('https:')) {
+  if (host) {
     // Home entrance: local certificate authority, so only reachability is checked here. No SNI, as a
     // browser sends none to an IP address: Caddy answers with the 192.168.1.105 certificate (default_sni).
+    // Real sites (the own domain behind Cloudflare) go through fetch below: SNI and a verified certificate.
     return new Promise(resolve => {
       const req = https.get(url, { rejectUnauthorized: false, servername: '', headers: host ? { Host: host } : {}, timeout }, res => { res.resume(); resolve(res.statusCode); });
       req.on('timeout', () => req.destroy(new Error('timeout')));
