@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Device test against the NAS test stand over "adb reverse" (plain HTTP to 127.0.0.1 only). -->
+    <application android:networkSecurityConfig="@xml/network_security_config"/>
 </manifest>

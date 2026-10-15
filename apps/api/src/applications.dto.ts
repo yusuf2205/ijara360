@@ -48,10 +48,15 @@ export function validateProfile(profile:ApplicationProfile){
   const p=profile;
   const date=(s:string|undefined)=> Boolean(s&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  if(!p.fullName?.trim()||!date(p.dateOfBirth)||p.dateOfBirth!<'1900-01-01'||p.dateOfBirth!>=today||!/^\d{14}$/.test(p.pinfl||'')||! /^[A-Z]{2}$/.test(p.passportSeries||'')||!/^\d{7}$/.test(p.passportNumber||''))throw new UnprocessableEntityException('Проверьте ФИО, дату рождения, ПИНФЛ (14 цифр) и паспорт (2 латинские буквы и 7 цифр).');
-  if(!p.occupationType||p.occupationType!=='OTHER'&&!p.organization?.trim())throw new UnprocessableEntityException('Укажите место учёбы или работы.');
+  // Short form (owner's decision 2026-10-15): name, place of study or work, move-in date; passport details,
+  // PINFL and date of birth are read by staff from the passport photos. Optional fields, when given (older
+  // drafts), still have to be well-formed.
+  if(!p.fullName?.trim())throw new UnprocessableEntityException('Укажите ФИО.');
+  if(!p.organization?.trim())throw new UnprocessableEntityException('Укажите, где вы учитесь или работаете.');
+  if(!date(p.requestedMoveInDate))throw new UnprocessableEntityException('Укажите желаемую дату заселения.');
+  if(p.dateOfBirth&&(!date(p.dateOfBirth)||p.dateOfBirth<'1900-01-01'||p.dateOfBirth>=today)||p.pinfl&&!/^\d{14}$/.test(p.pinfl)||p.passportSeries&&!/^[A-Z]{2}$/.test(p.passportSeries)||p.passportNumber&&!/^\d{7}$/.test(p.passportNumber))throw new UnprocessableEntityException('Проверьте дату рождения, ПИНФЛ (14 цифр) и паспорт (2 латинские буквы и 7 цифр).');
   if(p.course&&!/^([1-9]|1[0-2])$/.test(p.course))throw new UnprocessableEntityException('Проверьте курс обучения.');
-  if(!date(p.requestedMoveInDate)||!p.plannedDuration?.trim()||!p.emergencyName?.trim()||!p.emergencyRelationship?.trim()||!/^\+[1-9]\d{7,14}$/.test(p.emergencyPhone||''))throw new UnprocessableEntityException('Заполните срок проживания и контакт для экстренной связи.');
+  if(p.emergencyPhone&&!/^\+[1-9]\d{7,14}$/.test(p.emergencyPhone))throw new UnprocessableEntityException('Проверьте телефон контактного лица.');
   if(!p.consent)throw new UnprocessableEntityException('Подтвердите согласие на обработку анкеты и документов.');
 }
 export function conversionCheckIn(dto:ConvertDto,residentId?:string,profile?:ApplicationProfile):CheckInDto {

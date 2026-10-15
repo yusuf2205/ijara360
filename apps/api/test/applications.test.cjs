@@ -55,6 +55,20 @@ test('phone requires own Telegram contact, correct number and unexpired challeng
  await phoneService.handle({update_id:3,message:{from:{id:22},chat:{id:22,type:'private'},contact:{user_id:22,phone_number:'+998900000022'}}});
  assert.equal((await mine(agent)).phoneVerified,false);await verify(agent);
 });
+test('short form: name, place of study or work, move-in date and photos are enough; optional fields must still be well-formed',async()=>{
+ const agent=await start();await verify(agent);
+ const short={fullName:'Short Form',organization:'Test university',requestedMoveInDate:'2026-11-01',consent:true};
+ for(const kind of ['PASSPORT_FRONT','PASSPORT_BACK','FACE'])await send(agent,'put',`/public/applications/documents/${kind}`).set('Content-Type','image/png').send(image).expect(200);
+ for(const missing of ['fullName','organization','requestedMoveInDate','consent']){
+  const {[missing]:_,...rest}=short;await send(agent,'patch','/public/applications/me').send({...rest,[missing]:missing==='consent'?false:'',version:(await mine(agent)).version}).expect(200);
+  await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(422);
+ }
+ await send(agent,'patch','/public/applications/me').send({...short,pinfl:'123',version:(await mine(agent)).version}).expect(200);
+ await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(422);
+ await send(agent,'patch','/public/applications/me').send({...short,pinfl:'',version:(await mine(agent)).version}).expect(200);
+ await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(201);
+ assert.equal((await mine(agent)).status,'SUBMITTED');
+});
 test('submit requires verification, fields and all images; invalid and duplicate uploads handled',async()=>{
  const agent=await start();await send(agent,'post','/public/applications/submit').send({version:1}).expect(422);
  await verify(agent);await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(422);
