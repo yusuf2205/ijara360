@@ -15,7 +15,7 @@ test('M6 server panel: the owner sees every check, the last backup and free spac
   await page.goto('/settings');
   const panel = page.getByRole('region', { name: 'Сервер' });
   await expect(panel).toBeVisible();
-  for (const label of ['Сервер приложения', 'База данных', 'Вход через Tailscale', 'Вход из интернета', 'Вход из домашней сети', 'Ночная резервная копия', 'Копия в облаке', 'Копия на USB-диске', 'Место на диске']) {
+  for (const label of ['Сервер приложения', 'База данных', 'Вход через Tailscale', 'Вход из интернета', 'Вход из домашней сети', 'Ночная резервная копия', 'Копия в облаке', 'Копия на USB-диске', 'Место на диске', 'Обновления в реальном времени', 'Геолокация: приём', 'Геолокация: статусы', 'Геолокация: очистка истории', 'Карта (Яндекс)']) {
     await expect(panel.getByText(label, { exact: true })).toBeVisible();
   }
   await expect(panel.getByText(/^(Всё работает|Есть проблемы: \d+)$/)).toBeVisible();

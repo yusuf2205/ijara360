@@ -16,13 +16,14 @@ import {allowedOrigins} from './origins';
  */
 export type RealtimeEvent={
   p:string;                 // property
-  topic:'applications'|'tickets'|'finance'|'house'|'notifications';
+  topic:'applications'|'tickets'|'finance'|'house'|'notifications'|'location';
   type:string;
   id?:string;
   need?:PermissionCode[];   // staff: any of these (owners always); omitted = every staff member of the property
   users?:string[];          // staff: only these users
   residents?:string[];      // tenants: only these residents
   staff?:false;             // not for staff sockets at all
+  data?:Record<string,string|number|boolean|null>; // small payload for clients that may see it (M7 marker moves)
 };
 type StaffClient={kind:'staff';token:string;userId:string;propertyId:string;superAdmin:boolean;grants:string};
 type TenantClient={kind:'tenant';token:string;accountId:string;residentId:string;propertyId:string};
@@ -52,6 +53,8 @@ export class RealtimeHub implements OnModuleInit,OnModuleDestroy{
   private clients=new Map<WebSocket,Conn>();
   private timer?:NodeJS.Timeout;
   private listener?:Client;
+  /** True while the LISTEN connection is up (health check, M7 watchdog). */
+  get listening(){return Boolean(this.listener);}
   private retry?:NodeJS.Timeout;
   private closing=false;
   constructor(private readonly db:Database,private readonly permissions:PermissionService){}
@@ -125,7 +128,7 @@ export class RealtimeHub implements OnModuleInit,OnModuleDestroy{
     return true;
   }
   deliver(e:RealtimeEvent){
-    const message=JSON.stringify({topic:e.topic,type:e.type,...(e.id?{id:e.id}:{})});
+    const message=JSON.stringify({topic:e.topic,type:e.type,...(e.id?{id:e.id}:{}),...(e.data?{data:e.data}:{})});
     for(const [ws,c] of this.clients)if(ws.readyState===WebSocket.OPEN&&this.allowed(c,e))ws.send(message);
   }
   private broadcast(m:object){const s=JSON.stringify(m);for(const ws of this.clients.keys())if(ws.readyState===WebSocket.OPEN)ws.send(s);}

@@ -1,4 +1,4 @@
-﻿name: ijara360
+name: ijara360
 description: "Ijara360: жильцам — оплаты и обращения, сотрудникам — весь дом."
 publish_to: 'none'
 version: 1.0.0+1
@@ -12,10 +12,13 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
+  geolocator: ^14.1.1
   http: ^1.6.0
   intl: ^0.20.3
+  shared_preferences: ^2.5.6
   url_launcher: ^6.3.3
   web_socket_channel: ^3.0.3
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:

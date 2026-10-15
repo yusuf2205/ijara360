@@ -7,6 +7,7 @@ import 'session.dart';
 import 'screens/common.dart';
 import 'screens/login.dart';
 import 'screens/staff.dart';
+import 'screens/location.dart';
 import 'screens/tenant.dart';
 import 'theme.dart';
 import 'ui/kit.dart';
@@ -85,13 +86,13 @@ class _TenantAppState extends State<TenantApp> with _Unread {
   @override
   String get feedPath => '/tenant/notifications';
   @override
-  Widget build(BuildContext context) => AppShell(destinations: [
+  Widget build(BuildContext context) => ForegroundLocation(child: AppShell(destinations: [
         Destination('Главная', Icons.home_outlined, Icons.home_rounded, (_) => const TenantHome()),
         Destination('Платежи', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const TenantPayments()),
         Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const TenantTickets()),
         Destination('Лента', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => const NotificationsScreen(), badge: unread),
-        Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen()),
-      ]);
+        Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen(extra: [LocationCard()])),
+      ]));
 }
 
 class StaffApp extends StatefulWidget {
@@ -114,6 +115,7 @@ class _StaffAppState extends State<StaffApp> with _Unread {
       if (s.can('FINANCE_VIEW')) ('finance', Destination('Финансы', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const FinanceScreen())),
       if (s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE')) ('tickets', Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const StaffTicketsScreen())),
       ('rooms', Destination('Комнаты', Icons.meeting_room_outlined, Icons.meeting_room_rounded, (_) => const RoomsScreen())),
+      if (s.can('VIEW_LOCATION')) ('map', Destination('Карта', Icons.map_outlined, Icons.map_rounded, (_) => const StaffMapScreen())),
       if (s.can('APPLICATION_VIEW')) ('applications', Destination('Заявки', Icons.assignment_outlined, Icons.assignment_rounded, (_) => const ApplicationsScreen())),
       ('feed', Destination('Уведомления', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => NotificationsScreen(onOpen: (c, n) => _openLink(c, n)), badge: unread)),
       ('profile', Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => ProfileScreen(extra: [const TelegramCard(), if (s.role == Role.superAdmin) const StaffListCard()]))),

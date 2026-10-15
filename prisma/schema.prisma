@@ -247,6 +247,8 @@ model Resident {
   accessGranted Boolean @default(dbgenerated("true")) @map("access_granted")
   accessStatusReason String @default(dbgenerated("'OK'::character varying")) @map("access_status_reason") @db.VarChar(255)
   financeCheckedAt DateTime? @map("finance_checked_at") @db.Timestamptz(3)
+  location ResidentLocation?
+  locationPoints ResidentLocationPoint[]
   applications RentalApplication[]
   charges Charge[]
   payments Payment[]
@@ -468,6 +470,7 @@ model TenantSession {
   remembered Boolean @default(false)
   lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(3)
   account TenantAccount @relation(fields:[accountId],references:[id],onDelete:Restrict)
+  locationPrimaryFor ResidentLocation[]
   @@index([accountId])
   @@index([expiresAt])
   @@map("tenant_sessions")
@@ -584,4 +587,52 @@ model LoginApproval {
   user User @relation(fields:[userId],references:[id],onDelete:Restrict)
   @@index([userId])
   @@map("login_approvals")
+}
+
+/// M7: one row per resident — consent, primary device, last accepted position, device telemetry, status.
+model ResidentLocation {
+  residentId String @id @map("resident_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  sharingEnabled Boolean @default(false) @map("sharing_enabled")
+  consentedAt DateTime? @map("consented_at") @db.Timestamptz(3)
+  withdrawnAt DateTime? @map("withdrawn_at") @db.Timestamptz(3)
+  primarySessionId String? @map("primary_session_id") @db.Uuid
+  deviceLabel String? @map("device_label") @db.VarChar(120)
+  latitude Float?
+  longitude Float?
+  accuracyM Float? @map("accuracy_m") @db.Real
+  recordedAt DateTime? @map("recorded_at") @db.Timestamptz(3)
+  receivedAt DateTime? @map("received_at") @db.Timestamptz(3)
+  permissionState String @default("UNKNOWN") @map("permission_state") @db.VarChar(20)
+  servicesEnabled Boolean? @map("services_enabled")
+  backgroundState String @default("UNKNOWN") @map("background_state") @db.VarChar(20)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  status String @default("OFFLINE") @db.VarChar(20)
+  statusReason String? @map("status_reason") @db.VarChar(40)
+  statusChangedAt DateTime @default(now()) @map("status_changed_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  resident Resident @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Cascade,onUpdate:Restrict,map:"resident_locations_resident_fkey")
+  primarySession TenantSession? @relation(fields:[primarySessionId],references:[id],onDelete:SetNull,map:"resident_locations_session_fkey")
+  @@unique([residentId,propertyId],map:"resident_locations_resident_id_property_id_key")
+  @@index([propertyId])
+  @@map("resident_locations")
+}
+
+/// M7: location history (retention LOCATION_HISTORY_RETENTION_DAYS). (sessionId, sequence) deduplicates redelivery.
+model ResidentLocationPoint {
+  id BigInt @id @default(autoincrement())
+  residentId String @map("resident_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+  sequence BigInt
+  latitude Float
+  longitude Float
+  accuracyM Float @map("accuracy_m") @db.Real
+  recordedAt DateTime @map("recorded_at") @db.Timestamptz(3)
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  resident Resident @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Cascade,onUpdate:Restrict,map:"resident_location_points_resident_fkey")
+  @@unique([sessionId,sequence],map:"resident_location_points_session_sequence_key")
+  @@index([residentId,recordedAt],map:"resident_location_points_resident_recorded_idx")
+  @@index([recordedAt],map:"resident_location_points_recorded_idx")
+  @@map("resident_location_points")
 }

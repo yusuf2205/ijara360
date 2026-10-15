@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'api/client.dart';
 import 'api/realtime.dart';
+import 'location/agent.dart';
 
 /// Who is signed in. Roles come from the server: OWNER/SUPER_ADMIN (super-admin), ADMIN with granted
 /// permissions, or a tenant. The UI only hides what the server would refuse anyway.
@@ -116,6 +117,8 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Location collection belongs to this session: it ends with it (M7).
+    if (api.audience == Audience.tenant) await LocationAgent.stop(StopReason.signedOut);
     try { await api.post(api.audience == Audience.tenant ? '/tenant/auth/logout' : '/auth/logout'); } catch (_) {}
     realtime.stop();
     await api.forget();

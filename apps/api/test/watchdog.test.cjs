@@ -109,3 +109,15 @@ test('offsite copies: not configured is grey, a failure or 30 hours of silence i
   r=evaluate(r.state,{usb:{ok:false,detail:'нет USB-диска с папкой Ijara360-backup'}},now+MIN);
   assert.match(r.messages[0],/Копия на USB-диске: нет USB-диска с папкой Ijara360-backup/);
 });
+
+test('M7 parts from /api/health: realtime, location intake, workers, map key', ()=>{
+  const {apiParts}=require('../../../scripts/watchdog.cjs');
+  const now=Date.parse('2026-10-15T05:00:00Z');
+  const good=apiParts({realtime:true,location:{statusWorker:12,retentionWorker:1800,lastUpload:40,mapConfigured:true}},now,now-HOUR);
+  for(const k of ['realtime','locationApi','locationWorker','retention','map'])assert.equal(good[k].ok,true,k);
+  const bad=apiParts({realtime:false,location:{statusWorker:600,retentionWorker:null,lastUpload:null,mapConfigured:false}},now,now-HOUR);
+  assert.equal(bad.realtime.ok,false);assert.equal(bad.locationWorker.ok,false);assert.equal(bad.retention.ok,false);
+  assert.deepEqual(bad.map,{ok:null,detail:'не подключена'},'no key is grey, not an alarm');
+  assert.equal(apiParts({realtime:true,location:{statusWorker:null,retentionWorker:null,mapConfigured:false}},now,now-MIN).locationWorker.ok,null,'just started');
+  assert.equal(apiParts(null,now,now).realtime.ok,null,'API down is reported by its own check');
+});

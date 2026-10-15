@@ -51,6 +51,11 @@ services:
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_MODE: ${TELEGRAM_MODE:-polling}
       SERVER_STATUS_PATH: /var/lib/ijara360/status
+      # M7 geolocation (docs/M7-LOCATION.md). The map key needs a commercial Yandex licence for this use.
+      YANDEX_MAPS_API_KEY: ${YANDEX_MAPS_API_KEY:-}
+      LOCATION_LIVE_SECONDS: ${LOCATION_LIVE_SECONDS:-180}
+      LOCATION_STALE_SECONDS: ${LOCATION_STALE_SECONDS:-2100}
+      LOCATION_HISTORY_RETENTION_DAYS: ${LOCATION_HISTORY_RETENTION_DAYS:-30}
     volumes:
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/kyc:/var/lib/ijara360/kyc
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/var/lib/ijara360/status:ro

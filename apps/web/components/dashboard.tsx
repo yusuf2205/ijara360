@@ -1,4 +1,5 @@
 'use client';
+import { LocationSummary } from './map';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, BedDouble, Building2, CheckCircle2, DoorOpen, FileText, MessageSquare, Plus, Users } from 'lucide-react';
@@ -70,6 +71,7 @@ export function Dashboard({ name, rooms, permissions, actions, events }: { name:
       </div></section> : <section className="card"><h2>Сегодня</h2><div className="money"><div><span className="chip c-green"><DoorOpen size={17} /></span><p><strong>{beds - busy} свободных мест</strong><small>Можно заселять</small></p></div></div></section>}
       <section className="card events-card"><h2>Последние события <Link href="/history">Все</Link></h2>{events}</section>
     </div>
+    {can('VIEW_LOCATION') && <LocationSummary/>}
     <section className="card"><h2>План дома <Link href="/rooms">Все комнаты</Link></h2>
       {rooms.length ? <div className="plan">{rooms.map(room => {
         const tone = room.totalBeds === 0 ? 'empty' : room.availableBeds === 0 ? 'full' : room.availableBeds <= Math.ceil(room.totalBeds / 4) ? 'almost' : 'free';

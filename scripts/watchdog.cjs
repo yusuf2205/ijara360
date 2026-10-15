@@ -29,6 +29,11 @@ const LABELS = {
   cloud: 'Копия в облаке',
   usb: 'Копия на USB-диске',
   disk: 'Место на диске',
+  realtime: 'Обновления в реальном времени',
+  locationApi: 'Геолокация: приём',
+  locationWorker: 'Геолокация: статусы',
+  retention: 'Геолокация: очистка истории',
+  map: 'Карта (Яндекс)',
 };
 
 function formatBytes(n) {
@@ -68,6 +73,26 @@ function offsiteResult(record, now, startedAt) {
   if (!record.ok) return { ok: false, detail: `${record.detail || 'не удалась'} (${local(at).text})` };
   if (!(now - at < OFFSITE_MAX_AGE)) return { ok: false, detail: `последняя отправка ${duration(now - at)} назад` };
   return { ok: true, detail: `${local(at).text}, ${record.detail || ''}`.replace(/, $/, '') };
+}
+
+/**
+ * M7 parts reported by /api/health (private listener): the realtime LISTEN connection, the status worker
+ * (every 30 s), the retention worker (hourly) and whether a map key is configured. Null = not known yet.
+ */
+function apiParts(health, now, startedAt) {
+  const loc = health && health.location;
+  if (!health) return { realtime: { ok: null, detail: 'нет ответа API' }, locationApi: { ok: null, detail: 'нет ответа API' }, locationWorker: { ok: null, detail: 'нет ответа API' }, retention: { ok: null, detail: 'нет ответа API' }, map: { ok: null, detail: 'нет ответа API' } };
+  const early = now - startedAt < 10 * MINUTE;
+  const age = (s, max, label) => s == null ? (early ? { ok: null, detail: 'ещё не запускался' } : { ok: false, detail: `${label} не запускается` })
+    : s <= max ? { ok: true, detail: `работает (${duration(s * 1000)} назад)` } : { ok: false, detail: `не работал ${duration(s * 1000)}` };
+  return {
+    realtime: health.realtime === true ? { ok: true, detail: 'работает' } : { ok: false, detail: 'нет связи с базой' },
+    locationApi: loc ? { ok: true, detail: loc.lastUpload == null ? 'работает, точек пока не было' : `работает, последняя точка ${duration(loc.lastUpload * 1000)} назад` } : { ok: false, detail: 'модуль не отвечает' },
+    locationWorker: loc ? age(loc.statusWorker, 120, 'процесс') : { ok: false, detail: 'модуль не отвечает' },
+    retention: loc ? age(loc.retentionWorker, 3 * 3600, 'очистка') : { ok: false, detail: 'модуль не отвечает' },
+    // Without a commercial key the map is "not connected": grey, not an alarm (docs/M7-LOCATION.md).
+    map: loc && loc.mapConfigured ? { ok: true, detail: 'ключ подключён' } : { ok: null, detail: 'не подключена' },
+  };
 }
 
 function diskResult(free, total) {
@@ -185,10 +210,11 @@ async function main() {
   async function tick() {
     const now = Date.now();
     const results = {};
+    const health = await fetch(urls.api, { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null, () => null).catch(() => null);
     const [api, tailnet, internet, lan] = await Promise.all([
       httpCheck(urls.api, 200), httpCheck(urls.tailnet, 200), httpCheck(urls.internet, 200), httpCheck(urls.lan, 200, { host: lanHost }),
     ]);
-    Object.assign(results, { api, tailnet, internet, lan });
+    Object.assign(results, { api, tailnet, internet, lan }, apiParts(health, now, startedAt));
     try {
       await withDb(async db => {
         await db.query('SELECT 1');
@@ -237,5 +263,5 @@ async function main() {
   }
 }
 
-module.exports = { evaluate, backupResult, offsiteResult, diskResult, formatBytes, local, LABELS };
+module.exports = { evaluate, apiParts, backupResult, offsiteResult, diskResult, formatBytes, local, LABELS };
 if (require.main === module) main();

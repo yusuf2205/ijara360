@@ -19,27 +19,35 @@ import { TenantFinanceModule } from './tenant-finance';
 import { TicketsModule } from './tickets';
 import { NotificationsModule } from './notifications';
 import { SystemModule } from './system';
+import { LocationModule, LocationService } from './location';
 
 @Controller('health')
 class HealthController {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database, private readonly realtime: RealtimeHub, private readonly location: LocationService) {}
   @Get() async health() {
-    try { await this.db.$queryRaw`SELECT 1`; return { status: 'ok', version: '0.1.0' }; }
+    try { await this.db.$queryRaw`SELECT 1`; }
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
+    // Private listeners only (the public one answers 404 here). Seconds since each worker last finished.
+    const age = (d: Date | null) => d ? Math.round((Date.now() - d.getTime()) / 1000) : null;
+    return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening,
+      location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY) } };
   }
 }
-@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule, LocationModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()
 class ErrorFilter implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
     const res = host.switchToHttp().getResponse<Response>();
-    let status = 500, message: string | string[] = 'Не удалось выполнить запрос. Повторите позже.';
+    let status = 500, message: string | string[] = 'Не удалось выполнить запрос. Повторите позже.', code: string | undefined;
     if (error instanceof HttpException) {
       status = error.getStatus();
       const body = error.getResponse();
       message = typeof body === 'string' ? body : (body as { message: string | string[] }).message;
+      // Machine-readable reason for apps (M7: NOT_PRIMARY, NOT_RESIDENT, SHARING_OFF); never free text.
+      const c = typeof body === 'object' ? (body as { code?: unknown }).code : undefined;
+      if (typeof c === 'string' && /^[A-Z_]{2,40}$/.test(c)) code = c;
     } else if (error instanceof Error && 'status' in error && [400, 413].includes(Number(error.status))) {
       status = Number(error.status); message = status === 413 ? 'Запрос слишком большой.' : 'Неверный формат JSON.';
     } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -47,7 +55,7 @@ class ErrorFilter implements ExceptionFilter {
     }
     if (status === 429) res.setHeader('Retry-After', '900');
     if (status === 500) console.error('Request failed', res.getHeader('X-Request-Id'), error instanceof Error ? error.name : 'UnknownError');
-    res.status(status).json({ statusCode: status, message, requestId: res.getHeader('X-Request-Id') });
+    res.status(status).json({ statusCode: status, message, ...(code ? { code } : {}), requestId: res.getHeader('X-Request-Id') });
   }
 }
 

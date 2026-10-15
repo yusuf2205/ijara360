@@ -31,6 +31,9 @@ async function grantRuntime(db) {
   // M5 staff internet access: links and approvals are consumed or decided; trusted devices can be removed.
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE ON staff_telegram_links,login_approvals TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON trusted_devices TO ijara_app');
+  // M7 geolocation: current state is removed at checkout, history is deleted by the retention worker.
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON resident_locations,resident_location_points TO ijara_app');
+  await db.$executeRawUnsafe('GRANT USAGE ON SEQUENCE resident_location_points_id_seq TO ijara_app');
    console.log('Runtime database privileges applied.');
 }
 module.exports = { grantRuntime };
