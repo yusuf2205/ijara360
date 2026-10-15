@@ -282,16 +282,18 @@ export class LocationService implements OnModuleInit,OnModuleDestroy{
     const key=process.env.YANDEX_MAPS_API_KEY||'';
     if(!key){this.mapKey=null;return;}
     const origins=[process.env.APP_ORIGIN,...(process.env.ADDITIONAL_APP_ORIGINS||'').split(',')].map(o=>o?.trim()).filter((o):o is string=>Boolean(o));
-    let result:'ok'|'rejected'|'unknown'='ok';
+    // Yandex takes host names only, so an IP origin (the LAN address) can never be on the list: the key
+    // counts as working when Yandex accepts it for at least one staff origin.
+    let accepted=false,refused=false;
     for(const origin of origins.length?origins:['']){
       try{
         const r=await fetch(`https://api-maps.yandex.ru/v3/?apikey=${encodeURIComponent(key)}&lang=ru_RU`,{headers:origin?{Referer:`${origin}/`}:{},signal:AbortSignal.timeout(15000)});
         await r.body?.cancel();
-        if(r.status===403){result='rejected';break;}
-        if(!r.ok)result='unknown';
-      }catch{result='unknown';}
+        if(r.ok){accepted=true;break;}
+        if(r.status===403)refused=true;
+      }catch{/* Yandex unreachable: not a key fault */}
     }
-    this.mapKey=result;
+    this.mapKey=accepted?'ok':refused?'rejected':'unknown';
   }
 
   /** Map key for staff who may see locations; never in the source or the client bundle. */
