@@ -30,7 +30,7 @@ class HealthController {
     // Private listeners only (the public one answers 404 here). Seconds since each worker last finished.
     const age = (d: Date | null) => d ? Math.round((Date.now() - d.getTime()) / 1000) : null;
     return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening,
-      location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY) } };
+      location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY), mapKey: this.location.mapKey } };
   }
 }
 @Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule, LocationModule], controllers: [HealthController] })

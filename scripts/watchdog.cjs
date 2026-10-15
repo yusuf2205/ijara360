@@ -91,7 +91,11 @@ function apiParts(health, now, startedAt) {
     locationWorker: loc ? age(loc.statusWorker, 120, 'процесс') : { ok: false, detail: 'модуль не отвечает' },
     retention: loc ? age(loc.retentionWorker, 3 * 3600, 'очистка') : { ok: false, detail: 'модуль не отвечает' },
     // Without a commercial key the map is "not connected": grey, not an alarm (docs/M7-LOCATION.md).
-    map: loc && loc.mapConfigured ? { ok: true, detail: 'ключ подключён' } : { ok: null, detail: 'не подключена' },
+    // With a key, Yandex itself must accept it (the API checks hourly with each staff origin as Referer).
+    map: !loc || !loc.mapConfigured ? { ok: null, detail: 'не подключена' }
+      : loc.mapKey === 'ok' ? { ok: true, detail: 'ключ принят Яндексом' }
+      : loc.mapKey === 'rejected' ? { ok: false, detail: 'Яндекс не принимает ключ (проверьте ключ JavaScript API и HTTP Referer)' }
+      : { ok: null, detail: 'ключ ещё не проверен' },
   };
 }
 

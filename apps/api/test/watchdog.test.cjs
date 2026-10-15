@@ -113,11 +113,15 @@ test('offsite copies: not configured is grey, a failure or 30 hours of silence i
 test('M7 parts from /api/health: realtime, location intake, workers, map key', ()=>{
   const {apiParts}=require('../../../scripts/watchdog.cjs');
   const now=Date.parse('2026-10-15T05:00:00Z');
-  const good=apiParts({realtime:true,location:{statusWorker:12,retentionWorker:1800,lastUpload:40,mapConfigured:true}},now,now-HOUR);
+  const good=apiParts({realtime:true,location:{statusWorker:12,retentionWorker:1800,lastUpload:40,mapConfigured:true,mapKey:'ok'}},now,now-HOUR);
   for(const k of ['realtime','locationApi','locationWorker','retention','map'])assert.equal(good[k].ok,true,k);
   const bad=apiParts({realtime:false,location:{statusWorker:600,retentionWorker:null,lastUpload:null,mapConfigured:false}},now,now-HOUR);
   assert.equal(bad.realtime.ok,false);assert.equal(bad.locationWorker.ok,false);assert.equal(bad.retention.ok,false);
   assert.deepEqual(bad.map,{ok:null,detail:'не подключена'},'no key is grey, not an alarm');
+  const loc={statusWorker:12,retentionWorker:1800,lastUpload:40,mapConfigured:true};
+  assert.equal(apiParts({realtime:true,location:{...loc,mapKey:'rejected'}},now,now-HOUR).map.ok,false,'a key Yandex refuses is a fault, not "connected"');
+  assert.equal(apiParts({realtime:true,location:{...loc,mapKey:null}},now,now-HOUR).map.ok,null,'not checked yet');
+  assert.equal(apiParts({realtime:true,location:{...loc,mapKey:'unknown'}},now,now-HOUR).map.ok,null,'Yandex unreachable is not a key fault');
   assert.equal(apiParts({realtime:true,location:{statusWorker:null,retentionWorker:null,mapConfigured:false}},now,now-MIN).locationWorker.ok,null,'just started');
   assert.equal(apiParts(null,now,now).realtime.ok,null,'API down is reported by its own check');
 });

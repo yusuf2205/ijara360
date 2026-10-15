@@ -25,7 +25,17 @@ export function loadYandex(apiKey: string): Promise<Ymaps3> {
   if (window.ymaps3) return window.ymaps3.ready.then(() => window.ymaps3 as Ymaps3);
   if (loading) return loading;
   loading = new Promise<Ymaps3>((resolve, reject) => {
+    // JS API 3.0 checks the key against the HTTP Referer, but the site sends "Referrer-Policy: same-origin"
+    // (no Referer at all to other sites). Once a map is shown, this page tells other sites its origin only:
+    // never the path, which can hold a resident id. The script and the requests it makes follow it.
+    if (!document.querySelector('meta[name="referrer"]')) {
+      const m = document.createElement('meta');
+      m.name = 'referrer';
+      m.content = 'strict-origin';
+      document.head.appendChild(m);
+    }
     const s = document.createElement('script');
+    s.referrerPolicy = 'strict-origin';
     s.src = `https://api-maps.yandex.ru/v3/?apikey=${encodeURIComponent(apiKey)}&lang=ru_RU`;
     s.async = true;
     const fail = () => { s.remove(); loading = null; reject(new Error('map')); };

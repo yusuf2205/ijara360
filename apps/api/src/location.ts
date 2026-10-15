@@ -76,12 +76,17 @@ export class LocationService implements OnModuleInit,OnModuleDestroy{
   private retentionTimer?:ReturnType<typeof setInterval>;
   /** Worker heartbeats for /api/health and the M6 watchdog. */
   readonly beats={status:null as Date|null,retention:null as Date|null,ingest:null as Date|null};
+  /** Whether Yandex accepts the map key for the staff origins: null until checked or without a key. */
+  mapKey:'ok'|'rejected'|'unknown'|null=null;
+  private mapTimer?:ReturnType<typeof setInterval>;
   constructor(private readonly db:Database,private readonly auth:AuthService){}
 
   onModuleInit(){
     if(process.env.NODE_ENV==='test')return;
     this.statusTimer=setInterval(()=>void this.refreshStatuses().catch(()=>console.log('location status worker failed')),30000);this.statusTimer.unref();
     this.retentionTimer=setInterval(()=>void this.retention().catch(()=>console.log('location retention worker failed')),3600000);this.retentionTimer.unref();
+    void this.checkMapKey();
+    this.mapTimer=setInterval(()=>void this.checkMapKey(),3600000);this.mapTimer.unref();
     void this.refreshStatuses().catch(()=>undefined);void this.retention().catch(()=>undefined);
   }
   onModuleDestroy(){if(this.statusTimer)clearInterval(this.statusTimer);if(this.retentionTimer)clearInterval(this.retentionTimer);}
@@ -266,6 +271,27 @@ export class LocationService implements OnModuleInit,OnModuleDestroy{
     const points=await this.db.residentLocationPoint.findMany({where:{residentId,propertyId:actor.propertyId,recordedAt:{gte:from,lt:to}},orderBy:{recordedAt:'asc'},take:5000,select:{latitude:true,longitude:true,accuracyM:true,recordedAt:true}});
     await this.db.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'RESIDENT_LOCATION_HISTORY_VIEWED',entity:'Resident',entityId:residentId,metadata:{from:from.toISOString(),to:to.toISOString(),points:points.length}}});
     return {points:points.map(p=>({latitude:p.latitude,longitude:p.longitude,accuracy:p.accuracyM,recordedAt:p.recordedAt})),retentionDays:locationPolicy.retentionDays,truncated:points.length===5000};
+  }
+
+  /**
+   * JS API 3.0 answers 403 "Invalid api key" for a wrong key, a key of another product, a key without an
+   * HTTP Referer restriction, or an origin missing from it. Asks with each staff origin as the Referer,
+   * the way a browser on the map page does. Never logs the key.
+   */
+  async checkMapKey(){
+    const key=process.env.YANDEX_MAPS_API_KEY||'';
+    if(!key){this.mapKey=null;return;}
+    const origins=[process.env.APP_ORIGIN,...(process.env.ADDITIONAL_APP_ORIGINS||'').split(',')].map(o=>o?.trim()).filter((o):o is string=>Boolean(o));
+    let result:'ok'|'rejected'|'unknown'='ok';
+    for(const origin of origins.length?origins:['']){
+      try{
+        const r=await fetch(`https://api-maps.yandex.ru/v3/?apikey=${encodeURIComponent(key)}&lang=ru_RU`,{headers:origin?{Referer:`${origin}/`}:{},signal:AbortSignal.timeout(15000)});
+        await r.body?.cancel();
+        if(r.status===403){result='rejected';break;}
+        if(!r.ok)result='unknown';
+      }catch{result='unknown';}
+    }
+    this.mapKey=result;
   }
 
   /** Map key for staff who may see locations; never in the source or the client bundle. */

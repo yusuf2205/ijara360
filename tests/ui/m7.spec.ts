@@ -15,10 +15,12 @@ window.ymaps3 = {
   YMapFeature: class { constructor(p){ this._el = document.createElement('i'); this._el.className = 'stub-feature'; this._el.dataset.type = p.geometry.type; } update(){} },
 };`;
 
+/** Referer headers the page sent to Yandex: JS API 3.0 checks the key against it. */
+const yandexReferers: (string | undefined)[] = [];
 async function stubYandex(page: Page, mode: 'ok' | 'fail' | 'nokey' = 'ok') {
   if (mode === 'nokey') await page.route('**/api/map/config', r => r.fulfill({ json: { provider: null, apiKey: null } }));
   else await page.route('**/api/map/config', r => r.fulfill({ json: { provider: 'yandex', apiKey: 'test-only' } }));
-  await page.route('https://api-maps.yandex.ru/**', r => mode === 'fail' ? r.abort() : r.fulfill({ contentType: 'application/javascript', body: YMAPS_STUB }));
+  await page.route('https://api-maps.yandex.ru/**', r => { yandexReferers.push(r.request().headers()['referer']); return mode === 'fail' ? r.abort() : r.fulfill({ contentType: 'application/javascript', body: YMAPS_STUB }); });
 }
 async function login(page: Page, phone = ownerPhone) {
   await page.goto('/login');
@@ -51,10 +53,13 @@ test('M7 map: a resident\'s point appears as a marker and moves in realtime with
   const marker = page.locator('.map-marker[aria-label$="сейчас здесь"]').first();
   await expect(marker).toHaveAttribute('data-lnglat', '69.240562,41.311081', { timeout: 15000 });
   await expect(page.getByRole('button', { name: /В сети \d+/ })).toBeVisible();
+  // The site's own policy is same-origin; Yandex still gets the origin (for the key), never the path.
+  expect(yandexReferers.at(-1)).toBe(new URL(page.url()).origin + '/');
   // Mark this page instance: a reload would drop the flag.
   await page.evaluate(() => { (window as unknown as { __same: boolean }).__same = true; });
-  await send(41.3125, 69.2421);
-  await expect(marker).toHaveAttribute('data-lnglat', '69.2421,41.3125', { timeout: 10000 });
+  // About 20 m: the server drops jumps faster than 85 m/s, and both points may come within a second.
+  await send(41.31125, 69.2407);
+  await expect(marker).toHaveAttribute('data-lnglat', '69.2407,41.31125', { timeout: 10000 });
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
   // Click the marker: compact card with accuracy and actions.
   await marker.click();
