@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:ijara360/api/client.dart';
 import 'package:ijara360/location/agent.dart';
+import 'package:ijara360/screens/location.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final t0 = DateTime.utc(2026, 10, 15, 10);
@@ -99,5 +100,17 @@ void main() {
   test('device state codes match the API', () {
     expect(const DeviceState(LocationPermission.whileInUse, true).toJson(), {'permission': 'WHILE_IN_USE', 'servicesEnabled': true, 'background': 'RESTRICTED'});
     expect(const DeviceState(LocationPermission.denied, false).toJson()['permission'], 'DENIED');
+  });
+
+  test('Yandex links carry only the point: Navigator first, then Maps, then the browser', () {
+    final links = yandexLinks(41.311081, 69.240562);
+    expect(links.map((u) => u.scheme), ['yandexnavi', 'yandexmaps', 'https']);
+    expect(links[0].queryParameters['lat'], '41.311081');
+    expect(links[0].queryParameters['lon'], '69.240562');
+    expect(links[1].queryParameters['pt'], '69.240562,41.311081');
+    expect(links[2].host, 'yandex.ru');
+    for (final u in links) {
+      expect(u.queryParameters.keys, isNot(contains('desc')));
+    }
   });
 }

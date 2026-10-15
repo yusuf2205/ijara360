@@ -329,12 +329,44 @@ class _StaffMapScreenState extends State<StaffMapScreen> {
                   Text([if (i['room'] != null) 'Комната ${i['room']}', if (i['bed'] != null) 'Место ${i['bed']}'].join(' · '), style: Theme.of(context).textTheme.bodySmall),
                   Text(i['position'] == null ? '—' : '${i['status'] == 'LIVE' ? 'Обновлено' : 'Последняя точка'} ${agoText(i['position']['recordedAt'] as String?)} · ${accuracyLabel(i['position']['accuracy'] as num?)}', style: Theme.of(context).textTheme.bodySmall),
                 ])),
-                StatusPill('${labels[i['status']]}', tone: tone('${i['status']}')),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  StatusPill('${labels[i['status']]}', tone: tone('${i['status']}')),
+                  if (i['position'] != null) IconButton(
+                    tooltip: 'Открыть в Яндекс Навигаторе',
+                    icon: const Icon(Icons.navigation_rounded),
+                    onPressed: () => openInYandex(context, s.api, '${i['residentId']}'),
+                  ),
+                ]),
               ])),
             ),
           ]);
         },
       ),
     );
+  }
+}
+
+/// Yandex Navigator first, then Yandex Maps, then the browser. Only the point leaves the phone: no name or
+/// other data goes into the link. Coordinates come from the per-resident endpoint, so the server audits
+/// the view (RESIDENT_LOCATION_VIEWED) exactly as on the web map.
+List<Uri> yandexLinks(num lat, num lon) => [
+      Uri.parse('yandexnavi://show_point_on_map?lat=$lat&lon=$lon&zoom=17&no-balloon=1'),
+      Uri.parse('yandexmaps://maps.yandex.ru/?pt=$lon,$lat&z=17&l=map'),
+      Uri.parse('https://yandex.ru/maps/?pt=$lon,$lat&z=17&l=map'),
+    ];
+
+Future<void> openInYandex(BuildContext context, ApiClient api, String residentId) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final r = (await api.get('/residents/$residentId/location')) as Map<String, dynamic>;
+    final p = r['position'] as Map<String, dynamic>?;
+    if (p == null) { messenger.showSnackBar(const SnackBar(content: Text('У жильца пока нет точки.'))); return; }
+    for (final u in yandexLinks(p['latitude'] as num, p['longitude'] as num)) {
+      if (u.scheme != 'https' && !await canLaunchUrl(u)) continue;
+      if (await launchUrl(u, mode: LaunchMode.externalApplication)) return;
+    }
+    messenger.showSnackBar(const SnackBar(content: Text('Не удалось открыть Яндекс Навигатор или Карты.')));
+  } on ApiException catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(e.message)));
   }
 }
