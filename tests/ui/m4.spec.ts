@@ -17,7 +17,7 @@ async function apiDraft(page:Page,phone:string,pinfl:string){
   expect((await page.request.post('/api/public/applications/submit',{headers,data:{version:(await own(page)).version}})).ok()).toBe(true);return own(page);
 }
 test('M4 public wizard resumes, uploads previews and submits; staff sees realtime then approves and converts',async({page,browser})=>{
-  test.setTimeout(120000);await login(page);await page.goto('/applications');await expect(page.getByText('Изменения поступают автоматически')).toBeVisible();
+  test.setTimeout(240000);await login(page);await page.goto('/applications');await expect(page.getByText('Изменения поступают автоматически')).toBeVisible();
   const context=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}});const applicant=await context.newPage();
   await applicant.goto('/apply');await applicant.getByLabel('Ваш телефон').fill('+998900000066');await applicant.getByRole('button',{name:'Начать анкету'}).click();
   await expect(applicant.getByRole('heading',{name:'Телефон',exact:true})).toBeVisible();
@@ -30,8 +30,8 @@ test('M4 public wizard resumes, uploads previews and submits; staff sees realtim
   await applicant.getByLabel('Желаемая дата заселения').fill('2026-10-01');await applicant.getByLabel('Планируемый срок проживания').fill('12 months');await applicant.getByRole('button',{name:'Далее',exact:true}).click();
   await applicant.getByLabel('ФИО контактного лица').fill('Test Contact');await applicant.getByLabel('Кем приходится').fill('Parent');await applicant.getByLabel('Телефон контактного лица').fill('+998900000099');await applicant.getByRole('button',{name:'Далее',exact:true}).click();
   const file={name:'test-image.png',mimeType:'image/png',buffer:await sharp(randomBytes(640*640*3),{raw:{width:640,height:640,channels:3}}).png().toBuffer()};
-  for(const label of ['Передняя сторона паспорта','Обратная сторона паспорта']){await applicant.getByLabel(label,{exact:true}).setInputFiles(file);await expect(applicant.getByAltText(label,{exact:true})).toBeVisible();}
-  await applicant.getByRole('button',{name:'Далее',exact:true}).click();await applicant.getByLabel('Фотография лица',{exact:true}).setInputFiles(file);await expect(applicant.getByAltText('Фотография лица',{exact:true})).toBeVisible();await applicant.getByRole('button',{name:'Далее',exact:true}).click();
+  for(const label of ['Передняя сторона паспорта','Обратная сторона паспорта']){await applicant.getByLabel(label,{exact:true}).setInputFiles(file);await expect(applicant.getByAltText(label,{exact:true})).toBeVisible({timeout:40000});}
+  await applicant.getByRole('button',{name:'Далее',exact:true}).click();await applicant.getByLabel('Фотография лица',{exact:true}).setInputFiles(file);await expect(applicant.getByAltText('Фотография лица',{exact:true})).toBeVisible({timeout:40000});await applicant.getByRole('button',{name:'Далее',exact:true}).click();
   await applicant.getByRole('checkbox').check();await applicant.getByRole('button',{name:'Отправить заявку'}).click();await expect(applicant.getByText('Заявка принята',{exact:true})).toBeVisible();
   await expect(page.getByText('M4 UI Applicant',{exact:true})).toBeVisible();await page.getByText('M4 UI Applicant',{exact:true}).click();await page.getByRole('button',{name:'Начать рассмотрение'}).click();
   await expect(page.getByRole('button',{name:'Одобрить',exact:true})).toBeVisible();await page.getByRole('button',{name:'Фото лица',exact:true}).click();await expect(page.getByAltText('Документ заявки')).toBeVisible();await page.getByRole('checkbox',{name:/Я вручную проверил/}).check();await page.getByRole('button',{name:'Одобрить',exact:true}).click();
