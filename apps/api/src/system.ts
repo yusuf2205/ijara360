@@ -6,7 +6,7 @@ import {Database} from './database';
 import {requireAccess} from './permission-policy';
 
 const STALE_AFTER=5*60000;
-const KEYS=['api','database','tailnet','internet','lan','backup','cloud','usb','disk','realtime','locationApi','locationWorker','retention','map'] as const;
+const KEYS=['api','database','tailnet','internet','lan','domain','backup','cloud','usb','disk','realtime','locationApi','locationWorker','retention','map'] as const;
 type Check={key:string;label:string;ok:boolean|null;detail:string;since:string|null};
 
 /**

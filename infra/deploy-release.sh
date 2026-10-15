@@ -33,6 +33,10 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
 record="$root/deployments/$stamp"
 mkdir -m 700 "$record"
 export RELEASE_TAG="$revision"
+# Own domain (docs/M7.1-DOMAIN.md): the Cloudflare tunnel runs only once its token is in the secrets.
+domain=$(sed -n 's/^PUBLIC_DOMAIN=//p' "$secret" | tail -n 1 | tr -d "\"'")
+domain=${domain:-ijara360.uz}
+if grep -q '^CLOUDFLARE_TUNNEL_TOKEN=..' "$secret"; then export COMPOSE_PROFILES=tunnel; else export COMPOSE_PROFILES=; fi
 # Build first, so the backup is fresh when migrate deploy starts.
 docker compose --env-file "$secret" -f "$source/compose.yaml" build
 sh "$source/scripts/backup-nas.sh" > "$record/backup-path"
@@ -65,6 +69,19 @@ test "$(code -X POST -H 'Content-Type: application/json' -H 'X-Ijara-Request: 1'
 # A client cannot pretend to be inside: the public listener always says internet, the tailnet one never does.
 curl --fail --silent --max-time 30 -H 'X-Ijara-Channel: private' http://127.0.0.1:8448/api/auth/channel | grep -q '"internet":true'
 curl --fail --silent --max-time 30 -H 'X-Ijara-Channel: public' http://127.0.0.1:8447/api/auth/channel | grep -q '"internet":false'
+# Own-domain listener: same public rules, staff pages only on admin.<domain>.
+docker compose --env-file "$secret" -f "$source/compose.yaml" exec -T api node scripts/check-domain.cjs "$domain"
+if [ "$COMPOSE_PROFILES" = tunnel ]; then
+  # The real way in from the internet: Cloudflare -> tunnel -> gateway. The tunnel needs a few seconds to connect.
+  ok=''
+  for i in $(seq 1 30); do
+    if [ "$(code "https://$domain/apply")" = 200 ]; then ok=1; break; fi
+    sleep 3
+  done
+  test -n "$ok" || { echo "https://$domain/apply не открывается через Cloudflare Tunnel" >&2; exit 1; }
+  test "$(code "https://$domain/api/health")" = 404 || { echo "https://$domain exposes /api/health" >&2; exit 1; }
+  echo "domain ok: https://$domain"
+fi
 printf '%s' "$revision" > "$root/DEPLOYED_COMMIT.new"
 mv "$root/DEPLOYED_COMMIT.new" "$root/DEPLOYED_COMMIT"
 docker compose --env-file "$secret" -f "$source/compose.yaml" ps

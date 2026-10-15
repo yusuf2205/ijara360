@@ -89,6 +89,9 @@ services:
     # Tailscale Serve (8447, tailnet) and Funnel (8448, internet) upstreams, NAS loopback only.
     # See docs/M4-APPLICATIONS.md and docs/M6-RELIABILITY.md.
     ports: ["127.0.0.1:8447:8080", "127.0.0.1:8448:8081"]
+    # 8082 (own domain) has no host port: only the "tunnel" container reaches it.
+    environment:
+      IJARA_DOMAIN: ${PUBLIC_DOMAIN:-ijara360.uz}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./infra/common.caddy:/etc/caddy/common.caddy:ro
@@ -137,6 +140,23 @@ services:
     depends_on:
       db: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
+  tunnel:
+    # Cloudflare Tunnel for the own domain (docs/M7.1-DOMAIN.md): the NAS dials out to Cloudflare, no router
+    # ports. Hostnames and Cloudflare Access are set in the Cloudflare dashboard; both hostnames go to
+    # http://gateway:8082. Started only when the deploy finds CLOUDFLARE_TUNNEL_TOKEN (profile "tunnel").
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      gateway: {condition: service_healthy}
   offsite:
     build: { context: ., dockerfile: infra/offsite.Dockerfile }
     image: ijara360-offsite:${RELEASE_TAG:-local}
@@ -167,6 +187,8 @@ services:
       DATABASE_URL: postgresql://ijara_app:${APP_DB_PASSWORD}@db:5432/ijara360?schema=public
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       SERVER_STATUS_PATH: /var/lib/ijara360/status
+      # Set only once the tunnel is configured: checks the real way in from the internet via Cloudflare.
+      WATCH_DOMAIN: ${WATCH_DOMAIN:-}
     command: ["node", "scripts/watchdog.cjs"]
     volumes:
       - ${IJARA_ROOT:-/volume1/docker/ijara360}/data/status:/var/lib/ijara360/status

@@ -25,6 +25,7 @@ const LABELS = {
   tailnet: 'Вход через Tailscale',
   internet: 'Вход из интернета',
   lan: 'Вход из домашней сети',
+  domain: 'Вход через домен',
   backup: 'Ночная резервная копия',
   cloud: 'Копия в облаке',
   usb: 'Копия на USB-диске',
@@ -190,6 +191,8 @@ async function main() {
     tailnet: process.env.WATCH_TAILNET || 'http://gateway:8080/api/health',
     internet: process.env.WATCH_INTERNET || 'http://gateway:8081/login',
     lan: process.env.WATCH_LAN || 'https://gateway-lan/api/health',
+    // Own domain through Cloudflare: the real path from the internet, set once the tunnel exists.
+    domain: process.env.WATCH_DOMAIN ? `https://${process.env.WATCH_DOMAIN}/apply` : null,
   };
   const lanHost = process.env.LAN_HOST || '192.168.1.105';
   const token = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -215,10 +218,11 @@ async function main() {
     const now = Date.now();
     const results = {};
     const health = await fetch(urls.api, { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null, () => null).catch(() => null);
-    const [api, tailnet, internet, lan] = await Promise.all([
+    const [api, tailnet, internet, lan, domain] = await Promise.all([
       httpCheck(urls.api, 200), httpCheck(urls.tailnet, 200), httpCheck(urls.internet, 200), httpCheck(urls.lan, 200, { host: lanHost }),
+      urls.domain ? httpCheck(urls.domain, 200) : { ok: null, detail: 'не подключён' },
     ]);
-    Object.assign(results, { api, tailnet, internet, lan }, apiParts(health, now, startedAt));
+    Object.assign(results, { api, tailnet, internet, lan, domain }, apiParts(health, now, startedAt));
     try {
       await withDb(async db => {
         await db.query('SELECT 1');

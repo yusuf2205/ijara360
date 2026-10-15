@@ -8,6 +8,10 @@
     servers :8081 {
         trusted_proxies static private_ranges
     }
+    # cloudflared (Cloudflare Tunnel) in the same Docker network: keep the client address it forwards.
+    servers :8082 {
+        trusted_proxies static private_ranges
+    }
 }
 import /etc/caddy/common.caddy
 # Only published on NAS loopback, behind Tailscale Serve HTTPS (tailnet only).
@@ -22,6 +26,42 @@ http://:8080 {
 http://:8081 {
     request_header X-Ijara-Channel public
     encode zstd gzip
+    handle /api/telegram/* {
+        respond "Not found" 404
+    }
+    handle /api/health {
+        respond "Not found" 404
+    }
+    handle /api/* {
+        reverse_proxy api:4000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+    import security_headers
+    header Strict-Transport-Security "max-age=31536000"
+}
+# Own domain through Cloudflare Tunnel (docs/M7.1-DOMAIN.md). No host port: only the "tunnel" container
+# reaches it inside the Docker network. Same rules as the internet listener (public channel), plus:
+#   admin.<domain> - staff cabinet; Cloudflare Access in front of it lets in only the owner's e-mails.
+#   <domain>       - applicants, invites, the resident app and the API the phones use. Staff pages
+#                    move to admin.<domain>, so the web cabinet is always behind Access.
+http://:8082 {
+    request_header X-Ijara-Channel public
+    encode zstd gzip
+    @www host www.{$IJARA_DOMAIN:ijara360.uz}
+    redir @www https://{$IJARA_DOMAIN:ijara360.uz}{uri} 308
+    # The bare domain opens the application form; it is the page people are sent to.
+    @root {
+        host {$IJARA_DOMAIN:ijara360.uz}
+        path /
+    }
+    redir @root /apply 302
+    @staffPage {
+        host {$IJARA_DOMAIN:ijara360.uz}
+        not path /api/* /apply /apply/* /invite /invite/* /app /app/* /brand/* /_next/* /icon.png /apple-icon.png /favicon.ico /robots.txt
+    }
+    redir @staffPage https://admin.{$IJARA_DOMAIN:ijara360.uz}{uri} 302
     handle /api/telegram/* {
         respond "Not found" 404
     }
