@@ -18,7 +18,10 @@ class LocationPolicy {
   static const foregroundInterval = Duration(seconds: 30);
   static const foregroundDistanceMeters = 25;
   /// A still phone still reports now and then, so staff can tell "here, not moving" from "silent".
-  static const heartbeat = Duration(minutes: 5);
+  /// Below the server's 3-minute live window, so an open app on a table stays "В сети".
+  static const heartbeat = Duration(minutes: 2);
+  /// While the app is open: device state every minute (GPS off, permission withdrawn show up at once).
+  static const foregroundTick = Duration(minutes: 1);
   static const minGap = Duration(seconds: 20);
   /// Worse than this is not a position worth sending (the server rejects > 5 km anyway).
   static const maxAccuracyMeters = 1500.0;

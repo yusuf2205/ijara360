@@ -86,7 +86,8 @@ class TenantHome extends StatelessWidget {
               child: ExcludeSemantics(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Доступ', style: t.bodySmall),
                 const Gap(6),
-                Text(granted ? 'Разрешён' : 'Ограничен', style: manrope(20, FontWeight.w800, color: granted ? Brand.green : Brand.red)),
+                // One line on narrow phones ("Разрешён" broke mid-word): shrink instead of wrapping.
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(granted ? 'Разрешён' : 'Ограничен', maxLines: 1, style: manrope(20, FontWeight.w800, color: granted ? Brand.green : Brand.red))),
                 const Gap(4),
                 Text(granted ? (debt > 0 ? 'Есть долг' : 'Долга нет') : 'Есть просрочка', style: t.bodySmall),
                 const Gap(12),

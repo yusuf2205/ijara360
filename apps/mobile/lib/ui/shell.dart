@@ -67,14 +67,14 @@ class _AppShellState extends State<AppShell> {
         },
         child: Scaffold(
           body: SafeArea(bottom: false, child: body),
-          bottomNavigationBar: NavigationBar(
+          bottomNavigationBar: _narrowLabels(context, NavigationBar(
             selectedIndex: inMore ? tabs : index,
             onDestinationSelected: (i) => i == tabs && d.length > 5 ? _more(context, tabs) : select(i),
             destinations: [
               for (var i = 0; i < tabs; i++) NavigationDestination(icon: _badge(d[i], d[i].icon), selectedIcon: _badge(d[i], d[i].selectedIcon), label: d[i].label),
               if (d.length > 5) NavigationDestination(icon: _badge(Destination('Ещё', Icons.more_horiz, Icons.more_horiz, (_) => const SizedBox(), badge: d.skip(tabs).fold<int>(0, (s, x) => s + (x.badge ?? 0))), Icons.more_horiz_rounded), label: 'Ещё'),
             ],
-          ),
+          )),
         ),
       );
     }
@@ -122,4 +122,18 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
       );
+}
+
+/// Small phones (under 360 dp, e.g. 640 px at 2x): five labels of 11 px do not fit, and "Обращения" broke
+/// in the middle of the word. Slightly smaller, tighter labels keep every label on one line.
+Widget _narrowLabels(BuildContext context, Widget bar) {
+  if (MediaQuery.sizeOf(context).width >= 360) return bar;
+  final theme = Theme.of(context);
+  final base = theme.navigationBarTheme.labelTextStyle;
+  return Theme(
+    data: theme.copyWith(navigationBarTheme: theme.navigationBarTheme.copyWith(
+      labelTextStyle: WidgetStateProperty.resolveWith((s) => base?.resolve(s)?.copyWith(fontSize: 9.5, letterSpacing: -0.3)),
+    )),
+    child: bar,
+  );
 }

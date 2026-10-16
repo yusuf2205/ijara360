@@ -240,37 +240,72 @@ class ForegroundLocation extends StatefulWidget {
 
 class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBindingObserver {
   StreamSubscription<Position>? sub;
+  StreamSubscription<ServiceStatus>? services;
+  Timer? tick;
   DateTime? lastFlush;
+  bool active = false;
 
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); WidgetsBinding.instance.addPostFrameCallback((_) => resume()); }
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); sub?.cancel(); super.dispose(); }
+  void dispose() { WidgetsBinding.instance.removeObserver(this); pause(); super.dispose(); }
   @override
-  void didChangeAppLifecycleState(AppLifecycleState s) { if (s == AppLifecycleState.resumed) { resume(); } else if (s == AppLifecycleState.paused) { sub?.cancel(); sub = null; } }
+  void didChangeAppLifecycleState(AppLifecycleState s) { if (s == AppLifecycleState.resumed) { resume(); } else if (s == AppLifecycleState.paused) { pause(); } }
+
+  void pause() { active = false; sub?.cancel(); sub = null; services?.cancel(); services = null; tick?.cancel(); tick = null; }
 
   Future<void> resume() async {
-    if (kIsWeb || sub != null || !mounted) return;
+    if (kIsWeb || active || !mounted) return;
     final api = SessionScope.of(context).api;
     try {
       final r = await api.get('/tenant/location') as Map<String, dynamic>;
       if (r['sharingEnabled'] != true || r['thisDeviceIsPrimary'] != true || r['resident'] != true) return;
+      active = true;
       await LocationAgent.start(); // re-registers the background task after an update or reboot
-      final state = await DeviceState.read();
-      if (!state.granted || !state.servicesEnabled) { await LocationAgent.flush(api, state); return; }
-      sub = Geolocator.getPositionStream(locationSettings: AndroidSettings(accuracy: LocationAccuracy.high, distanceFilter: LocationPolicy.foregroundDistanceMeters, intervalDuration: LocationPolicy.foregroundInterval)).listen((p) async {
-        final prefs = LocationBuffer(await SharedPreferences.getInstance());
-        await LocationAgent.queue(prefs, p);
-        // Send at most every 20 s; points wait in the buffer in between.
-        if (lastFlush == null || DateTime.now().difference(lastFlush!) > LocationPolicy.minGap) {
-          lastFlush = DateTime.now();
-          final reason = await LocationAgent.flush(api, await DeviceState.read(), buffer: prefs);
-          if (reason != null) { await sub?.cancel(); sub = null; }
-        }
-      }, onError: (_) {});
+      // GPS switched off or on in the shade: tell the server at once, restart the stream when it is back.
+      services = Geolocator.getServiceStatusStream().listen((_) => unawaited(check(api)), onError: (_) {});
+      // While the app is open: a state report every minute and a point at least every 2 minutes, so a phone
+      // lying still stays "В сети" (the server's live window is 3 minutes).
+      tick = Timer.periodic(LocationPolicy.foregroundTick, (_) => unawaited(check(api, capture: true)));
+      await check(api, capture: true);
     } on ApiException {
       // Offline at start: the background task and the next resume will try again.
     }
+  }
+
+  /// Sends the honest device state; keeps the position stream running only while it can deliver.
+  Future<void> check(ApiClient api, {bool capture = false}) async {
+    if (!active) return;
+    final state = await DeviceState.read();
+    if (!state.granted || !state.servicesEnabled) {
+      await sub?.cancel(); sub = null;
+      await send(api, state, null);
+      return;
+    }
+    sub ??= Geolocator.getPositionStream(locationSettings: AndroidSettings(accuracy: LocationAccuracy.high, distanceFilter: LocationPolicy.foregroundDistanceMeters, intervalDuration: LocationPolicy.foregroundInterval))
+        .listen((p) => unawaited(onFix(api, p)), onError: (_) { sub = null; unawaited(check(api)); });
+    if (capture) {
+      try {
+        final p = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 20)));
+        await onFix(api, p, force: true);
+      } catch (_) {
+        await send(api, state, null, force: true);
+      }
+    }
+  }
+
+  Future<void> onFix(ApiClient api, Position p, {bool force = false}) async {
+    final buffer = LocationBuffer(await SharedPreferences.getInstance());
+    await LocationAgent.queue(buffer, p);
+    await send(api, await DeviceState.read(), buffer, force: force);
+  }
+
+  /// At most one upload per 20 s from the stream; the minute tick and GPS changes always go.
+  Future<void> send(ApiClient api, DeviceState state, LocationBuffer? buffer, {bool force = true}) async {
+    if (!force && lastFlush != null && DateTime.now().difference(lastFlush!) < LocationPolicy.minGap) return;
+    lastFlush = DateTime.now();
+    final reason = await LocationAgent.flush(api, state, buffer: buffer);
+    if (reason != null) pause();
   }
 
   @override

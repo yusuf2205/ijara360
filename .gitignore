@@ -26,3 +26,6 @@ test-results/
 playwright-report/
 coverage/
 apps/web/public/app/
+
+# Kotlin compiler session files (Gradle build)
+apps/mobile/android/.kotlin/
