@@ -26,11 +26,11 @@ test('M2 empty residents state offers check-in and invalid links have friendly r
 });
 test('M2 mobile check-in from a free bed shows real resident and counters after reload',async({page})=>{
  await page.setViewportSize({width:390,height:844});await login(page);await page.getByRole('heading',{name:'Комната №1',exact:true}).click();
- await page.locator('.bed-card').first().getByRole('button',{name:'Заселить',exact:true}).click();
+ await page.locator('.place-row').first().getByRole('button',{name:'Заселить',exact:true}).click();
  await page.getByLabel('ФИО',{exact:true}).fill(person);await page.getByLabel('Телефон',{exact:true}).fill('+998901234501');await page.getByRole('textbox',{name:'Заметка',exact:true}).fill('Заметка М2');await next(page);await next(page);await conditions(page);
  await page.screenshot({path:'.local/screenshots/m2-checkin-390.png',fullPage:true});await noOverflow(page);
- await page.getByRole('button',{name:'Подтвердить заселение'}).click();await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.locator('.bed-card').first()).toContainText(person);
- await page.reload();await expect(page.locator('.bed-card').first()).toContainText('Занято');await expect(page.locator('.room-summary')).toContainText('1 занято');
+ await page.getByRole('button',{name:'Подтвердить заселение'}).click();await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.locator('.place-row').first()).toContainText(person);
+ await page.reload();await expect(page.locator('.place-row').first()).toContainText('Оплачено');await expect(page.locator('.room-stats')).toContainText('Занято');
  await page.goto('/');await expect(page.locator('.stat').filter({hasText:'Занято'}).locator('strong')).toHaveText('1');
 });
 test('M2 transfer to another room preserves both stays and prices',async({page})=>{
@@ -43,12 +43,12 @@ test('M2 checkout at 320px frees bed and keeps resident/history',async({page})=>
  await page.setViewportSize({width:320,height:740});await login(page);await resident(page);await page.getByRole('button',{name:'Выселить',exact:true}).click();
  await expect(page.getByRole('dialog')).toContainText('Депозит');await noOverflow(page);await page.getByRole('button',{name:'Подтвердить выселение'}).click();await expect(page.getByRole('button',{name:'Заселить снова'})).toBeVisible();await expect(page.locator('.stay-row')).toHaveCount(2);
  await page.screenshot({path:'.local/screenshots/m2-history-320.png',fullPage:true});await noOverflow(page);
- await page.goto('/rooms');await page.getByRole('heading',{name:'Комната №2',exact:true}).click();await expect(page.locator('.bed-card').first()).toContainText('Свободно');
+ await page.goto('/rooms');await page.getByRole('heading',{name:'Комната №2',exact:true}).click();await expect(page.locator('.place-row').first()).toContainText('Свободно');
  await page.goto('/residents');await page.getByRole('button',{name:'Выселенные',exact:true}).click();await expect(page.locator('.resident-row')).toHaveCount(1);
 });
 test('M2 stale free-bed dialog reports friendly conflict without losing inputs',async({page})=>{
  await login(page);await page.getByRole('heading',{name:'Комната №1',exact:true}).click();
- await page.locator('.bed-card').first().getByRole('button',{name:'Заселить',exact:true}).click();await page.getByLabel('ФИО',{exact:true}).fill('Конкурент А');await page.getByLabel('Телефон',{exact:true}).fill('+998901234502');await next(page);
+ await page.locator('.place-row').first().getByRole('button',{name:'Заселить',exact:true}).click();await page.getByLabel('ФИО',{exact:true}).fill('Конкурент А');await page.getByLabel('Телефон',{exact:true}).fill('+998901234502');await next(page);
  const bedId=await page.getByRole('combobox',{name:'Свободное место',exact:true}).inputValue();await next(page);await conditions(page);
  const origin='http://localhost:3000';const headers={Origin:origin,'X-Ijara-Request':'1'};
  const result=await page.request.post('/api/occupancies/check-in',{headers,data:{resident:{fullName:'Конкурент Б',phone:'+998901234503'},bedId,moveInDate:today,monthlyPrice:'500000',paymentDay:1,depositAmount:'0'}});expect(result.status()).toBe(201);const o=await result.json();

@@ -24,7 +24,7 @@ test('first-run setup creates the owner and 7 rooms; login opens overview', asyn
   await page.getByLabel('Мест в каждой').fill('8');
   await page.getByRole('button',{name:'Создать дом'}).click();
   await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
-  await expect(page.locator('.room-card')).toHaveCount(7);
+  await expect(page.locator('.plan-tile')).toHaveCount(7);
   await expect(page.locator('.stat').filter({hasText:'Всего мест'}).locator('strong')).toHaveText('56');
   const cookie=(await page.context().cookies()).find(c=>c.name==='ijara_session');
   expect(cookie?.httpOnly).toBe(true); expect(cookie?.sameSite).toBe('Strict');
@@ -34,7 +34,7 @@ test('desktop overview and room detail show real data without horizontal overflo
   await page.screenshot({path:'.local/screenshots/overview-desktop.png',fullPage:true});
   await page.getByRole('heading',{name:'Комната №1',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Комната №1',exact:true})).toBeVisible();
-  await expect(page.locator('.bed-card')).toHaveCount(8);
+  await expect(page.locator('.place-row')).toHaveCount(8);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('mobile rooms: create a room and a bed, then reload to verify persistence', async ({page}) => {
@@ -44,14 +44,14 @@ test('mobile rooms: create a room and a bed, then reload to verify persistence',
   await page.getByLabel('Вместимость',{exact:true}).fill('9');
   await page.getByLabel('Создать мест').fill('2');
   await page.getByRole('button',{name:'Сохранить',exact:true}).click();
-  await expect(page.locator('.room-card')).toHaveCount(8);
+  await expect(page.locator('.plan-tile')).toHaveCount(8);
   await page.getByRole('heading',{name:'Комната №8',exact:true}).click();
-  await expect(page.locator('.bed-card')).toHaveCount(2);
+  await expect(page.locator('.place-row')).toHaveCount(2);
   await page.getByRole('button',{name:'Добавить место'}).click();
   await page.getByLabel('Номер места').fill('3');
   await page.getByRole('button',{name:'Сохранить',exact:true}).click();
-  await expect(page.locator('.bed-card')).toHaveCount(3);
-  await page.reload(); await expect(page.locator('.bed-card')).toHaveCount(3);
+  await expect(page.locator('.place-row')).toHaveCount(3);
+  await page.reload(); await expect(page.locator('.place-row')).toHaveCount(3);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:'.local/screenshots/room-mobile.png',fullPage:true});
 });
@@ -68,7 +68,7 @@ test('search, dashboard links and history navigation work on 320px screens', asy
   await page.locator('.tile').filter({hasText:'Комнаты'}).click();
   await expect(page.getByRole('heading',{name:'Комнаты',exact:true})).toBeVisible();
   await page.getByRole('textbox',{name:'Найти комнату'}).fill('8');
-  await expect(page.locator('.room-card')).toHaveCount(1);
+  await expect(page.locator('.room-row')).toHaveCount(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.getByRole('button',{name:'Все разделы'}).click();
   await page.getByRole('navigation',{name:'Ещё разделы'}).getByRole('link',{name:'История'}).click();
@@ -86,13 +86,13 @@ test('owner creates ADMIN; ADMIN cannot see owner controls', async ({page}) => {
   await page.getByRole('button',{name:'Выйти',exact:true}).click();
   await login(page,'+998900000011');
   await expect(page.getByRole('button',{name:'Добавить комнату'})).toHaveCount(0);
-  await page.goto('/rooms'); await expect(page.locator('.room-card')).toHaveCount(8);
+  await page.goto('/rooms'); await expect(page.locator('.room-row')).toHaveCount(8);
 });
 test('capacity card filters rooms and mobile settings allow logout', async ({page}) => {
   await page.setViewportSize({width:390,height:844}); await login(page);
   await page.goto('/rooms?filter=space');
-  await expect(page.locator('.room-card')).toHaveCount(1);
-  await expect(page.locator('.room-card')).toContainText('Комната №8');
+  await expect(page.locator('.room-row')).toHaveCount(1);
+  await expect(page.locator('.room-row')).toContainText('Комната №8');
   await page.goto('/settings');
   await page.getByRole('button',{name:'Выйти из аккаунта'}).click();
   await expect(page.getByRole('heading',{name:'Управление домом'})).toBeVisible();

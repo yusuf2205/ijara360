@@ -227,7 +227,50 @@ class RoomsScreen extends StatelessWidget {
       body: LiveData<List<dynamic>>(
         topics: const {'house'},
         load: () async => (await s.api.get('/rooms')) as List<dynamic>,
-        builder: (context, rooms, refresh) => PageBody(onRefresh: refresh, children: [HousePlan(rooms: rooms.cast<Map<String, dynamic>>())]),
+        builder: (context, data, refresh) {
+          // Mockup "Комнаты": a row per room with its monthly income.
+          final rooms = data.cast<Map<String, dynamic>>();
+          return PageBody(onRefresh: refresh, children: [
+            for (final r in rooms) _RoomRow(room: r),
+          ]);
+        },
+      ),
+    );
+  }
+}
+
+num _roomIncome(Map<String, dynamic> r) => (r['beds'] as List?)?.fold<num>(0, (sum, b) {
+      final occ = (b as Map)['occupancy'] as Map?;
+      return sum + (occ != null ? (num.tryParse('${occ['monthlyPrice']}') ?? 0) : 0);
+    }) ?? 0;
+
+class _RoomRow extends StatelessWidget {
+  const _RoomRow({required this.room});
+  final Map<String, dynamic> room;
+  @override
+  Widget build(BuildContext context) {
+    final total = room['totalBeds'] as int? ?? 0, busy = room['occupiedBeds'] as int? ?? 0, free = room['availableBeds'] as int? ?? 0;
+    final tone = room['archivedAt'] != null || total == 0 ? Tone.gray : free == 0 ? Tone.red : Tone.blue;
+    final (bg, fg) = toneColors(tone);
+    final income = _roomIncome(room);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        onTap: () => openPage(context, RoomScreen(id: '${room['id']}')),
+        padding: const EdgeInsets.all(14),
+        child: Row(children: [
+          Container(width: 44, height: 44, alignment: Alignment.center, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)), child: Icon(Icons.meeting_room_outlined, color: fg, size: 22)),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Комната ${room['number']}', style: manrope(15, FontWeight.w800)),
+            Text('$busy / $total занято${free > 0 ? ' · Свободно: $free' : total == 0 ? ' · Места не добавлены' : ''}', style: manrope(12, FontWeight.w500, color: Brand.gray500)),
+          ])),
+          const SizedBox(width: 10),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(income > 0 ? sum(income) : '—', style: manrope(14, FontWeight.w800)),
+            Text('Доход в месяц', style: manrope(10.5, FontWeight.w500, color: Brand.gray500)),
+          ]),
+        ]),
       ),
     );
   }
@@ -244,37 +287,79 @@ class RoomScreen extends StatelessWidget {
       load: () async => (await s.api.get('/rooms/$id')) as Map<String, dynamic>,
       builder: (context, r, refresh) {
         final beds = (r['beds'] as List).cast<Map<String, dynamic>>();
+        final total = r['totalBeds'] as int? ?? 0, busy = r['occupiedBeds'] as int? ?? 0, free = r['availableBeds'] as int? ?? 0;
+        final income = _roomIncome(r);
+        final debt = beds.fold<num>(0, (sum, b) {
+          final occ = b['occupancy'] as Map?;
+          return sum + (occ != null ? (num.tryParse('${(occ['resident'] as Map?)?['totalDebt'] ?? 0}') ?? 0) : 0);
+        });
         return Scaffold(
           appBar: AppBar(title: Text('Комната ${r['number']}')),
           body: PageBody(onRefresh: refresh, children: [
-            Text('Занято ${r['occupiedBeds']} из ${r['totalBeds']} · свободно ${r['availableBeds']}', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Brand.gray500)),
-            const Gap(14),
-            TileGrid(minTile: 150, max: 4, children: [
-              for (final b in beds)
-                Builder(builder: (context) {
-                  final occ = b['occupancy'] as Map<String, dynamic>?;
-                  final tone = occ == null ? Tone.green : Tone.red;
-                  final (bg, fg) = toneColors(tone);
-                  return Material(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(18),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: occ == null ? null : () => openPage(context, ResidentScreen(id: '${occ['residentId']}')),
-                      child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Icon(Icons.bed_rounded, color: fg, size: 30),
-                        const Gap(8),
-                        Text('${b['displayNumber']}', style: manrope(20, FontWeight.w800, color: fg)),
-                        Text(occ == null ? 'Свободно' : 'Занято', style: manrope(12, FontWeight.w700, color: fg)),
-                        if (occ != null) ...[const Gap(6), Text('${(occ['resident'] as Map?)?['fullName'] ?? ''}', maxLines: 2, style: manrope(13, FontWeight.w700))],
-                      ])),
-                    ),
-                  );
-                }),
+            // Mockup "Детали комнаты": counts, income and debt, then a place per row.
+            Row(children: [
+              Expanded(child: _MiniStat(Icons.bed_outlined, Tone.blue, '$total', 'Всего мест')),
+              const SizedBox(width: 10),
+              Expanded(child: _MiniStat(Icons.people_outline_rounded, Tone.red, '$busy', 'Занято')),
+              const SizedBox(width: 10),
+              Expanded(child: _MiniStat(Icons.check_circle_outline_rounded, Tone.green, '$free', 'Свободно')),
             ]),
+            const Gap(12),
+            Row(children: [
+              Expanded(child: AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Доход в месяц', style: manrope(11.5, FontWeight.w500, color: Brand.gray500)), const Gap(4), Text(income > 0 ? sum(income) : '—', style: manrope(18, FontWeight.w800))]))),
+              const SizedBox(width: 12),
+              Expanded(child: AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Общий долг', style: manrope(11.5, FontWeight.w500, color: Brand.gray500)), const Gap(4), Text(debt > 0 ? sum(debt) : '0 сум', style: manrope(18, FontWeight.w800, color: debt > 0 ? Brand.red : Brand.ink))]))),
+            ]),
+            const Gap(6),
+            const SectionTitle('Места'),
+            for (final b in beds) _PlaceRow(room: '${r['number']}', bed: b),
           ]),
         );
       },
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  const _MiniStat(this.icon, this.tone, this.value, this.label);
+  final IconData icon; final Tone tone; final String value; final String label;
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = toneColors(tone);
+    return AppCard(padding: const EdgeInsets.all(13), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(width: 34, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: fg, size: 18)),
+      const Gap(10),
+      Text(value, style: manrope(20, FontWeight.w800)),
+      Text(label, style: manrope(11, FontWeight.w500, color: Brand.gray500)),
+    ]));
+  }
+}
+
+class _PlaceRow extends StatelessWidget {
+  const _PlaceRow({required this.room, required this.bed});
+  final String room; final Map<String, dynamic> bed;
+  @override
+  Widget build(BuildContext context) {
+    final occ = bed['occupancy'] as Map<String, dynamic>?;
+    final resident = occ?['resident'] as Map?;
+    final debt = num.tryParse('${resident?['totalDebt'] ?? 0}') ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: AppCard(
+        onTap: occ == null ? null : () => openPage(context, ResidentScreen(id: '${occ['residentId']}')),
+        padding: const EdgeInsets.all(12),
+        child: Row(children: [
+          Avatar(occ == null ? '' : '${resident?['fullName'] ?? ''}', size: 40),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Место $room-${bed['number']}', style: manrope(14, FontWeight.w700)),
+            Text(occ == null ? 'Свободно' : '${resident?['fullName'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(12, FontWeight.w500, color: Brand.gray500)),
+          ])),
+          const SizedBox(width: 8),
+          if (occ != null) StatusPill(debt > 0 ? 'Долг ${sum(debt)}' : 'Оплачено', tone: debt > 0 ? Tone.red : Tone.green)
+          else StatusPill('Свободно', tone: Tone.gray),
+        ]),
+      ),
     );
   }
 }

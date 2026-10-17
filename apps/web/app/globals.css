@@ -457,3 +457,44 @@ label.with-icon>input{padding-left:44px}
 /* The greeting stays in the heading for screen readers on phones, it is only not painted there. */
 @media(max-width:700px){.hello-greet{display:inline!important;position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media(max-width:700px){.hello-side .resident-actions{display:flex;flex-wrap:wrap;gap:8px}.hello-side .resident-actions .button.primary{display:none}}
+/* v4 rooms list (mockup "Комнаты"): vertical rows with monthly income */
+.room-list{display:flex;flex-direction:column;gap:10px}
+.room-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:14px;transition:border-color .15s,box-shadow .15s}
+.room-row:hover{border-color:var(--brand);box-shadow:var(--shadow)}
+.room-row-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;flex:none}
+.room-row-icon.free{background:var(--brand-soft);color:var(--brand)}
+.room-row-icon.almost{background:var(--warn-soft);color:var(--warn)}
+.room-row-icon.full{background:var(--bad-soft);color:var(--bad)}
+.room-row-icon.empty,.room-row-icon.archived{background:var(--surface-2);color:var(--muted)}
+.room-row-main{flex:1;min-width:0}
+.room-row-main h3{font-size:15px;font-weight:800}
+.room-row-main small{color:var(--muted);font-size:12px}
+.room-row-income{text-align:right;flex:none}
+.room-row-income strong{display:block;font-size:15px;font-weight:800;white-space:nowrap}
+.room-row-income small{color:var(--muted);font-size:11px}
+.room-row-arrow{color:var(--gray300);flex:none}
+/* v4 room detail: stats, income/debt, places list */
+.room-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+.room-stats .stat{display:flex;align-items:center;gap:12px}
+.room-stats .stat strong{font-size:24px;font-weight:800;line-height:1}
+.room-stats .stat small{color:var(--muted);font-size:12px}
+.room-money{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
+.room-money .card{padding:16px 18px}
+.room-money small{color:var(--muted);font-size:12px}
+.room-money strong{display:block;font-size:20px;font-weight:800;margin-top:4px}
+.room-money .card.is-debt strong{color:var(--bad)}
+.section-heading.inline{margin:0 0 12px}
+.section-heading.inline h2 span{color:var(--muted);font-weight:600;margin-left:6px}
+.place-list{display:flex;flex-direction:column;gap:8px}
+.place-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+.place-main{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+.place-main .avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;background:var(--brand);color:#fff;flex:none}
+.place-main .avatar.empty{background:var(--surface-2);color:var(--muted)}
+.place-main strong{display:block;font-size:14px;font-weight:700}
+.place-main small{color:var(--muted);font-size:12px}
+.status-pill.ok{background:var(--ok-soft);color:var(--ok)}
+.status-pill.bad{background:var(--bad-soft);color:var(--bad)}
+.button.small{min-height:36px;padding:7px 14px;font-size:12px}
+.place-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px;border:1px dashed var(--line-strong);border-radius:12px;background:transparent;color:var(--brand);font-weight:700;font-size:14px}
+.place-add span{color:var(--muted);font-weight:400;font-size:12px;width:100%}
+@media(max-width:700px){.room-stats{gap:8px}.room-stats .stat{flex-direction:column;align-items:flex-start;gap:8px;padding:13px}.room-stats .stat strong{font-size:20px}.room-row-income strong{font-size:13px}}

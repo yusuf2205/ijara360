@@ -8,7 +8,7 @@ import { hashPassword, normalizePhone } from './security';
 import { publish } from './realtime';
 
 const numbered = (n: string) => /^\d{1,6}$/.test(n);
-const roomInclude =Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true } } } } } } });
+const roomInclude =Prisma.validator<Prisma.RoomInclude>()({ _count: { select: { occupancies: true, charges: true } }, beds: { include: { occupancies: { where: { status: 'ACTIVE' }, include: { resident: { select: { id: true, fullName: true, phone: true, totalDebt: true } } } } } } });
 
 @Injectable()
 export class InventoryService {
