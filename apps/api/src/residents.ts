@@ -44,6 +44,16 @@ export class ResidentsService {
   async audit(tx: Prisma.TransactionClient, actor: Actor, action: string, residentId: string, metadata: Prisma.InputJsonObject = {}) {
     await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action,entity:'Resident',entityId:residentId,metadata:{residentId,...metadata}}});
   }
+  /** Home screen: check-ins and check-outs dated today (Tashkent). */
+  async today(actor: Actor) {
+    const day = businessDate(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()));
+    const [started,ended] = await Promise.all([
+      this.db.occupancy.findMany({where:{propertyId:actor.propertyId,moveInDate:day},select:{residentId:true}}),
+      this.db.occupancy.findMany({where:{propertyId:actor.propertyId,moveOutDate:day,status:'CLOSED'},select:{residentId:true}})]);
+    // A transfer closes one stay and opens another on the same day: it is neither a check-in nor a check-out.
+    const a = new Set(started.map(o=>o.residentId)), b = new Set(ended.map(o=>o.residentId));
+    return {movedIn:[...a].filter(id=>!b.has(id)).length,movedOut:[...b].filter(id=>!a.has(id)).length};
+  }
   async list(actor: Actor, q = '', filter = 'all') {
     if (q.length > 160 || !['all','active','closed'].includes(filter)) throw new UnprocessableEntityException('Некорректный фильтр жильцов.');
     const digits = q.replace(/\D/g,'');
@@ -139,6 +149,7 @@ export class ResidentsService {
 @Controller() @UseGuards(SessionGuard)
 class ResidentsController {
   constructor(private readonly service: ResidentsService) {}
+  @Get('occupancies/today') today(@Req() req: AuthRequest) { return this.service.today(req.actor); }
   @Get('residents') list(@Req() req: AuthRequest,@Query('q') q?: string,@Query('filter') filter?: string) { return this.service.list(req.actor,q,filter); }
   @Get('residents/:id') detail(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) { return this.service.detail(req.actor,id); }
   @Post('residents') create(@Req() req: AuthRequest,@Body() dto: ResidentDto) { return this.service.create(req.actor,dto); }

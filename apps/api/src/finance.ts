@@ -118,6 +118,30 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       return {summary:{charged:totals._sum.amount ?? '0',paid:received._sum.amount ?? '0',applied:totals._sum.paidAmount ?? '0',creditBalance:residents.reduce((sum,r)=>sum.plus(r.creditBalance),new Prisma.Decimal(0)),outstanding:totals._sum.dueAmount ?? '0',overdue:overdue._sum.dueAmount ?? '0',blockedResidents:residents.filter(r=>!r.accessGranted).length},charges,payments:payments.map(paymentResult),residents,chargeCount,paymentCount,page:query.page,pageSize:50,asOf:new Date().toISOString()};
     });
   }
+  /** Home screen: this month's rent by resident (paid / partly / not paid), money received this month and the last 6 months. */
+  month(actor: Actor) {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
+      const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const start = new Date(`${today.slice(0,7)}-01T00:00:00.000Z`), next = new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()+1,1));
+      const charges = await tx.charge.findMany({where:{propertyId:actor.propertyId,type:'RENT',billingPeriodStart:{gte:start,lt:next}},select:{residentId:true,status:true,amount:true,dueAmount:true}});
+      // A resident counts once, by the worst state of their rent charges for the month.
+      const rank = {PAID:0,PARTIALLY_PAID:1,UNPAID:2,OVERDUE:2} as const;
+      const byResident = new Map<string,{state:number;amount:Prisma.Decimal;due:Prisma.Decimal}>();
+      for (const c of charges) {
+        const r = byResident.get(c.residentId) ?? {state:0,amount:new Prisma.Decimal(0),due:new Prisma.Decimal(0)};
+        byResident.set(c.residentId,{state:Math.max(r.state,rank[c.status]),amount:r.amount.plus(c.amount),due:r.due.plus(c.dueAmount)});
+      }
+      const group = (state:number) => { const list=[...byResident.values()].filter(r=>r.state===state); return {residents:list.length,amount:list.reduce((s,r)=>s.plus(state===0?r.amount:r.due),new Prisma.Decimal(0)).toFixed(2)}; };
+      // Payments by Tashkent calendar month, this one and the five before it.
+      const rows = await tx.$queryRaw<{month:string;received:Prisma.Decimal}[]>`
+        SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'Asia/Tashkent'),'YYYY-MM') AS month, sum(amount) AS received
+        FROM payments WHERE property_id = ${actor.propertyId}::uuid
+          AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent') - interval '5 months') AT TIME ZONE 'Asia/Tashkent'
+        GROUP BY 1`;
+      const months = Array.from({length:6},(_,i)=>{const d=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()-5+i,1));const key=d.toISOString().slice(0,7);return {month:key,received:(rows.find(r=>r.month===key)?.received ?? new Prisma.Decimal(0)).toFixed(2)};});
+      return {month:today.slice(0,7),paid:group(0),partial:group(1),unpaid:group(2),received:months[5].received,months};
+    });
+  }
   access(actor: Actor, id: string) {
     return this.transaction(actor,'FINANCE_VIEW',async tx => {
       const r = await this.resident(tx,actor,id);
@@ -130,6 +154,7 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
 class FinanceController {
   constructor(private readonly service: FinanceService) {}
   @Get() snapshot(@Req() req: AuthRequest,@Query() query: FinanceQuery) {return this.service.snapshot(req.actor,query);}
+  @Get('month') month(@Req() req: AuthRequest) {return this.service.month(req.actor);}
   @Post('charges') charge(@Req() req: AuthRequest,@Body() dto: ChargeDto) {return this.service.createCharge(req.actor,dto);}
   @Post('payments') payment(@Req() req: AuthRequest,@Body() dto: PaymentDto) {return this.service.createPayment(req.actor,dto);}
   @Get('residents/:id/access') access(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) {return this.service.access(req.actor,id);}

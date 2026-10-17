@@ -156,3 +156,18 @@ test('M3 concurrent new charge and receipt conserve money; allocation history im
  const s=await snapshot();assert.equal(s.summary.paid,'100.1');assert.equal(s.summary.applied,'75.1');assert.equal(s.summary.creditBalance,'25');assert.equal(s.summary.outstanding,'0');
  const a=await db.paymentAllocation.findFirst();await assert.rejects(db.paymentAllocation.update({where:{id:a.id},data:{amount:1}}));await assert.rejects(db.paymentAllocation.delete({where:{id:a.id}}));
 });
+test('home screen month: residents by rent state, received this month, six months, today moves',async()=>{
+ const month=today.slice(0,8)+'01',end=date(40);
+ const rent=(r,extra={})=>send(agent,'post','/finance/charges').send({...chargeBody(),residentId:r.id,billingPeriodStart:month,billingPeriodEnd:end,dueDate:today,...extra}).expect(201).then(x=>x.body);
+ const second=(await send(agent,'post','/residents').send({fullName:'Second resident',phone:'+998901234568'}).expect(201)).body;
+ const third=(await send(agent,'post','/residents').send({fullName:'Third resident',phone:'+998901234569'}).expect(201)).body;
+ await send(agent,'post','/occupancies/check-in').send({residentId:resident.id,bedId:bed.id,moveInDate:today,monthlyPrice:'100.10',paymentDay:5,depositAmount:'0'}).expect(201);
+ const paid=await rent(resident);await pay(paid);
+ const partial=await rent(second,{amount:'200'});await pay(partial,{residentId:second.id,amount:'50'});
+ await rent(third,{amount:'300'});
+ await rent(resident,{type:'OTHER',amount:'999'}); // not rent: ignored
+ const m=(await send(agent,'get','/finance/month').expect(200)).body;
+ assert.deepEqual([m.paid,m.partial,m.unpaid],[{residents:1,amount:'100.10'},{residents:1,amount:'150.00'},{residents:1,amount:'300.00'}]);
+ assert.equal(m.received,'150.10');assert.equal(m.months.length,6);assert.equal(m.months[5].month,today.slice(0,7));assert.equal(m.months[0].received,'0.00');
+ assert.deepEqual((await send(agent,'get','/occupancies/today').expect(200)).body,{movedIn:1,movedOut:0});
+});

@@ -48,7 +48,7 @@ class _Splash extends StatelessWidget {
   const _Splash();
   @override
   Widget build(BuildContext context) => Scaffold(
-        backgroundColor: Brand.ink,
+        backgroundColor: Brand.navy,
         body: Center(child: Image.asset('assets/brand/logo-light.png', height: 52, semanticLabel: 'ijara360')),
       );
 }
@@ -111,10 +111,11 @@ class _StaffAppState extends State<StaffApp> with _Unread {
     final sections = <(String, Destination)>[];
     sections.addAll([
       ('home', Destination('Главная', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded, (c) => StaffHome(go: (k) { final i = sections.indexWhere((x) => x.$1 == k); if (i >= 0) AppShell.go(c, i); }))),
-      ('residents', Destination('Жильцы', Icons.people_outline_rounded, Icons.people_rounded, (_) => const ResidentsScreen())),
-      if (s.can('FINANCE_VIEW')) ('finance', Destination('Финансы', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const FinanceScreen())),
-      if (s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE')) ('tickets', Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const StaffTicketsScreen())),
+      // Phone bar as on the mockup: Главная, Комнаты, Жильцы, Оплаты; the rest under "Ещё".
       ('rooms', Destination('Комнаты', Icons.meeting_room_outlined, Icons.meeting_room_rounded, (_) => const RoomsScreen())),
+      ('residents', Destination('Жильцы', Icons.people_outline_rounded, Icons.people_rounded, (_) => const ResidentsScreen())),
+      if (s.can('FINANCE_VIEW')) ('finance', Destination('Оплаты', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const FinanceScreen())),
+      if (s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE')) ('tickets', Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const StaffTicketsScreen())),
       if (s.can('VIEW_LOCATION')) ('map', Destination('Карта', Icons.map_outlined, Icons.map_rounded, (_) => const StaffMapScreen())),
       if (s.can('APPLICATION_VIEW')) ('applications', Destination('Заявки', Icons.assignment_outlined, Icons.assignment_rounded, (_) => const ApplicationsScreen())),
       ('feed', Destination('Уведомления', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => NotificationsScreen(onOpen: (c, n) => _openLink(c, n)), badge: unread)),

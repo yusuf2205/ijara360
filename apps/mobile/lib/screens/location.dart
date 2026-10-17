@@ -233,7 +233,7 @@ class LocationLock extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const IconChip(Icons.location_on_outlined, tone: Tone.yellow, size: 64),
+                    const IconChip(Icons.location_on_outlined, tone: Tone.blue, size: 64),
                     const Gap(18),
                     Semantics(header: true, child: Text('Включите геолокацию', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall)),
                     const Gap(10),
@@ -287,7 +287,7 @@ class _StaffMapScreenState extends State<StaffMapScreen> {
               for (final k in labels.keys) ChoiceChip(
                 label: Text('${labels[k]} ${counts[k] ?? 0}'),
                 selected: filter == k,
-                selectedColor: Brand.yellow,
+                selectedColor: Brand.blueSoft,
                 onSelected: (_) => setState(() => filter = k),
               ),
             ]),

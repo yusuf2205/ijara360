@@ -2,7 +2,7 @@
 import { Logo, LogoMark } from './brand';
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Building2, ShieldCheck, Check, BedDouble, Send } from 'lucide-react';
+import { ArrowRight, Building2, ShieldCheck, Check, BedDouble, House, LockKeyhole, Send, UserRound } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function Access() {
@@ -69,10 +69,9 @@ export default function Access() {
     <section className="access-form-area">
       <div className="access-mobile-brand brand"><Logo size={46}/></div>
       <div className="access-card">
-        <img className="access-app-icon" src="/brand/app-icon-192.png" alt="" width={56} height={56}/>
-        <span className="eyebrow">{configured ? 'С ВОЗВРАЩЕНИЕМ' : 'НАЧНЁМ С ОСНОВНОГО'}</span>
-        <h2>{configured ? 'Войти в свой дом' : 'Настроить Ijara360'}</h2>
-        <p className="muted">{configured ? 'Укажите телефон и пароль вашей учётной записи.' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>
+        <span className="access-house" aria-hidden="true"><House size={34}/></span>
+        <h2>{configured ? 'Управление домом' : 'Настроить Ijara360'}</h2>
+        <p className="muted">{configured ? 'Простой учёт жильцов и оплат' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>
         {approval ? <div className="approval-wait" role="status">
           <div className="approval-icon"><Send size={26}/></div>
           {approval.confirmBy === 'owner' ? <>
@@ -91,9 +90,9 @@ export default function Access() {
           {(configured || step === 1) ? <>
             {!configured && <><label>Ключ первоначальной настройки<input value={token} onChange={e => setToken(e.target.value)} type="password" required minLength={32} autoComplete="off"/><small>Ключ находится в файле доступа, подготовленном при установке.</small></label>
             <label>Ваше имя<input value={fullName} onChange={e => setFullName(e.target.value)} required maxLength={160} autoComplete="name"/></label></>}
-            <label>Телефон<input value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="+998 90 123 45 67" required autoComplete="username" /></label>
-            <label>Пароль<input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={configured ? 1 : 8} maxLength={128} autoComplete={configured ? 'current-password' : 'new-password'} />{!configured && <small>Не менее 8 символов: буквы, цифры или знаки.</small>}</label>
-            {configured && <label className="remember-device"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Запомнить это устройство на 30 дней<small>Не отмечайте на чужом компьютере.</small></span></label>}
+            <label className="with-icon">Телефон<UserRound size={18}/><input value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="+998 90 123 45 67" required autoComplete="username" /></label>
+            <label className="with-icon">Пароль<LockKeyhole size={18}/><input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={configured ? 1 : 8} maxLength={128} autoComplete={configured ? 'current-password' : 'new-password'} />{!configured && <small>Не менее 8 символов: буквы, цифры или знаки.</small>}</label>
+            {configured && <label className="remember-device"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Запомнить меня на 30 дней<small>Не отмечайте на чужом компьютере.</small></span></label>}
           </> : <>
             <label>Название дома<input value={name} onChange={e => setName(e.target.value)} required maxLength={120}/></label>
             <label>Адрес <span className="optional">необязательно</span><input value={address} onChange={e => setAddress(e.target.value)} maxLength={500}/></label>
@@ -104,6 +103,7 @@ export default function Access() {
           {error && <div className="error" role="alert">{error}</div>}
           <button className="button primary wide" disabled={busy}>{busy ? 'Сохраняем…' : configured ? 'Войти' : step === 1 ? 'Продолжить' : 'Создать дом'}<ArrowRight size={18}/></button>
           {!configured && step === 2 && <button className="button text wide" type="button" onClick={() => setStep(1)}>Назад</button>}
+          {configured && <details className="forgot"><summary>Забыли пароль?</summary><p>Обратитесь к владельцу дома. Сменить пароль после входа можно в Настройках.</p></details>}
         </form>}
         <div className="app-links"><a className="button secondary" href="/app">Открыть приложение</a><a className="button secondary" href="/app/ijara360.apk" download>Скачать для Android</a></div>
         <p className="access-caption">Доступ только для владельца и управляющего.<br/>Роль определяется вашей учётной записью.</p>

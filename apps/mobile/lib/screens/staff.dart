@@ -26,8 +26,10 @@ class StaffHome extends StatelessWidget {
         final fin = s.can('FINANCE_VIEW') ? s.api.get('/finance') : Future.value(null);
         final apps = s.can('APPLICATION_VIEW') ? s.api.get('/applications', {'status': 'SUBMITTED'}) : Future.value(null);
         final tickets = s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE') ? s.api.get('/tickets', {'status': 'OPEN'}) : Future.value(null);
-        final r = await Future.wait([rooms, feed, fin, apps, tickets]);
-        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4]};
+        final month = s.can('FINANCE_VIEW') ? s.api.get('/finance/month').catchError((_) => null) : Future.value(null);
+        final today = s.api.get('/occupancies/today').catchError((_) => null);
+        final r = await Future.wait([rooms, feed, fin, apps, tickets, month, today]);
+        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4], 'month': r[5], 'today': r[6]};
       },
       builder: (context, d, refresh) {
         final rooms = (d['rooms'] as List).cast<Map<String, dynamic>>();
@@ -38,6 +40,9 @@ class StaffHome extends StatelessWidget {
         final newApps = (d['apps'] as Map?)?['counts']?['SUBMITTED'] as int?;
         final newTickets = (d['tickets'] as Map?)?['counts']?['OPEN'] as int?;
         final unread = (d['feed'] as Map)['unread'] as int? ?? 0;
+        final month = d['month'] as Map<String, dynamic>?;
+        final today = d['today'] as Map<String, dynamic>?;
+        int count(String k) => ((month?[k] as Map?)?['residents'] as int?) ?? 0;
         final t = Theme.of(context).textTheme;
         final wide = MediaQuery.sizeOf(context).width >= 900;
         final ring = AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -47,7 +52,7 @@ class StaffHome extends StatelessWidget {
             OccupancyRing(busy: busy, total: beds),
             const SizedBox(width: 18),
             Expanded(child: Column(children: [
-              _Legend(color: Brand.yellow, label: 'Занято', value: busy),
+              _Legend(color: Brand.blue, label: 'Занято', value: busy),
               _Legend(color: Brand.gray100, label: 'Свободно', value: beds - busy, border: true),
             ])),
           ]),
@@ -55,27 +60,43 @@ class StaffHome extends StatelessWidget {
         final money = fin == null ? null : AppCard(onTap: () => go('finance'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Финансы', style: t.titleMedium),
           const Gap(10),
-          _MoneyRow(Icons.receipt_long_outlined, Tone.yellow, sum(fin['summary']['charged']), 'Начислено'),
+          _MoneyRow(Icons.receipt_long_outlined, Tone.blue, sum(fin['summary']['charged']), 'Начислено'),
           _MoneyRow(Icons.check_circle_outline_rounded, Tone.green, sum(fin['summary']['paid']), 'Оплачено'),
           _MoneyRow(Icons.error_outline_rounded, Tone.red, sum(fin['summary']['outstanding']), 'Долг${debtors != null && debtors > 0 ? ' · $debtors жильцов' : ''}'),
         ]));
         return PageBody(onRefresh: refresh, children: [
+          // Mockup "Главная (Dashboard)": greeting, today's date, then tinted tiles.
           Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Semantics(header: true, child: Text('${greeting()}, ${s.firstName}!', style: t.headlineMedium)),
-              Text('${s.propertyName} · ${s.roleLabel}', style: t.bodySmall),
+              Text('Здравствуйте,', style: manrope(13, FontWeight.w600, color: Brand.gray500)),
+              Semantics(header: true, child: Text(s.firstName, style: t.headlineMedium)),
+              Text('Сегодня, ${longDate(DateTime.now())}', style: t.bodySmall),
             ])),
             BellButton(unread: unread, onTap: () => go('feed')),
           ]),
           const Gap(18),
-          TileGrid(minTile: 150, max: 7, children: [
-            Kpi(icon: Icons.bed_outlined, value: '$beds', label: 'Всего мест', onTap: () => go('rooms')),
-            Kpi(icon: Icons.people_outline_rounded, tone: Tone.red, value: '$busy', label: 'Занято', onTap: () => go('residents')),
-            Kpi(icon: Icons.check_circle_outline_rounded, tone: Tone.green, value: '${beds - busy}', label: 'Свободно', onTap: () => go('rooms')),
-            if (debtors != null) Kpi(icon: Icons.error_outline_rounded, tone: Tone.orange, value: '$debtors', label: 'Должники', onTap: () => go('finance')),
-            if (newApps != null) Kpi(icon: Icons.assignment_outlined, tone: Tone.gray, value: '$newApps', label: 'Новые заявки', onTap: () => go('applications')),
-            if (newTickets != null) Kpi(icon: Icons.chat_bubble_outline_rounded, tone: Tone.gray, value: '$newTickets', label: 'Новые обращения', onTap: () => go('tickets')),
+          TileGrid(minTile: 150, max: 5, spacing: 10, children: [
+            ColorTile(icon: Icons.meeting_room_outlined, value: '${rooms.length}', label: 'Комнаты', onTap: () => go('rooms')),
+            ColorTile(icon: Icons.bed_outlined, tone: Tone.green, value: '$beds', label: 'Мест всего', onTap: () => go('rooms')),
+            ColorTile(icon: Icons.people_outline_rounded, tone: Tone.red, value: '$busy', label: 'Занято', onTap: () => go('residents')),
+            ColorTile(icon: Icons.check_circle_outline_rounded, tone: Tone.green, value: '${beds - busy}', label: 'Свободно', onTap: () => go('rooms')),
+            if (month != null) ...[
+              ColorTile(icon: Icons.verified_outlined, tone: Tone.green, value: '${count('paid')}', label: 'Оплатили', onTap: () => go('finance')),
+              ColorTile(icon: Icons.error_outline_rounded, tone: Tone.red, value: '${count('unpaid') + count('partial')}', label: 'Не оплатили', onTap: () => go('finance')),
+            ],
+            if (fin != null) ColorTile(icon: Icons.account_balance_wallet_outlined, tone: Tone.orange, value: sum(fin['summary']['outstanding']), label: 'Общий долг', onTap: () => go('finance')),
+            if (debtors != null) ColorTile(icon: Icons.person_off_outlined, tone: Tone.orange, value: '$debtors', label: 'Должники', onTap: () => go('finance')),
+            if (newApps != null) ColorTile(icon: Icons.assignment_outlined, value: '$newApps', label: 'Новые заявки', onTap: () => go('applications')),
+            if (newTickets != null) ColorTile(icon: Icons.chat_bubble_outline_rounded, value: '$newTickets', label: 'Новые обращения', onTap: () => go('tickets')),
           ]),
+          if (month != null) ...[const Gap(10), ColorTile(icon: Icons.payments_outlined, tone: Tone.green, value: sum(month['received']), label: 'Получено за месяц', onTap: () => go('finance'))],
+          if (today != null) ...[
+            const SectionTitle('Сегодня'),
+            TileGrid(minTile: 150, max: 2, spacing: 10, children: [
+              ColorTile(icon: Icons.person_add_alt_outlined, value: '${today['movedIn']}', label: 'Заселились', onTap: () => go('residents')),
+              ColorTile(icon: Icons.person_remove_outlined, tone: Tone.red, value: '${today['movedOut']}', label: 'Выселились', onTap: () => go('residents')),
+            ]),
+          ],
           const Gap(14),
           if (s.can('FINANCE_MANAGE')) ...[
             FilledButton.icon(onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')),
@@ -153,7 +174,7 @@ class _RingPainter extends CustomPainter {
     final rect = Offset.zero & size;
     final arc = rect.deflate(stroke / 2);
     canvas.drawArc(arc, 0, math.pi * 2, false, Paint()..color = Brand.gray100..style = PaintingStyle.stroke..strokeWidth = stroke);
-    if (value > 0) canvas.drawArc(arc, -math.pi / 2, math.pi * 2 * value, false, Paint()..color = Brand.yellow..style = PaintingStyle.stroke..strokeWidth = stroke..strokeCap = StrokeCap.round);
+    if (value > 0) canvas.drawArc(arc, -math.pi / 2, math.pi * 2 * value, false, Paint()..color = Brand.blue..style = PaintingStyle.stroke..strokeWidth = stroke..strokeCap = StrokeCap.round);
   }
   @override
   bool shouldRepaint(_RingPainter old) => old.value != value;
@@ -348,7 +369,7 @@ class ResidentScreen extends StatelessWidget {
                   Text('${r['fullName']}', style: Theme.of(context).textTheme.titleLarge),
                   Text('${r['phone']}', style: Theme.of(context).textTheme.bodySmall),
                   const Gap(6),
-                  StatusPill(occ == null ? 'Не проживает' : 'Комната ${occ['room']['number']}, место ${occ['room']['number']}-${occ['bed']['number']}', tone: occ == null ? Tone.gray : Tone.yellow),
+                  StatusPill(occ == null ? 'Не проживает' : 'Комната ${occ['room']['number']}, место ${occ['room']['number']}-${occ['bed']['number']}', tone: occ == null ? Tone.gray : Tone.blue),
                 ])),
               ]),
               const Gap(14),
@@ -396,8 +417,8 @@ class FinanceScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Финансы')),
-      floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(backgroundColor: Brand.yellow, foregroundColor: Brand.ink, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
+      appBar: AppBar(title: const Text('Оплаты')),
+      floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
       body: LiveData<Map<String, dynamic>>(
         topics: const {'finance'},
         load: () async => (await s.api.get('/finance')) as Map<String, dynamic>,
@@ -610,7 +631,7 @@ class ApplicationScreen extends StatelessWidget {
             Text('${a['fullName'] ?? 'Без имени'}', style: Theme.of(context).textTheme.titleLarge),
             Text('${a['phone'] ?? ''}${a['phoneVerified'] == true ? ' · подтверждён в Telegram' : ''}', style: Theme.of(context).textTheme.bodySmall),
             const Gap(8),
-            StatusPill(applicationStatus[a['status']] ?? '${a['status']}', tone: Tone.yellow),
+            StatusPill(applicationStatus[a['status']] ?? '${a['status']}', tone: Tone.blue),
             const Gap(10),
             KeyValue('Занятость', a['occupationType'] == 'STUDENT' ? 'Студент' : 'Работает'),
             if (a['organization'] != null) KeyValue('Где', '${a['organization']}'),
@@ -618,7 +639,7 @@ class ApplicationScreen extends StatelessWidget {
             if (a['plannedDuration'] != null) KeyValue('Срок', '${a['plannedDuration']}'),
           ])),
           const Gap(14),
-          AppCard(color: Brand.yellowSoft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          AppCard(color: Brand.blueSoft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Документы и решение', style: manrope(15, FontWeight.w800)),
             const Gap(4),
             const Text('Паспорт и фото лица открываются только в кабинете: там просмотр записывается в журнал доступа.'),
@@ -683,7 +704,7 @@ class TelegramCard extends StatelessWidget {
       builder: (context, t, refresh) => Padding(
         padding: const EdgeInsets.only(top: 12),
         child: AppCard(child: Row(children: [
-          IconChip(Icons.send_rounded, tone: t['linked'] == true ? Tone.green : Tone.yellow),
+          IconChip(Icons.send_rounded, tone: t['linked'] == true ? Tone.green : Tone.blue),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Telegram', style: manrope(15, FontWeight.w800)),
@@ -720,7 +741,7 @@ class StaffListCard extends StatelessWidget {
               Text('${u['fullName']}', style: manrope(15, FontWeight.w700)),
               Text('${u['phone']}', style: Theme.of(context).textTheme.bodySmall),
             ])),
-            StatusPill(u['role'] == 'ADMIN' ? (u['active'] == false ? 'Отключён' : 'Администратор') : 'Супер-админ', tone: u['role'] == 'ADMIN' ? (u['active'] == false ? Tone.gray : Tone.yellow) : Tone.ink),
+            StatusPill(u['role'] == 'ADMIN' ? (u['active'] == false ? 'Отключён' : 'Администратор') : 'Супер-админ', tone: u['role'] == 'ADMIN' ? (u['active'] == false ? Tone.gray : Tone.blue) : Tone.ink),
           ])),
         ),
         Text('Права сотрудников меняются в кабинете на компьютере: Настройки → Права сотрудников.', style: Theme.of(context).textTheme.bodySmall),

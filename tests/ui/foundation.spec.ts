@@ -3,7 +3,7 @@ const phone = '+998900000010';
 const password = 'UI test only strong password 2026';
 async function login(page: Page, account = phone) {
   await page.goto('/login');
-  await expect(page.getByRole('heading', {name:'Войти в свой дом'})).toBeVisible();
+  await expect(page.getByRole('heading', {name:'Управление домом'})).toBeVisible();
   await page.getByLabel('Телефон', { exact:true }).fill(account);
   await page.getByLabel('Пароль', { exact:true }).fill(password);
   await page.getByRole('button', {name:'Войти', exact:true}).click();
@@ -25,7 +25,7 @@ test('first-run setup creates the owner and 7 rooms; login opens overview', asyn
   await page.getByRole('button',{name:'Создать дом'}).click();
   await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   await expect(page.locator('.room-card')).toHaveCount(7);
-  await expect(page.locator('.stat').nth(1).locator('strong')).toHaveText('56');
+  await expect(page.locator('.stat').filter({hasText:'Всего мест'}).locator('strong')).toHaveText('56');
   const cookie=(await page.context().cookies()).find(c=>c.name==='ijara_session');
   expect(cookie?.httpOnly).toBe(true); expect(cookie?.sameSite).toBe('Strict');
 });
@@ -65,12 +65,12 @@ test('duplicate room error preserves user input and dialog can be closed by Esca
 });
 test('search, dashboard links and history navigation work on 320px screens', async ({page}) => {
   await page.setViewportSize({width:320,height:740}); await login(page);
-  await page.locator('.stat').first().click();
+  await page.locator('.tile').filter({hasText:'Комнаты'}).click();
   await expect(page.getByRole('heading',{name:'Комнаты',exact:true})).toBeVisible();
   await page.getByRole('textbox',{name:'Найти комнату'}).fill('8');
   await expect(page.locator('.room-card')).toHaveCount(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.getByRole('navigation',{name:'Мобильная навигация'}).getByRole('button',{name:'Ещё'}).click();
+  await page.getByRole('button',{name:'Все разделы'}).click();
   await page.getByRole('navigation',{name:'Ещё разделы'}).getByRole('link',{name:'История'}).click();
   await expect(page.getByRole('heading',{name:'История действий'})).toBeVisible();
   await expect(page.locator('.activity-list')).toContainText('Добавлено место');
@@ -90,10 +90,10 @@ test('owner creates ADMIN; ADMIN cannot see owner controls', async ({page}) => {
 });
 test('capacity card filters rooms and mobile settings allow logout', async ({page}) => {
   await page.setViewportSize({width:390,height:844}); await login(page);
-  await page.locator('.stat').filter({hasText:'Можно добавить'}).click();
+  await page.goto('/rooms?filter=space');
   await expect(page.locator('.room-card')).toHaveCount(1);
   await expect(page.locator('.room-card')).toContainText('Комната №8');
   await page.goto('/settings');
   await page.getByRole('button',{name:'Выйти из аккаунта'}).click();
-  await expect(page.getByRole('heading',{name:'Войти в свой дом'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Управление домом'})).toBeVisible();
 });

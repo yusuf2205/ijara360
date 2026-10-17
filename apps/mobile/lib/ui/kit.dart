@@ -22,14 +22,15 @@ String sum(Object? v) {
 DateTime _tashkent(DateTime d) => d.toUtc().add(const Duration(hours: 5));
 String day(Object? iso) => iso == null ? '—' : DateFormat('d MMMM', 'ru').format(DateTime.parse('$iso').toUtc());
 String dayTime(Object? iso) => iso == null ? '—' : DateFormat('d MMM, HH:mm', 'ru').format(_tashkent(DateTime.parse('$iso')));
+String longDate(DateTime t) => DateFormat('d MMMM y', 'ru').format(_tashkent(t));
 String greeting() {
   final h = _tashkent(DateTime.now()).hour;
   return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
 }
 
-enum Tone { yellow, red, orange, green, gray, ink }
+enum Tone { blue, red, orange, green, gray, ink }
 (Color, Color) toneColors(Tone t) => switch (t) {
-      Tone.yellow => (Brand.yellowSoft, Brand.ink),
+      Tone.blue => (Brand.blueSoft, Brand.blue),
       Tone.red => (Brand.redSoft, Brand.red),
       Tone.orange => (Brand.orangeSoft, Brand.orange),
       Tone.green => (Brand.greenSoft, Brand.green),
@@ -51,7 +52,7 @@ class PageBody extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(wide ? 28 : 16, 8, wide ? 28 : 16, 32),
       children: [Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children)))],
     );
-    return onRefresh == null ? list : RefreshIndicator(color: Brand.ink, backgroundColor: Brand.yellow, onRefresh: onRefresh!, child: list);
+    return onRefresh == null ? list : RefreshIndicator(color: Brand.white, backgroundColor: Brand.blue, onRefresh: onRefresh!, child: list);
   }
 }
 
@@ -85,7 +86,7 @@ class AppCard extends StatelessWidget {
 }
 
 class IconChip extends StatelessWidget {
-  const IconChip(this.icon, {super.key, this.tone = Tone.yellow, this.size = 40});
+  const IconChip(this.icon, {super.key, this.tone = Tone.blue, this.size = 40});
   final IconData icon;
   final Tone tone;
   final double size;
@@ -116,7 +117,7 @@ class StatusPill extends StatelessWidget {
 }
 
 class Kpi extends StatelessWidget {
-  const Kpi({super.key, required this.icon, required this.value, required this.label, this.tone = Tone.yellow, this.onTap});
+  const Kpi({super.key, required this.icon, required this.value, required this.label, this.tone = Tone.blue, this.onTap});
   final IconData icon;
   final String value;
   final String label;
@@ -133,6 +134,34 @@ class Kpi extends StatelessWidget {
           Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: manrope(12, FontWeight.w600, color: Brand.gray500)),
         ])),
       );
+}
+
+/// Mockup tile: the whole card tinted by meaning, icon on a light square, small label over a big value.
+class ColorTile extends StatelessWidget {
+  const ColorTile({super.key, required this.icon, required this.value, required this.label, this.tone = Tone.blue, this.onTap});
+  final IconData icon;
+  final String value;
+  final String label;
+  final Tone tone;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = toneColors(tone);
+    return AppCard(
+      onTap: onTap,
+      color: bg,
+      semanticLabel: '$label: $value',
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      child: ExcludeSemantics(child: Row(children: [
+        Container(width: 38, height: 38, alignment: Alignment.center, decoration: BoxDecoration(color: Brand.white.withValues(alpha: .7), borderRadius: BorderRadius.circular(11)), child: Icon(icon, size: 20, color: fg)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(11.5, FontWeight.w600, color: fg)),
+          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: manrope(20, FontWeight.w800, color: tone == Tone.orange ? fg : Brand.ink))),
+        ])),
+      ])),
+    );
+  }
 }
 
 /// Columns that follow the width: 2 on phones, 3–4 on tablets, up to [max] on desktops.
@@ -191,8 +220,8 @@ class Avatar extends StatelessWidget {
         width: size,
         height: size,
         alignment: Alignment.center,
-        decoration: const BoxDecoration(color: Brand.yellow, shape: BoxShape.circle),
-        child: Text(name.isEmpty ? '·' : name.characters.first.toUpperCase(), style: manrope(size * .4, FontWeight.w800)),
+        decoration: const BoxDecoration(color: Brand.blue, shape: BoxShape.circle),
+        child: Text(name.isEmpty ? '·' : name.characters.first.toUpperCase(), style: manrope(size * .4, FontWeight.w800, color: Brand.white)),
       );
 }
 

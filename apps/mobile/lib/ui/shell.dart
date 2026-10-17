@@ -112,9 +112,9 @@ class _AppShellState extends State<AppShell> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               for (var i = first; i < widget.destinations.length; i++)
                 ListTile(
-                  leading: IconChip(widget.destinations[i].icon, tone: i == index ? Tone.yellow : Tone.gray),
+                  leading: IconChip(widget.destinations[i].icon, tone: i == index ? Tone.blue : Tone.gray),
                   title: Text(widget.destinations[i].label, style: manrope(16, FontWeight.w700)),
-                  trailing: (widget.destinations[i].badge ?? 0) > 0 ? StatusPill('${widget.destinations[i].badge}', tone: Tone.yellow) : const Icon(Icons.chevron_right_rounded),
+                  trailing: (widget.destinations[i].badge ?? 0) > 0 ? StatusPill('${widget.destinations[i].badge}', tone: Tone.blue) : const Icon(Icons.chevron_right_rounded),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   onTap: () { Navigator.pop(sheet); select(i); },
                 ),

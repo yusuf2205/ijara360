@@ -17,7 +17,7 @@ class BellButton extends StatelessWidget {
         tooltip: unread > 0 ? 'Уведомления: $unread новых' : 'Уведомления',
         style: IconButton.styleFrom(backgroundColor: Brand.white, side: const BorderSide(color: Brand.line), minimumSize: const Size(48, 48)),
         onPressed: onTap,
-        icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), backgroundColor: Brand.yellow, textColor: Brand.ink, child: const Icon(Icons.notifications_none_rounded)),
+        icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), backgroundColor: Brand.red, textColor: Brand.white, child: const Icon(Icons.notifications_none_rounded)),
       );
 }
 
@@ -59,7 +59,7 @@ class NoticeTile extends StatelessWidget {
       color: unread ? Brand.white : Brand.white,
       semanticLabel: '${unread ? 'Новое. ' : ''}${n['title']}. ${n['body']}',
       child: ExcludeSemantics(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        IconChip(noticeIcon('${n['kind']}'), tone: unread ? Tone.yellow : Tone.gray),
+        IconChip(noticeIcon('${n['kind']}'), tone: unread ? Tone.blue : Tone.gray),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${n['title']}', style: manrope(15, FontWeight.w800)),
@@ -68,7 +68,7 @@ class NoticeTile extends StatelessWidget {
           const Gap(6),
           Text(dayTime(n['createdAt']), style: Theme.of(context).textTheme.bodySmall),
         ])),
-        if (unread) Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6), decoration: BoxDecoration(color: Brand.yellow, shape: BoxShape.circle, border: Border.all(color: Brand.ink))),
+        if (unread) Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6), decoration: const BoxDecoration(color: Brand.blue, shape: BoxShape.circle)),
       ])),
     );
   }
@@ -109,7 +109,7 @@ class NotificationsScreen extends StatelessWidget {
 
 // ---------- Tickets (complaints, ideas, repairs) ----------
 const ticketCategory = {'COMPLAINT': 'Жалоба', 'SUGGESTION': 'Предложение', 'REPAIR': 'Поломка'};
-(String, Tone) ticketStatus(String s) => switch (s) { 'OPEN' => ('Новое', Tone.orange), 'IN_PROGRESS' => ('В работе', Tone.yellow), 'RESOLVED' => ('Решено', Tone.green), _ => ('Отклонено', Tone.gray) };
+(String, Tone) ticketStatus(String s) => switch (s) { 'OPEN' => ('Новое', Tone.orange), 'IN_PROGRESS' => ('В работе', Tone.blue), 'RESOLVED' => ('Решено', Tone.green), _ => ('Отклонено', Tone.gray) };
 IconData ticketIcon(String c) => c == 'REPAIR' ? Icons.build_outlined : c == 'COMPLAINT' ? Icons.report_gmailerrorred_rounded : Icons.lightbulb_outline_rounded;
 
 class TicketTile extends StatelessWidget {
@@ -146,8 +146,8 @@ class TenantTickets extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Обращения')),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Brand.yellow,
-        foregroundColor: Brand.ink,
+        backgroundColor: Brand.blue,
+        foregroundColor: Brand.white,
         onPressed: () => openPage(context, const NewTicketScreen()),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Новое обращение'),
@@ -158,7 +158,7 @@ class TenantTickets extends StatelessWidget {
         builder: (context, d, refresh) {
           final items = (d['items'] as List).cast<Map<String, dynamic>>();
           return PageBody(maxWidth: 760, onRefresh: refresh, children: [
-            AppCard(color: Brand.yellowSoft, child: Row(children: [
+            AppCard(color: Brand.blueSoft, child: Row(children: [
               const Icon(Icons.shield_outlined),
               const SizedBox(width: 12),
               Expanded(child: Text('Ваше имя видит только владелец дома. Сотрудникам — только суть, а для поломок ещё и комната.', style: manrope(13, FontWeight.w600))),
@@ -298,7 +298,7 @@ class _TicketScreenState extends State<TicketScreen> {
                   const SizedBox(width: 8),
                   IconButton.filled(
                     tooltip: 'Отправить',
-                    style: IconButton.styleFrom(backgroundColor: Brand.yellow, foregroundColor: Brand.ink, minimumSize: const Size(52, 52)),
+                    style: IconButton.styleFrom(backgroundColor: Brand.blue, foregroundColor: Brand.white, minimumSize: const Size(52, 52)),
                     onPressed: busy ? null : () { final text = reply.text.trim(); if (text.isEmpty) return; run(() async { await s.api.post('$path/messages', {'body': text}); reply.clear(); }); },
                     icon: const Icon(Icons.send_rounded),
                   ),
@@ -326,13 +326,13 @@ class _Bubble extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           decoration: BoxDecoration(
-            color: mine ? Brand.yellow : Brand.white,
+            color: mine ? Brand.blue : Brand.white,
             borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(mine ? 18 : 4), bottomRight: Radius.circular(mine ? 4 : 18)),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${m['name']} · ${dayTime(m['createdAt'])}', style: manrope(11.5, FontWeight.w700, color: mine ? const Color(0xFF5A4A1A) : Brand.gray500)),
+            Text('${m['name']} · ${dayTime(m['createdAt'])}', style: manrope(11.5, FontWeight.w700, color: mine ? const Color(0xFFDCE6FF) : Brand.gray500)),
             const Gap(4),
-            Text('${m['body']}', style: manrope(15, FontWeight.w500, height: 1.45)),
+            Text('${m['body']}', style: manrope(15, FontWeight.w500, height: 1.45, color: mine ? Brand.white : Brand.ink)),
           ]),
         ),
       ),
@@ -362,7 +362,7 @@ class ProfileScreen extends StatelessWidget {
               Text(s.fullName, style: Theme.of(context).textTheme.titleLarge),
               Text(s.phone, style: Theme.of(context).textTheme.bodySmall),
               const Gap(6),
-              StatusPill(s.roleLabel, tone: s.role == Role.superAdmin ? Tone.ink : Tone.yellow),
+              StatusPill(s.roleLabel, tone: s.role == Role.superAdmin ? Tone.ink : Tone.blue),
             ])),
           ])),
           ...extra,
@@ -370,7 +370,7 @@ class ProfileScreen extends StatelessWidget {
           for (final d in list.cast<Map<String, dynamic>>()) Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: AppCard(child: Row(children: [
-              IconChip(d['platform'] == 'WEB' ? Icons.laptop_rounded : Icons.phone_android_rounded, tone: d['current'] == true ? Tone.yellow : Tone.gray),
+              IconChip(d['platform'] == 'WEB' ? Icons.laptop_rounded : Icons.phone_android_rounded, tone: d['current'] == true ? Tone.blue : Tone.gray),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${d['deviceName'] ?? platformLabel[d['platform']]}', style: manrope(15, FontWeight.w700)),

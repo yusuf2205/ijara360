@@ -10,8 +10,8 @@ export const money=(value:string)=>{const [whole,fraction='']=(value||'0').split
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 export type ResidentAction={mode:'check-in'|'transfer'|'check-out'|'edit'|'create';resident?:Resident;bedId?:string};
 
-export function ResidentsPanel({residents,residentId,onAction,initialFilter='all'}:{residents:Resident[];residentId?:string;onAction:(action:ResidentAction)=>void;initialFilter?:string}) {
- const [query,setQuery]=useState(''); const [filter,setFilter]=useState(initialFilter);
+export function ResidentsPanel({residents,residentId,onAction,initialFilter='all',initialQuery=''}:{residents:Resident[];residentId?:string;onAction:(action:ResidentAction)=>void;initialFilter?:string;initialQuery?:string}) {
+ const [query,setQuery]=useState(initialQuery); const [filter,setFilter]=useState(initialFilter);
  const resident=residents.find(r=>r.id===residentId);
  if(residentId) {
   if(!resident) return <div className="empty"><h1>Жилец не найден</h1><Link href="/residents">Все жильцы</Link></div>;

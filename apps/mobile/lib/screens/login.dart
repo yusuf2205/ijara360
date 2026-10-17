@@ -54,7 +54,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final form = _form(context);
     return Scaffold(
-      backgroundColor: wide ? Brand.ink : Brand.bg,
+      backgroundColor: wide ? Brand.navy : Brand.bg,
       body: SafeArea(
         child: wide
             ? Row(children: [
@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Image.asset('assets/brand/logo-light.png', height: 58, semanticLabel: 'ijara360'),
           const Spacer(),
-          Text('ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.', style: manrope(12, FontWeight.w800, color: Brand.yellow, spacing: 1.6)),
+          Text('ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.', style: manrope(12, FontWeight.w800, color: Brand.blueLight, spacing: 1.6)),
           const Gap(16),
           Text('Меньше записей.\nБольше порядка.', style: manrope(44, FontWeight.w800, color: Brand.white, height: 1.15, spacing: -1.2)),
           const Gap(16),
@@ -123,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           value: remember,
-          activeTrackColor: Brand.yellow,
+          activeTrackColor: Brand.blue,
           onChanged: (v) => setState(() => remember = v),
           title: Text('Запомнить меня на 30 дней', style: manrope(14, FontWeight.w600)),
         ),
@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const Gap(22),
         if (who == Audience.tenant)
           AppCard(
-            color: Brand.yellowSoft,
+            color: Brand.blueSoft,
             onTap: () => launchUrl(Uri.parse('${apiOrigin()}/apply'), mode: LaunchMode.externalApplication),
             semanticLabel: 'Хочу заселиться: подать заявку',
             child: Row(children: [
@@ -206,7 +206,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       appBar: AppBar(leading: IconButton(tooltip: 'Отмена', icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context, false))),
       body: PageBody(maxWidth: 460, children: [
         const Gap(20),
-        Center(child: Container(width: 96, height: 96, decoration: const BoxDecoration(color: Brand.yellow, shape: BoxShape.circle), child: const Icon(Icons.send_rounded, size: 44, color: Brand.ink))),
+        Center(child: Container(width: 96, height: 96, decoration: const BoxDecoration(color: Brand.blue, shape: BoxShape.circle), child: const Icon(Icons.send_rounded, size: 44, color: Brand.white))),
         const Gap(24),
         Text(error == null ? (widget.approval.byOwner ? 'Ждём подтверждения владельца' : 'Подтвердите вход в Telegram') : 'Вход не выполнен', textAlign: TextAlign.center, style: t.headlineMedium),
         const Gap(10),

@@ -35,22 +35,22 @@ class TenantHome extends StatelessWidget {
           const Gap(18),
           // The place card is the hero: who you are in this house.
           AppCard(
-            color: Brand.ink,
+            color: Brand.navy,
             padding: const EdgeInsets.all(20),
             semanticLabel: occ == null ? 'Сейчас вы не заселены' : 'Моё место: комната ${occ['room']}, место ${occ['room']}-${occ['bed']}',
             child: ExcludeSemantics(child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('МОЁ МЕСТО', style: manrope(11, FontWeight.w800, color: Brand.yellow, spacing: 1.4)),
+                Text('МОЁ МЕСТО', style: manrope(11, FontWeight.w800, color: Brand.blueLight, spacing: 1.4)),
                 const Gap(8),
                 Text(occ == null ? 'Не заселён' : 'Комната ${occ['room']}', style: manrope(26, FontWeight.w800, color: Brand.white)),
                 if (occ != null) Text('Место ${occ['room']}-${occ['bed']} · с ${day(occ['moveInDate'])}', style: manrope(14, FontWeight.w600, color: const Color(0xFFB9B9BE))),
                 const Gap(12),
-                StatusPill(occ == null ? 'Нет проживания' : 'Проживаю', tone: occ == null ? Tone.gray : Tone.yellow),
+                StatusPill(occ == null ? 'Нет проживания' : 'Проживаю', tone: occ == null ? Tone.gray : Tone.blue),
               ])),
               Container(
                 width: 92, height: 92,
                 decoration: BoxDecoration(color: const Color(0xFF1F1F22), borderRadius: BorderRadius.circular(22)),
-                child: const Icon(Icons.bed_rounded, color: Brand.yellow, size: 48),
+                child: const Icon(Icons.bed_rounded, color: Brand.blueLight, size: 48),
               ),
             ])),
           ),
@@ -119,12 +119,12 @@ Widget dueBadge(Map<String, dynamic> c) {
   if (c['status'] == 'OVERDUE') return const StatusPill('Просрочено', tone: Tone.red);
   final due = DateTime.parse('${c['dueDate']}').toUtc();
   final days = due.difference(DateTime.now().toUtc()).inDays;
-  return StatusPill(days <= 0 ? 'Сегодня' : 'Через $days дн.', tone: days <= 3 ? Tone.orange : Tone.yellow);
+  return StatusPill(days <= 0 ? 'Сегодня' : 'Через $days дн.', tone: days <= 3 ? Tone.orange : Tone.blue);
 }
 
 const chargeType = {'RENT': 'Аренда', 'DEPOSIT': 'Залог', 'PENALTY': 'Штраф', 'UTILITIES': 'Коммунальные', 'OTHER': 'Начисление'};
 const methodLabel = {'CASH': 'наличные', 'CARD_TRANSFER': 'перевод на карту', 'BANK_TRANSFER': 'банковский перевод', 'OTHER': 'другое'};
-(String, Tone) chargeStatus(String s) => switch (s) { 'PAID' => ('Оплачено', Tone.green), 'PARTIALLY_PAID' => ('Частично', Tone.orange), 'OVERDUE' => ('Просрочено', Tone.red), _ => ('К оплате', Tone.yellow) };
+(String, Tone) chargeStatus(String s) => switch (s) { 'PAID' => ('Оплачено', Tone.green), 'PARTIALLY_PAID' => ('Частично', Tone.orange), 'OVERDUE' => ('Просрочено', Tone.red), _ => ('К оплате', Tone.blue) };
 String period(Map c) => c['type'] == 'RENT' ? 'Аренда за ${monthName(c['billingPeriodStart'])}' : chargeType[c['type']] ?? 'Начисление';
 
 class TenantPayments extends StatefulWidget {
@@ -150,12 +150,12 @@ class _TenantPaymentsState extends State<TenantPayments> {
           return PageBody(onRefresh: refresh, children: [
             TileGrid(minTile: 150, max: 3, children: [
               Kpi(icon: Icons.error_outline_rounded, tone: (num.tryParse('${fin['totalDebt']}') ?? 0) > 0 ? Tone.red : Tone.green, value: sum(fin['totalDebt']), label: 'Долг'),
-              Kpi(icon: Icons.savings_outlined, tone: Tone.yellow, value: sum(fin['creditBalance']), label: 'Аванс'),
+              Kpi(icon: Icons.savings_outlined, tone: Tone.blue, value: sum(fin['creditBalance']), label: 'Аванс'),
               if (rent != null) Kpi(icon: Icons.event_repeat_rounded, tone: Tone.gray, value: '${rent['paymentDay']}-е', label: 'День оплаты · ${sum(rent['monthlyPrice'])} в месяц'),
             ]),
             const Gap(16),
             AppCard(
-              color: Brand.yellowSoft,
+              color: Brand.blueSoft,
               child: Row(children: [
                 const Icon(Icons.info_outline_rounded),
                 const SizedBox(width: 12),

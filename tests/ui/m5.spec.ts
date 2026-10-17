@@ -7,7 +7,7 @@ test('M5 remembered login lists this device and the owner ends another session',
   await page.goto('/login');
   await page.getByLabel('Телефон', { exact: true }).fill(ownerPhone);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
-  await page.getByRole('checkbox', { name: /Запомнить это устройство/ }).check();
+  await page.getByRole('checkbox', { name: /Запомнить меня/ }).check();
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
   const cookie = (await page.context().cookies()).find(c => c.name === 'ijara_session');
@@ -135,7 +135,7 @@ test('M5 tickets: the owner sees the author and answers; a ticket manager sees i
   await staff.getByLabel('Телефон', { exact: true }).fill('+998901777003');
   await staff.getByLabel('Пароль', { exact: true }).fill('Dispatcher UI test password 2026');
   await staff.getByRole('button', { name: 'Войти', exact: true }).click();
-  await staff.getByRole('navigation', { name: 'Мобильная навигация' }).getByRole('button', { name: 'Ещё' }).click();
+  await staff.getByRole('button', { name: 'Все разделы' }).click();
   await staff.getByRole('navigation', { name: 'Ещё разделы' }).getByRole('link', { name: 'Обращения' }).click();
   const anon = staff.locator('.ticket-row').filter({ hasText: 'Шумят ночью' });
   await expect(anon).toBeVisible();

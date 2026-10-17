@@ -112,7 +112,7 @@ void main() {
     await tester.pumpAndSettle();
     final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
     final labels = rail.destinations.map((d) => ((d.label as ExcludeSemantics).child as Text).data).toList();
-    expect(labels, containsAll(['Главная', 'Жильцы', 'Финансы', 'Комнаты', 'Уведомления', 'Профиль']));
+    expect(labels, containsAll(['Главная', 'Жильцы', 'Оплаты', 'Комнаты', 'Уведомления', 'Профиль']));
     expect(labels, isNot(contains('Обращения')));
     expect(labels, isNot(contains('Заявки')));
     expect(find.text('Принять оплату'), findsWidgets);
