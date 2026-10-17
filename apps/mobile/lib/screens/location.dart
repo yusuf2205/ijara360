@@ -28,28 +28,24 @@ String accuracyLabel(num? m) {
   return 'около ${m.round()} м';
 }
 
-/// Owner's decision (2026-10-17): no "Геолокация" item in the resident's profile. Consent is asked once,
-/// in plain words, right after sign-in; withdrawal is the phone's own permission switch, and the server shows
-/// a withdrawn permission to staff as "Отключена". Nothing is collected without that consent.
-const _askedKey = 'ijara_location_asked';
+/// Owner's decision (2026-10-17): location is a condition of using the resident app. Until the resident allows it
+/// ("Разрешить в любом режиме") and GPS is on, only "Платежи" and "Профиль" open; the other sections show
+/// [LocationLock] with the reason and the one button that fixes it. Nothing is collected before the resident
+/// presses "Разрешить"; switching it off in the phone's settings is still possible and staff see "Отключена".
+enum LocationGate { open, consent, permission, settings, always, gps }
 
-Future<bool> _consentDialog(BuildContext context) async => await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (c) => AlertDialog(
-        title: const Text('Геолокация для безопасности'),
-        content: const SingleChildScrollView(child: Text(
-          // Short enough to read whole on a 320 dp phone (the longer text needed scrolling on the device test).
-          'Администрация просит видеть, где вы, — для вашей безопасности. '
-          'Видят только сотрудники с доступом, история хранится 30 дней, после выселения передача останавливается.\n\n'
-          'Выключить: Настройки телефона → Приложения → Ijara360 → Местоположение.')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Не сейчас')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Разрешить')),
-        ],
-      ),
-    ) ??
-    false;
+/// What the resident still has to do on this phone. Open when they are not a resident (checked out) or another
+/// signed-in phone of theirs is the one sending.
+LocationGate gateFor({required bool resident, required bool sharing, required bool thisPhone, required bool otherPhone, required DeviceState device}) {
+  if (!resident || otherPhone) return LocationGate.open;
+  if (!sharing && !thisPhone) return device.granted ? LocationGate.consent : LocationGate.permission;
+  return switch (device.permission) {
+    LocationPermission.deniedForever => LocationGate.settings,
+    LocationPermission.denied || LocationPermission.unableToDetermine => LocationGate.permission,
+    LocationPermission.whileInUse => LocationGate.always,
+    LocationPermission.always => device.servicesEnabled ? LocationGate.open : LocationGate.gps,
+  };
+}
 
 /// The phone's permission: the system dialog, then "Разрешить в любом режиме" (Android 10+ keeps it in settings).
 Future<bool> _grant(BuildContext context, {bool explainAlways = true}) async {
@@ -83,11 +79,13 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
   Timer? tick;
   DateTime? lastFlush;
   bool active = false;
+  bool asking = false;
+  final gate = ValueNotifier(LocationGate.open);
 
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); LocationAgent.started.addListener(resume); WidgetsBinding.instance.addPostFrameCallback((_) => resume()); }
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); LocationAgent.started.removeListener(resume); pause(); super.dispose(); }
+  void dispose() { WidgetsBinding.instance.removeObserver(this); LocationAgent.started.removeListener(resume); pause(); gate.dispose(); super.dispose(); }
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) { if (s == AppLifecycleState.resumed) { resume(); } else if (s == AppLifecycleState.paused) { pause(); } }
 
@@ -98,8 +96,16 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
     final api = SessionScope.of(context).api;
     try {
       final r = await api.get('/tenant/location') as Map<String, dynamic>;
-      if (r['resident'] != true) return;
-      if (r['thisDeviceIsPrimary'] != true && !await _arrange(api, r)) return;
+      final device = await DeviceState.read();
+      final resident = r['resident'] == true, sharing = r['sharingEnabled'] == true, thisPhone = r['thisDeviceIsPrimary'] == true;
+      final otherPhone = sharing && !thisPhone && r['primaryDevice'] != null;
+      gate.value = gateFor(resident: resident, sharing: sharing, thisPhone: thisPhone, otherPhone: otherPhone, device: device);
+      if (!resident || otherPhone) return;
+      if (!thisPhone) {
+        // After a sign-out the resident's consent stays: this phone takes over as soon as it has the permission.
+        if (!sharing || !device.granted) return;
+        await api.post('/tenant/location/consent', {'enabled': true});
+      }
       active = true;
       await LocationAgent.start(); // re-registers the background task after an update or reboot
       // GPS switched off or on in the shade: tell the server at once, restart the stream when it is back.
@@ -108,34 +114,39 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
       // lying still stays "В сети" (the server's live window is 3 minutes).
       tick = Timer.periodic(LocationPolicy.foregroundTick, (_) => unawaited(check(api, capture: true)));
       await check(api, capture: true);
-    } on ApiException {
+    } on ApiException catch (e) {
+      // Session ended on the server (checkout, revoked): leave the account instead of staying on the lock screen.
+      if (e.status == 401 && mounted) { pause(); gate.value = LocationGate.open; await SessionScope.of(context).expired(); }
       // Offline at start: the background task and the next resume will try again.
     }
   }
 
-  bool asking = false;
-
-  /// Not sending from this phone yet. Asks once for consent; after a sign-out (consent given, no phone signed in)
-  /// resumes on this phone; leaves another signed-in phone alone. True when this phone now sends.
-  Future<bool> _arrange(ApiClient api, Map<String, dynamic> r) async {
-    if (asking || !mounted) return false;
-    asking = true;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (r['sharingEnabled'] == true) {
-        if (r['primaryDevice'] != null) return false;
-        if (!mounted || !await _grant(context, explainAlways: false)) return false;
-      } else {
-        if (prefs.getBool(_askedKey) == true || !mounted) return false;
-        final yes = await _consentDialog(context);
-        await prefs.setBool(_askedKey, true);
-        if (!yes || !mounted || !await _grant(context)) return false;
-      }
-      await api.post('/tenant/location/consent', {'enabled': true});
-      await LocationAgent.start(); // registers the background task; the listener is ignored while asking
-      return true;
-    } finally {
-      asking = false;
+  /// The button on [LocationLock]: "Разрешить" is the resident's consent; the other states open the phone's settings.
+  Future<void> enable() async {
+    if (asking || !mounted) return;
+    switch (gate.value) {
+      case LocationGate.open:
+        return;
+      case LocationGate.gps:
+        await Geolocator.openLocationSettings();
+      case LocationGate.settings || LocationGate.always:
+        await Geolocator.openAppSettings();
+      case LocationGate.consent || LocationGate.permission:
+        asking = true;
+        try {
+          final api = SessionScope.of(context).api;
+          if (!await _grant(context)) {
+            if (await Geolocator.checkPermission() == LocationPermission.deniedForever) gate.value = LocationGate.settings;
+            return;
+          }
+          await api.post('/tenant/location/consent', {'enabled': true});
+        } on ApiException {
+          return;
+        } finally {
+          asking = false;
+        }
+        pause();
+        await resume();
     }
   }
 
@@ -143,6 +154,7 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
   Future<void> check(ApiClient api, {bool capture = false}) async {
     if (!active) return;
     final state = await DeviceState.read();
+    gate.value = gateFor(resident: true, sharing: true, thisPhone: true, otherPhone: false, device: state);
     if (!state.granted || !state.servicesEnabled) {
       await sub?.cancel(); sub = null;
       await send(api, state, null);
@@ -173,12 +185,72 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
     final reason = await LocationAgent.flush(api, state, buffer: buffer);
     if (reason == null) return;
     pause();
+    gate.value = reason == StopReason.sharingOff ? LocationGate.consent : LocationGate.open;
     // The server ended the session (checkout, revoked device): leave the account, as a 401 does elsewhere.
     if (reason == StopReason.signedOut && mounted) await SessionScope.of(context).expired();
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => _GateScope(state: this, child: widget.child);
+}
+
+class _GateScope extends InheritedWidget {
+  const _GateScope({required this.state, required super.child});
+  final _ForegroundLocationState state;
+  @override
+  bool updateShouldNotify(_GateScope old) => old.state != state;
+}
+
+/// A resident section that opens only with location on; otherwise explains what is missing.
+class LocationLock extends StatelessWidget {
+  const LocationLock({super.key, required this.child});
+  final Widget child;
+
+  static (String, String) texts(LocationGate g) => switch (g) {
+        LocationGate.consent || LocationGate.permission => ('Разрешить',
+            'Это условие проживания: администрация видит, где вы, — для вашей безопасности. '
+                'Видят только сотрудники с доступом, история хранится 30 дней, после выселения передача останавливается.'),
+        LocationGate.settings => ('Открыть настройки', 'Доступ к местоположению запрещён в настройках телефона. Откройте «Разрешения» → «Местоположение» → «Разрешить в любом режиме».'),
+        LocationGate.always => ('Открыть настройки', 'Остался один шаг: в настройках выберите «Разрешить в любом режиме», чтобы место передавалось и когда приложение закрыто.'),
+        LocationGate.gps => ('Включить GPS', 'На телефоне выключено определение местоположения.'),
+        LocationGate.open => ('', ''),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<_GateScope>();
+    if (scope == null) return child;
+    return ValueListenableBuilder(
+      valueListenable: scope.state.gate,
+      builder: (context, g, _) {
+        if (g == LocationGate.open) return child;
+        final (button, text) = texts(g);
+        return Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const IconChip(Icons.location_on_outlined, tone: Tone.yellow, size: 64),
+                    const Gap(18),
+                    Semantics(header: true, child: Text('Включите геолокацию', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall)),
+                    const Gap(10),
+                    Text(text, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
+                    const Gap(22),
+                    SizedBox(width: double.infinity, child: FilledButton(onPressed: scope.state.enable, child: Text(button))),
+                    const Gap(14),
+                    Text('Без геолокации открыты только «Платежи» и «Профиль».', textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// Staff: counters and the resident list in the app; the full map opens in the cabinet.

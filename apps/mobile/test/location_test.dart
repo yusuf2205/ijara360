@@ -124,4 +124,31 @@ void main() {
       expect(u.queryParameters.keys, isNot(contains('desc')));
     }
   });
+
+  group('location is required for the resident app (owner, 2026-10-17)', () {
+    LocationGate g(LocationPermission p, {bool gps = true, bool resident = true, bool sharing = true, bool thisPhone = true, bool otherPhone = false}) =>
+        gateFor(resident: resident, sharing: sharing, thisPhone: thisPhone, otherPhone: otherPhone, device: DeviceState(p, gps));
+    test('open only with "always" and GPS on', () {
+      expect(g(LocationPermission.always), LocationGate.open);
+      expect(g(LocationPermission.always, gps: false), LocationGate.gps);
+      expect(g(LocationPermission.whileInUse), LocationGate.always);
+      expect(g(LocationPermission.denied), LocationGate.permission);
+      expect(g(LocationPermission.deniedForever), LocationGate.settings);
+    });
+    test('no consent yet: the lock asks for it', () {
+      expect(g(LocationPermission.denied, sharing: false, thisPhone: false), LocationGate.permission);
+      expect(g(LocationPermission.always, sharing: false, thisPhone: false), LocationGate.consent);
+    });
+    test('never locks a checked-out person or a second phone', () {
+      expect(g(LocationPermission.denied, resident: false), LocationGate.open);
+      expect(g(LocationPermission.denied, thisPhone: false, otherPhone: true), LocationGate.open);
+    });
+    test('every lock has a button and an explanation', () {
+      for (final x in LocationGate.values.where((x) => x != LocationGate.open)) {
+        final (button, text) = LocationLock.texts(x);
+        expect(button, isNotEmpty);
+        expect(text, isNotEmpty);
+      }
+    });
+  });
 }
