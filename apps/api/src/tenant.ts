@@ -15,7 +15,7 @@ export type Tenant={accountId:string;residentId:string;propertyId:string};
 export type TenantRequest=Request&{tenant:Tenant;tenantSessionId:string};
 
 class InviteTokenDto{@IsString() @Length(32,100) token!:string;}
-class AcceptInviteDto extends InviteTokenDto{@IsString() @Length(10,128,{message:'Пароль: от 10 до 128 символов.'}) password!:string;}
+class AcceptInviteDto extends InviteTokenDto{@IsString() @Length(8,128,{message:'Пароль: от 8 до 128 символов.'}) password!:string;}
 class InviteDto{@IsOptional() @IsIn(['AUTO','LINK']) channel?:'AUTO'|'LINK';}
 class AccountActiveDto{@IsBoolean() active!:boolean;}
 class TenantLoginDto{

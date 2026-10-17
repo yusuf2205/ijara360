@@ -35,7 +35,7 @@ export class SetupDto {
   @IsString() @Length(8, 30) phone!: string;
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 160) fullName!: string;
-  @IsString() @Length(15, 128) password!: string;
+  @IsString() @Length(8, 128, { message: 'Пароль: от 8 до 128 символов.' }) password!: string;
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 120) propertyName!: string;
   @IsOptional() @IsString() @Length(0, 500) address?: string;
@@ -46,12 +46,12 @@ export class AdminDto {
   @IsString() @Length(8, 30) phone!: string;
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 160) fullName!: string;
-  @IsString() @Length(15, 128) password!: string;
+  @IsString() @Length(8, 128, { message: 'Пароль: от 8 до 128 символов.' }) password!: string;
 }
 export class AdminActiveDto { @IsBoolean() active!: boolean; }
 export class PasswordDto {
   @IsString() @Length(1, 128) currentPassword!: string;
-  @IsString() @Length(15, 128) newPassword!: string;
+  @IsString() @Length(8, 128, { message: 'Новый пароль: от 8 до 128 символов.' }) newPassword!: string;
 }
 export class PropertyDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)

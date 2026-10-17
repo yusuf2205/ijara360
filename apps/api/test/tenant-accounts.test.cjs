@@ -58,6 +58,7 @@ test('converted applicant receives a Telegram invite, sets a password once and s
  const info=(await send(request(server),'post','/tenant/invites/inspect').send({token}).expect(200)).body;
  assert.equal(info.firstName,'Tenant');assert.doesNotMatch(info.phone,/900000022/,'phone is masked');
  await send(request(server),'post','/tenant/invites/accept').send({token,password:'short'}).expect(422);
+ await send(request(server),'post','/tenant/invites/accept').send({token,password:'1234567'}).expect(422);
  assert.equal((await send(request(server),'post','/tenant/invites/accept').send({token,password:'Tenant own password 1'}).expect(200)).body.phone,'+998900000022');
  await send(request(server),'post','/tenant/invites/accept').send({token,password:'Tenant own password 2'}).expect(410);
  const login=(await tenantLogin('+998900000022').expect(200)).body;

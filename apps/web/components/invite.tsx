@@ -36,9 +36,9 @@ export default function Invite() {
       {done ? <><p>Теперь войдите в приложение Ijara360 по номеру <strong>{done}</strong> и новому паролю.</p><p className="form-hint">Если вы уже входили раньше, на других устройствах нужно будет войти заново.</p></>
         : info ? <form onSubmit={submit}>
           <p>Вход в приложение — по вашему номеру {info.phone}. Ссылка одноразовая и действует до {new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(info.expiresAt))}.</p>
-          <label>Новый пароль<input type="password" autoComplete="new-password" minLength={10} maxLength={128} required value={password} onChange={e => setPassword(e.target.value)}/></label>
-          <label>Повторите пароль<input type="password" autoComplete="new-password" minLength={10} maxLength={128} required value={repeat} onChange={e => setRepeat(e.target.value)}/></label>
-          <p className="form-hint">Не менее 10 символов. Можно использовать фразу из нескольких слов.</p>
+          <label>Новый пароль<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={e => setPassword(e.target.value)}/></label>
+          <label>Повторите пароль<input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={repeat} onChange={e => setRepeat(e.target.value)}/></label>
+          <p className="form-hint">Не менее 8 символов: буквы, цифры или знаки.</p>
           <button className="button primary" disabled={busy}>Сохранить пароль</button>
         </form> : !error && <p role="status">Проверяем ссылку…</p>}
     </section><footer>Никому не сообщайте пароль. Администрация его не спросит.</footer></main>;

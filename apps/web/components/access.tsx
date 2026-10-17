@@ -92,7 +92,7 @@ export default function Access() {
             {!configured && <><label>Ключ первоначальной настройки<input value={token} onChange={e => setToken(e.target.value)} type="password" required minLength={32} autoComplete="off"/><small>Ключ находится в файле доступа, подготовленном при установке.</small></label>
             <label>Ваше имя<input value={fullName} onChange={e => setFullName(e.target.value)} required maxLength={160} autoComplete="name"/></label></>}
             <label>Телефон<input value={phone} onChange={e => setPhone(e.target.value)} type="tel" placeholder="+998 90 123 45 67" required autoComplete="username" /></label>
-            <label>Пароль<input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={configured ? 1 : 15} maxLength={128} autoComplete={configured ? 'current-password' : 'new-password'} />{!configured && <small>Не менее 15 символов. Можно использовать длинную фразу.</small>}</label>
+            <label>Пароль<input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={configured ? 1 : 8} maxLength={128} autoComplete={configured ? 'current-password' : 'new-password'} />{!configured && <small>Не менее 8 символов: буквы, цифры или знаки.</small>}</label>
             {configured && <label className="remember-device"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Запомнить это устройство на 30 дней<small>Не отмечайте на чужом компьютере.</small></span></label>}
           </> : <>
             <label>Название дома<input value={name} onChange={e => setName(e.target.value)} required maxLength={120}/></label>

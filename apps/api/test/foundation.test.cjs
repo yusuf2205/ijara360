@@ -171,10 +171,12 @@ test('audit failure rolls back the room and beds', async () => {
 });
 test('password change revokes every session and accepts only the new password', async () => {
   const agent=await owner();
-  await send(agent,'post','/auth/password').send({currentPassword:password,newPassword:'Another test-only long passphrase'}).expect(204);
+  // Owner's rule (2026-10-17): at least 8 characters of any kind.
+  await send(agent,'post','/auth/password').send({currentPassword:password,newPassword:'abc1234'}).expect(422);
+  await send(agent,'post','/auth/password').send({currentPassword:password,newPassword:'abcd1234'}).expect(204);
   await send(agent,'get','/rooms').expect(401);
   await send(agent,'post','/auth/login').send({phone:setup.phone,password}).expect(401);
-  await send(agent,'post','/auth/login').send({phone:setup.phone,password:'Another test-only long passphrase'}).expect(200);
+  await send(agent,'post','/auth/login').send({phone:setup.phone,password:'abcd1234'}).expect(200);
 });
 test('persistent login rate limit survives multiple requests', async () => {
   for (let i=0;i<10;i++) await send(request(server),'post','/auth/login').send({phone:'+998900000099',password:'wrong'}).expect(401);
