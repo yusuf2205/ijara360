@@ -59,13 +59,23 @@ class _LocationScreenState extends State<LocationScreen> with WidgetsBindingObse
       final why = await LocationAgent.stoppedReason();
       if (mounted) setState(() { server = r; device = st; stopped = why; error = null; });
     } on ApiException catch (e) {
+      if (await _ended(e)) return;
       if (mounted) setState(() => error = e.message);
     }
   }
 
+  /// A 401 here means the session is over (checkout closes it): stop collecting and sign out.
+  Future<bool> _ended(ApiException e) async {
+    if (e.status != 401 || !mounted) return false;
+    final session = SessionScope.of(context);
+    await LocationAgent.stop(StopReason.signedOut);
+    await session.expired();
+    return true;
+  }
+
   Future<void> run(Future<void> Function() action) async {
     setState(() => busy = true);
-    try { await action(); } on ApiException catch (e) { if (mounted) toast(context, e.message); }
+    try { await action(); } on ApiException catch (e) { if (!await _ended(e) && mounted) toast(context, e.message); }
     finally { if (mounted) setState(() => busy = false); await refresh(); }
   }
 
@@ -136,6 +146,15 @@ class _LocationScreenState extends State<LocationScreen> with WidgetsBindingObse
         _hero(Icons.location_on_outlined, Tone.yellow, 'Передача местоположения выключена', 'Включите, если хотите, чтобы администрация видела, где вы, — например, для вашей безопасности.'),
         const Gap(14),
         FilledButton.icon(onPressed: busy ? null : enable, icon: const Icon(Icons.my_location_rounded), label: const Text('Включить передачу')),
+      ];
+    }
+    if (r['thisDeviceIsPrimary'] != true && r['primaryDevice'] == null) {
+      // The sending phone signed out (or its session was ended): nothing sends until the resident resumes.
+      return [
+        _hero(Icons.pause_circle_outline_rounded, Tone.orange, 'Передача на паузе', 'Вы выходили из приложения, поэтому местоположение сейчас не передаётся.'),
+        const Gap(14),
+        FilledButton(onPressed: busy ? null : enable, child: const Text('Продолжить передачу')),
+        TextButton(onPressed: busy ? null : disable, child: const Text('Выключить передачу')),
       ];
     }
     if (r['thisDeviceIsPrimary'] != true) {
@@ -246,9 +265,9 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
   bool active = false;
 
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); WidgetsBinding.instance.addPostFrameCallback((_) => resume()); }
+  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); LocationAgent.started.addListener(resume); WidgetsBinding.instance.addPostFrameCallback((_) => resume()); }
   @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); pause(); super.dispose(); }
+  void dispose() { WidgetsBinding.instance.removeObserver(this); LocationAgent.started.removeListener(resume); pause(); super.dispose(); }
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) { if (s == AppLifecycleState.resumed) { resume(); } else if (s == AppLifecycleState.paused) { pause(); } }
 
@@ -305,7 +324,10 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
     if (!force && lastFlush != null && DateTime.now().difference(lastFlush!) < LocationPolicy.minGap) return;
     lastFlush = DateTime.now();
     final reason = await LocationAgent.flush(api, state, buffer: buffer);
-    if (reason != null) pause();
+    if (reason == null) return;
+    pause();
+    // The server ended the session (checkout, revoked device): leave the account, as a 401 does elsewhere.
+    if (reason == StopReason.signedOut && mounted) await SessionScope.of(context).expired();
   }
 
   @override

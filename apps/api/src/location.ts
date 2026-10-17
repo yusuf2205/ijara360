@@ -27,10 +27,12 @@ export const locationPolicy={
 };
 export type LocationStatus='LIVE'|'STALE'|'OFFLINE'|'LOCATION_DISABLED';
 
-type Row={sharingEnabled:boolean;permissionState:string;servicesEnabled:boolean|null;recordedAt:Date|null;lastSeenAt:Date};
+type Row={sharingEnabled:boolean;primarySessionId?:string|null;permissionState:string;servicesEnabled:boolean|null;recordedAt:Date|null;lastSeenAt:Date};
 /** Public status + reason. Disabled only when the app reliably said so; silence after that is OFFLINE. */
 export function statusOf(r:Row|null,now=new Date()):{status:LocationStatus;reason:string}{
   if(!r||!r.sharingEnabled)return {status:'LOCATION_DISABLED',reason:r?'SHARING_OFF':'NOT_ENABLED'};
+  // Logout or a revoked session clears the primary device (FK SET NULL): nothing can send any more.
+  if(r.primarySessionId===null)return {status:'LOCATION_DISABLED',reason:'SIGNED_OUT'};
   const silent=(now.getTime()-r.lastSeenAt.getTime())/1000>locationPolicy.staleSeconds;
   if(r.permissionState==='DENIED'||r.servicesEnabled===false)return silent?{status:'OFFLINE',reason:'NO_CONTACT'}:{status:'LOCATION_DISABLED',reason:r.permissionState==='DENIED'?'PERMISSION_DENIED':'SERVICES_OFF'};
   if(!r.recordedAt)return {status:'OFFLINE',reason:silent?'NO_CONTACT':'WAITING_FIRST_POINT'};
@@ -107,7 +109,8 @@ export class LocationService implements OnModuleInit,OnModuleDestroy{
       resident:Boolean(active),
       sharingEnabled:Boolean(row?.sharingEnabled),
       thisDeviceIsPrimary:row?.primarySessionId===sessionId,
-      primaryDevice:row?.deviceLabel??null,
+      // Only a phone that is still signed in counts; after logout the app offers to resume, not "another phone".
+      primaryDevice:row?.primarySessionId?row.deviceLabel:null,
       status,reason,
       lastSentAt:row?.recordedAt??null,
       accuracyMeters:row?.accuracyM??null,

@@ -123,6 +123,7 @@ test('status engine: LIVE → STALE → OFFLINE by time, LOCATION_DISABLED from 
  assert.equal(statusOf({...base,recordedAt:at(stale+5),lastSeenAt:at(stale+5)}).status,'OFFLINE');
  assert.deepEqual(statusOf({...base,permissionState:'DENIED',recordedAt:at(10),lastSeenAt:at(5)}),{status:'LOCATION_DISABLED',reason:'PERMISSION_DENIED'});
  assert.deepEqual(statusOf({...base,servicesEnabled:false,recordedAt:at(10),lastSeenAt:at(5)}),{status:'LOCATION_DISABLED',reason:'SERVICES_OFF'});
+ assert.deepEqual(statusOf({...base,primarySessionId:null,recordedAt:at(10),lastSeenAt:at(5)}),{status:'LOCATION_DISABLED',reason:'SIGNED_OUT'});
  assert.equal(statusOf({...base,servicesEnabled:false,recordedAt:at(stale+60),lastSeenAt:at(stale+60)}).status,'OFFLINE','a silent device is OFFLINE, not DISABLED');
  assert.equal(statusOf({...base,sharingEnabled:false,recordedAt:at(10),lastSeenAt:at(10)}).status,'LOCATION_DISABLED');
 
@@ -185,6 +186,8 @@ test('one primary phone: a second device is refused until the resident chooses i
  const current=sessions.find(s=>s.current);
  await bearer('delete',`/tenant/sessions/${current.id}`,a.token).expect(200);
  await bearer('post','/tenant/location',second).send({points:[point(4)],state:okState}).expect(401);
+ // The primary phone signed out: shown as disabled at once, not as a phone that is still live.
+ const out=(await send(owner,'get','/locations').expect(200)).body.items[0];assert.deepEqual([out.status,out.reason],['LOCATION_DISABLED','SIGNED_OUT']);
  // Turning sharing off stops collection and is shown as disabled, not offline.
  await bearer('post','/tenant/location/consent',a.token).send({enabled:false}).expect(200);
  assert.equal((await send(owner,'get','/locations').expect(200)).body.items[0].status,'LOCATION_DISABLED');

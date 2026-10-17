@@ -13,7 +13,7 @@ type ListResponse = { items: LocationItem[]; counts: Record<string, number> };
 export const statusLabel: Record<MapStatus, string> = { LIVE: 'В сети', STALE: 'Давно', OFFLINE: 'Нет связи', LOCATION_DISABLED: 'Отключена' };
 const reasonText: Record<string, string> = {
   NOT_ENABLED: 'Не включал передачу', SHARING_OFF: 'Жилец выключил передачу', PERMISSION_DENIED: 'Геолокация запрещена в телефоне',
-  SERVICES_OFF: 'Службы геолокации выключены', WAITING_FIRST_POINT: 'Ждём первую точку', NO_CONTACT: 'Телефон давно не выходил на связь', NO_FRESH_POINT: 'Нет свежих точек',
+  SERVICES_OFF: 'Службы геолокации выключены', SIGNED_OUT: 'Жилец вышел из приложения', WAITING_FIRST_POINT: 'Ждём первую точку', NO_CONTACT: 'Телефон давно не выходил на связь', NO_FRESH_POINT: 'Нет свежих точек',
 };
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '·';
 export function ago(iso: string | null, now = Date.now()) {

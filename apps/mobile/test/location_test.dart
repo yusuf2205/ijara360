@@ -23,7 +23,8 @@ void main() {
     test('standing still is not resent until the heartbeat', () {
       final a = fix(41.3, 69.2);
       expect(worthSending(a, fix(41.30005, 69.2, sec: 60)), isFalse, reason: '~5 m in a minute is noise');
-      expect(worthSending(a, fix(41.30005, 69.2, sec: 301)), isTrue, reason: 'heartbeat after 5 minutes');
+      expect(worthSending(a, fix(41.30005, 69.2, sec: 100)), isFalse, reason: 'still within the heartbeat');
+      expect(worthSending(a, fix(41.30005, 69.2, sec: 121)), isTrue, reason: 'heartbeat after 2 minutes, inside the 3-minute live window');
     });
     test('real movement is sent, but not more often than every 20 s', () {
       final a = fix(41.3, 69.2);
@@ -41,6 +42,16 @@ void main() {
 
   group('offline buffer', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
+    test('the same fix caught twice at once is stored once (device test finding)', () async {
+      final b = LocationBuffer(await SharedPreferences.getInstance());
+      final f = fix(41.3, 69.2, sec: 5);
+      await Future.wait([b.add(f), b.add(f), LocationBuffer(await SharedPreferences.getInstance()).add(f)]);
+      expect(b.points.length, 1);
+      await b.add(fix(41.3, 69.2, sec: 4));
+      expect(b.points.length, 1, reason: 'an older fix never follows a newer one');
+      await b.add(fix(41.301, 69.2, sec: 40));
+      expect(b.points.map((p) => p['sequence']), [1, 2]);
+    });
     test('numbers points, keeps order, caps at 200 newest', () async {
       final b = LocationBuffer(await SharedPreferences.getInstance());
       for (var i = 0; i < 205; i++) { await b.add(fix(41.3 + i / 1000, 69.2, sec: i * 30)); }

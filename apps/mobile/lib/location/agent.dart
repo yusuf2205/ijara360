@@ -75,7 +75,18 @@ class LocationBuffer {
     return Fix((m['latitude'] as num).toDouble(), (m['longitude'] as num).toDouble(), (m['accuracyMeters'] as num).toDouble(), DateTime.parse(m['recordedAt'] as String));
   }
 
-  Future<void> add(Fix f) async {
+  /// One write at a time: the open app and the button can catch the same fix together (found on the device
+  /// test: two points with one timestamp). The same fix twice is never stored.
+  static Future<void> _queue = Future.value();
+  Future<void> add(Fix f) {
+    final next = _queue.then((_) => _add(f));
+    _queue = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _add(Fix f) async {
+    final prev = last;
+    if (prev != null && !f.recordedAt.isAfter(prev.recordedAt)) return;
     final seq = (_prefs.getInt(_seqKey) ?? 0) + 1;
     final p = {'latitude': f.latitude, 'longitude': f.longitude, 'accuracyMeters': double.parse(f.accuracy.toStringAsFixed(1)), 'recordedAt': f.recordedAt.toUtc().toIso8601String(), 'sequence': seq};
     var list = [...points, p];
@@ -114,6 +125,8 @@ enum StopReason { notResident, sharingOff, notPrimary, signedOut }
 
 class LocationAgent {
   static const _stoppedKey = 'ijara_location_stopped';
+  /// Bumped when collection starts, so the open app begins its minute checks without a restart.
+  static final started = ValueNotifier<int>(0);
 
   /// Takes one fix if allowed, queues it when worth it, then sends the queue with the device state.
   static Future<void> captureAndSend(ApiClient api, {bool force = false}) async {
@@ -171,6 +184,7 @@ class LocationAgent {
     await prefs.remove(_stoppedKey);
     await Workmanager().registerPeriodicTask(LocationPolicy.taskName, LocationPolicy.taskName,
         frequency: LocationPolicy.backgroundEvery, existingWorkPolicy: ExistingPeriodicWorkPolicy.update);
+    started.value++;
   }
 
   /// Stops all collection on this phone and forgets queued points (logout, checkout, sharing off).
