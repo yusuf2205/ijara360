@@ -2,7 +2,7 @@
 # Own domain through Cloudflare Tunnel (docs/M7.1-DOMAIN.md). Run on the NAS as root, from the deployed release:
 #   sudo sh scripts/configure-domain.sh
 # Asks for the tunnel token with hidden input. Before saving anything it starts a temporary tunnel and checks
-# from the internet that https://<domain>/apply opens and that admin.<domain> is behind Cloudflare Access.
+# from the internet that https://<domain>/apply opens and that admin.<domain> answers (Cloudflare Access optional).
 # Then saves the token, adds both addresses to the allowed origins and makes <domain> the address in invite
 # and Telegram links. "удалить" turns the domain off again. Then run the deploy again.
 set -eu
@@ -82,7 +82,10 @@ admin_answer=$(curl --silent --output /dev/null --max-time 15 --write-out '%{htt
 case "$admin_answer" in
   30[0-9]\ https://*.cloudflareaccess.com/*) echo "$admin закрыт Cloudflare Access." ;;
   000*|404*|52[0-9]*) echo "$admin не отвечает ($admin_answer): добавьте Public hostname $admin → HTTP gateway:8082. Ничего не сохранено." >&2; exit 1 ;;
-  *) echo "$admin открыт без Cloudflare Access ($admin_answer). Настройте Access для $admin (docs/M7.1-DOMAIN.md). Ничего не сохранено." >&2; exit 1 ;;
+  # Owner's decision 2026-10-17: Access is optional; without it the cabinet relies on the password,
+  # login rate limits and Telegram confirmation of new devices (public channel).
+  200*) echo "$admin открыт без Cloudflare Access: вход по паролю и подтверждению нового устройства в Telegram." ;;
+  *) echo "$admin отвечает неожиданно ($admin_answer). Ничего не сохранено." >&2; exit 1 ;;
 esac
 test "$(code "https://$domain/api/health")" = 404 || { echo "https://$domain открывает служебную проверку: шлюз не той версии. Ничего не сохранено." >&2; exit 1; }
 
@@ -94,5 +97,5 @@ set_var WATCH_DOMAIN "$domain"
 set_var ADDITIONAL_APP_ORIGINS "$(origins_with "$(current ADDITIONAL_APP_ORIGINS)" "https://$domain" "https://$admin")"
 set_var PUBLIC_APP_ORIGIN "https://$domain"
 chmod 600 "$secret"
-echo "Сохранено: https://$domain открывается, $admin под Cloudflare Access."
+echo "Сохранено: https://$domain и $admin открываются."
 echo 'Теперь запустите выпуск ещё раз (Deploy-Nas.ps1): туннель станет постоянным, ссылки в приглашениях и Telegram поведут на домен.'
