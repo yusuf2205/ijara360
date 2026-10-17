@@ -39,11 +39,10 @@ Future<bool> _consentDialog(BuildContext context) async => await showDialog<bool
       builder: (c) => AlertDialog(
         title: const Text('Геолокация для безопасности'),
         content: const SingleChildScrollView(child: Text(
-          'Администрация общежития просит разрешение видеть, где вы находитесь, — например, чтобы помочь в экстренной ситуации.\n\n'
-          '• Место видят только владелец и сотрудники с доступом; каждый просмотр истории записывается.\n'
-          '• История хранится 30 дней и удаляется автоматически.\n'
-          '• После выселения передача останавливается.\n'
-          '• Выключить можно в любой момент: Настройки телефона → Приложения → Ijara360 → Местоположение → Запретить.')),
+          // Short enough to read whole on a 320 dp phone (the longer text needed scrolling on the device test).
+          'Администрация просит видеть, где вы, — для вашей безопасности. '
+          'Видят только сотрудники с доступом, история хранится 30 дней, после выселения передача останавливается.\n\n'
+          'Выключить: Настройки телефона → Приложения → Ijara360 → Местоположение.')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Не сейчас')),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Разрешить')),
