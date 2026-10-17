@@ -208,9 +208,9 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         const Gap(20),
         Center(child: Container(width: 96, height: 96, decoration: const BoxDecoration(color: Brand.yellow, shape: BoxShape.circle), child: const Icon(Icons.send_rounded, size: 44, color: Brand.ink))),
         const Gap(24),
-        Text(error == null ? 'Подтвердите вход в Telegram' : 'Вход не выполнен', textAlign: TextAlign.center, style: t.headlineMedium),
+        Text(error == null ? (widget.approval.byOwner ? 'Ждём подтверждения владельца' : 'Подтвердите вход в Telegram') : 'Вход не выполнен', textAlign: TextAlign.center, style: t.headlineMedium),
         const Gap(10),
-        Text(error ?? 'Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я» — вход продолжится сам.', textAlign: TextAlign.center, style: t.bodyLarge?.copyWith(color: Brand.gray500)),
+        Text(error ?? (widget.approval.byOwner ? 'Владелец получил запрос в Telegram. Как только он нажмёт «Разрешить», вход продолжится сам.' : 'Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я» — вход продолжится сам.'), textAlign: TextAlign.center, style: t.bodyLarge?.copyWith(color: Brand.gray500)),
         const Gap(24),
         if (error == null) ...[
           const LinearProgressIndicator(minHeight: 6, borderRadius: BorderRadius.all(Radius.circular(9))),

@@ -9,8 +9,10 @@ import 'location/agent.dart';
 enum Role { superAdmin, admin, tenant }
 
 class Approval {
-  Approval(this.id, this.pollToken, this.expiresAt);
+  Approval(this.id, this.pollToken, this.expiresAt, {this.byOwner = false});
   final String id;
+  /// Another staff member's login: the owner confirms it, not the person logging in.
+  final bool byOwner;
   final String pollToken;
   final DateTime expiresAt;
 }
@@ -86,7 +88,7 @@ class Session extends ChangeNotifier {
     }) as Map<String, dynamic>;
     if (r['approval'] is Map) {
       final a = r['approval'] as Map;
-      return Approval(a['id'] as String, a['pollToken'] as String, DateTime.parse(a['expiresAt'] as String));
+      return Approval(a['id'] as String, a['pollToken'] as String, DateTime.parse(a['expiresAt'] as String), byOwner: a['confirmBy'] == 'owner');
     }
     await _signedInStaff(r);
     return null;

@@ -122,3 +122,27 @@ test('trusted devices are listed and removable by their owner only; linked staff
  await db.$transaction(tx=>app.get(NotificationsService).staff(tx,owner.propertyId,['TICKETS_VIEW'],{kind:'TEST',title:'Новое обращение',body:'Поломка: «Кран»'}));
  const d=await db.notificationDelivery.findMany();assert.equal(d.length,1);assert.equal(d[0].chatId,String(TG));
 });
+
+test('another staff member logging in from the internet is confirmed by the owner, never by themselves',async()=>{
+ const home=await homeLogin();
+ const ADMIN='+998900000002';
+ const u=(await send(home,'post','/users').send({phone:ADMIN,password,fullName:'Admin Two'}).expect(201)).body;
+ // The owner has no Telegram yet: refused, with the reason.
+ const r0=await internet(request(server),'post','/auth/login').send({phone:ADMIN,password}).expect(403);
+ assert.match(r0.body.message,/подтверждает владелец/);
+ await link(home);
+ sent=[];
+ const away=request.agent(server);
+ const pending=(await internet(away,'post','/auth/login').send({phone:ADMIN,password}).expect(202)).body.approval;
+ const {id,pollToken}=pending;assert.equal(pending.confirmBy,'owner');
+ const msg=lastMessage();assert.equal(String(msg.chat_id),String(TG));assert.match(msg.text,/Сотрудник Admin Two/);
+ assert.equal(msg.reply_markup.inline_keyboard[0][0].text,'Разрешить');
+ // Anyone else's Telegram cannot decide.
+ await bot.handle({update_id:20,callback_query:{id:'a1',from:{id:5555},data:`la:${id}`}});
+ assert.equal((await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(202)).body.status,'PENDING');
+ await bot.handle({update_id:21,callback_query:{id:'a2',from:{id:TG},data:`la:${id}`}});
+ await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(200);
+ const audit=await db.auditLog.findFirst({where:{action:'LOGIN_APPROVED',entityId:u.id}});
+ assert.ok(audit&&audit.actorId!==u.id,'the owner is recorded as the one who allowed it');
+ // Residents are not affected: their app login has no Telegram step (tenant tests).
+});

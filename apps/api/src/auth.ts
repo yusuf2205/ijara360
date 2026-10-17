@@ -77,8 +77,11 @@ export class AuthService {
     const device = { platform: dto.platform ?? 'WEB', deviceName: dto.deviceName || deviceLabel(userAgent), remembered: Boolean(dto.remember) };
     const trusted = ctx.deviceToken ? await this.db.trustedDevice.findFirst({ where: { tokenHash: digest(ctx.deviceToken), userId: user.id } }) : null;
     if (ctx.publicChannel && !trusted) {
-      if (!user.telegramUserId) throw new ForbiddenException('Вход из интернета с нового устройства подтверждается в Telegram. Войдите из дома (Wi-Fi или Tailscale) и привяжите Telegram в настройках.');
-      return { kind: 'approval' as const, approval: await this.staffTelegram.requestApproval({ id: user.id, propertyId: user.propertyId, telegramUserId: user.telegramUserId }, device) };
+      // Owners confirm their own login; other staff are confirmed by the owners (owner's decision 2026-10-17).
+      if (!(await this.staffTelegram.approvers(user)).length) throw new ForbiddenException(['SUPER_ADMIN', 'OWNER'].includes(user.role)
+        ? 'Вход из интернета с нового устройства подтверждается в Telegram. Войдите из дома (Wi-Fi или Tailscale) и привяжите Telegram в настройках.'
+        : 'Вход из интернета с нового устройства подтверждает владелец в Telegram, а он ещё не привязал Telegram. Войдите из дома (Wi-Fi или Tailscale).');
+      return { kind: 'approval' as const, approval: await this.staffTelegram.requestApproval(user, device) };
     }
     return this.issue(user, device, trusted?.id ?? null, { channel: ctx.publicChannel ? 'public' : 'private' });
   }

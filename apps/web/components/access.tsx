@@ -21,7 +21,7 @@ export default function Access() {
   const [rooms, setRooms] = useState(7);
   const [beds, setBeds] = useState(8);
   const [internet, setInternet] = useState(false);
-  const [approval, setApproval] = useState<{ id: string; pollToken: string; expiresAt: string } | null>(null);
+  const [approval, setApproval] = useState<{ id: string; pollToken: string; expiresAt: string; confirmBy?: 'self' | 'owner' } | null>(null);
   const [left, setLeft] = useState(0);
   useEffect(() => { api<{ internet: boolean }>('/auth/channel').then(r => setInternet(r.internet)).catch(() => undefined); }, []);
   // While a Telegram confirmation is pending, ask the server every two seconds; the session exists only after the button.
@@ -53,7 +53,7 @@ export default function Access() {
         // Setup is committed already. A failed login must not retry setup.
         setConfigured(true);
       }
-      const r = await api<{ approval?: { id: string; pollToken: string; expiresAt: string } }>('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember }) });
+      const r = await api<{ approval?: { id: string; pollToken: string; expiresAt: string; confirmBy?: 'self' | 'owner' } }>('/auth/login', { method: 'POST', body: JSON.stringify({ phone, password, remember }) });
       if (r.approval) { setApproval(r.approval); return; }
       router.replace('/');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
@@ -75,9 +75,15 @@ export default function Access() {
         <p className="muted">{configured ? 'Укажите телефон и пароль вашей учётной записи.' : 'Создайте владельца и добавьте комнаты. Это займёт пару минут.'}</p>
         {approval ? <div className="approval-wait" role="status">
           <div className="approval-icon"><Send size={26}/></div>
-          <h3>Подтвердите вход в Telegram</h3>
-          <p>Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я», и вход продолжится сам.</p>
-          <p className="form-hint">Ждём ещё {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}. Если сообщения нет, проверьте, что Telegram привязан в настройках кабинета.</p>
+          {approval.confirmBy === 'owner' ? <>
+            <h3>Ждём подтверждения владельца</h3>
+            <p>Владелец получил запрос в Telegram. Как только он нажмёт «Разрешить», вход продолжится сам.</p>
+            <p className="form-hint">Ждём ещё {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}. Можно позвонить владельцу, чтобы он подтвердил.</p>
+          </> : <>
+            <h3>Подтвердите вход в Telegram</h3>
+            <p>Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я», и вход продолжится сам.</p>
+            <p className="form-hint">Ждём ещё {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}. Если сообщения нет, проверьте, что Telegram привязан в настройках кабинета.</p>
+          </>}
           <button className="button secondary wide" type="button" onClick={() => setApproval(null)}>Отмена</button>
         </div> : configured === null ? <div className="notice">{error || 'Подключаемся к серверу…'}{error && <button className="button secondary" onClick={check}>Повторить</button>}</div> :
         <form onSubmit={submit}>
