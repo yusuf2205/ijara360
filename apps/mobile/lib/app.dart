@@ -91,7 +91,7 @@ class _TenantAppState extends State<TenantApp> with _Unread {
         Destination('Платежи', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const TenantPayments()),
         Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const TenantTickets()),
         Destination('Лента', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => const NotificationsScreen(), badge: unread),
-        Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen(extra: [LocationCard()])),
+        Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen()),
       ]));
 }
 

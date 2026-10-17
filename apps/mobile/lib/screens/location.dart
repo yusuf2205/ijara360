@@ -28,228 +28,49 @@ String accuracyLabel(num? m) {
   return 'около ${m.round()} м';
 }
 
-/// Resident: what is shared, the real phone state, and the switches that actually control it.
-/// Nothing here pretends: if Android says "denied", the screen says "denied" and opens settings.
-class LocationScreen extends StatefulWidget {
-  const LocationScreen({super.key});
-  @override
-  State<LocationScreen> createState() => _LocationScreenState();
-}
+/// Owner's decision (2026-10-17): no "Геолокация" item in the resident's profile. Consent is asked once,
+/// in plain words, right after sign-in; withdrawal is the phone's own permission switch, and the server shows
+/// a withdrawn permission to staff as "Отключена". Nothing is collected without that consent.
+const _askedKey = 'ijara_location_asked';
 
-class _LocationScreenState extends State<LocationScreen> with WidgetsBindingObserver {
-  Map<String, dynamic>? server;
-  DeviceState? device;
-  StopReason? stopped;
-  String? error;
-  bool busy = false;
+Future<bool> _consentDialog(BuildContext context) async => await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        title: const Text('Геолокация для безопасности'),
+        content: const SingleChildScrollView(child: Text(
+          'Администрация общежития просит разрешение видеть, где вы находитесь, — например, чтобы помочь в экстренной ситуации.\n\n'
+          '• Место видят только владелец и сотрудники с доступом; каждый просмотр истории записывается.\n'
+          '• История хранится 30 дней и удаляется автоматически.\n'
+          '• После выселения передача останавливается.\n'
+          '• Выключить можно в любой момент: Настройки телефона → Приложения → Ijara360 → Местоположение → Запретить.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Не сейчас')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Разрешить')),
+        ],
+      ),
+    ) ??
+    false;
 
-  @override
-  void initState() { super.initState(); WidgetsBinding.instance.addObserver(this); refresh(); }
-  @override
-  void dispose() { WidgetsBinding.instance.removeObserver(this); super.dispose(); }
-  // Coming back from the phone's settings: show what changed there.
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState s) { if (s == AppLifecycleState.resumed) refresh(); }
-
-  Future<void> refresh() async {
-    final s = SessionScope.of(context);
-    try {
-      final st = kIsWeb ? null : await DeviceState.read();
-      final r = await s.api.get('/tenant/location') as Map<String, dynamic>;
-      final why = await LocationAgent.stoppedReason();
-      if (mounted) setState(() { server = r; device = st; stopped = why; error = null; });
-    } on ApiException catch (e) {
-      if (await _ended(e)) return;
-      if (mounted) setState(() => error = e.message);
-    }
-  }
-
-  /// A 401 here means the session is over (checkout closes it): stop collecting and sign out.
-  Future<bool> _ended(ApiException e) async {
-    if (e.status != 401 || !mounted) return false;
-    final session = SessionScope.of(context);
-    await LocationAgent.stop(StopReason.signedOut);
-    await session.expired();
-    return true;
-  }
-
-  Future<void> run(Future<void> Function() action) async {
-    setState(() => busy = true);
-    try { await action(); } on ApiException catch (e) { if (!await _ended(e) && mounted) toast(context, e.message); }
-    finally { if (mounted) setState(() => busy = false); await refresh(); }
-  }
-
-  /// Turn on: OS permission first (the system dialog), then consent on the server, then collection.
-  Future<void> enable() => run(() async {
-        final s = SessionScope.of(context);
-        var p = await Geolocator.checkPermission();
-        if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-        if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-          if (mounted) toast(context, 'Без разрешения телефона передача невозможна.');
-          return;
-        }
-        await s.api.post('/tenant/location/consent', {'enabled': true});
-        await LocationAgent.start();
-        await LocationAgent.captureAndSend(s.api, force: true);
-      });
-
-  Future<void> disable() => run(() async {
-        final s = SessionScope.of(context);
-        await s.api.post('/tenant/location/consent', {'enabled': false});
-        await LocationAgent.stop();
-      });
-
-  /// Second step on Android 10+: "Allow all the time" lives in the app's settings page.
-  Future<void> askAlways() => run(() async {
-        final p = await Geolocator.requestPermission();
-        if (p != LocationPermission.always) await Geolocator.openAppSettings();
-      });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
-    final r = server;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Геолокация')),
-      body: RefreshIndicator(
-        onRefresh: refresh,
-        child: PageBody(maxWidth: 640, children: [
-          if (error != null) AppCard(color: Brand.redSoft, child: Text(error!, style: manrope(14, FontWeight.w600))),
-          if (r == null && error == null) const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())),
-          if (r != null) ..._content(context, r, t),
-          const Gap(16),
-          AppCard(color: Brand.gray100, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Как это работает', style: manrope(15, FontWeight.w800)),
-            const Gap(8),
-            Text('• Передача включается только вами и выключается здесь в любой момент.\n'
-                '• Ваше место видят владелец дома и сотрудники, которым он дал доступ. Каждый просмотр истории записывается.\n'
-                '• История перемещений хранится ${r?['policy']?['retentionDays'] ?? 30} дней и удаляется автоматически.\n'
-                '• Когда приложение закрыто, Android отправляет место примерно раз в 15 минут или реже — так экономится батарея.\n'
-                '• После выселения передача останавливается.', style: t.bodyMedium?.copyWith(height: 1.5)),
-          ])),
-        ]),
+/// The phone's permission: the system dialog, then "Разрешить в любом режиме" (Android 10+ keeps it in settings).
+Future<bool> _grant(BuildContext context, {bool explainAlways = true}) async {
+  var p = await Geolocator.checkPermission();
+  if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+  if (p == LocationPermission.denied || p == LocationPermission.deniedForever) return false;
+  if (p != LocationPermission.always && explainAlways && context.mounted) {
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Ещё один шаг'),
+        content: const Text('Чтобы место передавалось и когда приложение закрыто, в настройках выберите «Разрешить в любом режиме».'),
+        actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Открыть настройки'))],
       ),
     );
+    await Geolocator.openAppSettings();
   }
-
-  List<Widget> _content(BuildContext context, Map<String, dynamic> r, TextTheme t) {
-    if (kIsWeb) {
-      return [_hero(Icons.phone_android_rounded, Tone.gray, 'Работает в приложении для Android', 'Браузер не может передавать местоположение в фоне. Установите приложение Ijara360 на телефон.')];
-    }
-    if (r['resident'] != true || stopped == StopReason.notResident) {
-      return [_hero(Icons.location_off_rounded, Tone.gray, 'Передача остановлена', 'Проживание завершено, поэтому местоположение больше не передаётся.')];
-    }
-    final d = device;
-    final enabled = r['sharingEnabled'] == true;
-    if (!enabled) {
-      return [
-        _hero(Icons.location_on_outlined, Tone.yellow, 'Передача местоположения выключена', 'Включите, если хотите, чтобы администрация видела, где вы, — например, для вашей безопасности.'),
-        const Gap(14),
-        FilledButton.icon(onPressed: busy ? null : enable, icon: const Icon(Icons.my_location_rounded), label: const Text('Включить передачу')),
-      ];
-    }
-    if (r['thisDeviceIsPrimary'] != true && r['primaryDevice'] == null) {
-      // The sending phone signed out (or its session was ended): nothing sends until the resident resumes.
-      return [
-        _hero(Icons.pause_circle_outline_rounded, Tone.orange, 'Передача на паузе', 'Вы выходили из приложения, поэтому местоположение сейчас не передаётся.'),
-        const Gap(14),
-        FilledButton(onPressed: busy ? null : enable, child: const Text('Продолжить передачу')),
-        TextButton(onPressed: busy ? null : disable, child: const Text('Выключить передачу')),
-      ];
-    }
-    if (r['thisDeviceIsPrimary'] != true) {
-      return [
-        _hero(Icons.phone_iphone_rounded, Tone.orange, 'Передаёт другой телефон', 'Сейчас местоположение отправляет «${r['primaryDevice'] ?? 'другое устройство'}». Точки с двух телефонов не смешиваются.'),
-        const Gap(14),
-        FilledButton(onPressed: busy ? null : enable, child: const Text('Передавать с этого телефона')),
-        TextButton(onPressed: busy ? null : disable, child: const Text('Выключить передачу')),
-      ];
-    }
-    final widgets = <Widget>[];
-    if (d != null && !d.servicesEnabled) {
-      widgets.addAll([
-        _hero(Icons.location_disabled_rounded, Tone.red, 'Геолокация отключена', 'В телефоне выключены службы геолокации. Чтобы обновлять ваше местоположение, включите их.'),
-        const Gap(14),
-        FilledButton(onPressed: () => Geolocator.openLocationSettings(), child: const Text('Открыть настройки')),
-      ]);
-    } else if (d != null && !d.granted) {
-      widgets.addAll([
-        _hero(Icons.location_disabled_rounded, Tone.red, 'Геолокация отключена', 'Чтобы обновлять ваше местоположение, разрешите приложению доступ в настройках телефона.'),
-        const Gap(14),
-        FilledButton(onPressed: () => Geolocator.openAppSettings(), child: const Text('Открыть настройки')),
-      ]);
-    } else {
-      final live = r['status'] == 'LIVE';
-      widgets.add(_hero(live ? Icons.my_location_rounded : Icons.location_searching_rounded, live ? Tone.green : Tone.orange,
-          live ? 'Геолокация активна' : 'Ждём свежую точку', live ? 'Ваше местоположение обновляется.' : 'Телефон ещё не отправил свежую точку. Это нормально в помещении или в режиме экономии.'));
-      if (d != null && !d.always) {
-        widgets.addAll([
-          const Gap(12),
-          AppCard(color: Brand.orangeSoft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Только при открытом приложении', style: manrope(15, FontWeight.w800)),
-            const Gap(4),
-            Text('Сейчас место передаётся, только пока приложение открыто. Чтобы передавать и в фоне, выберите «Разрешить всегда».', style: Theme.of(context).textTheme.bodyMedium),
-            const Gap(10),
-            OutlinedButton(onPressed: busy ? null : askAlways, child: const Text('Разрешить всегда')),
-          ])),
-        ]);
-      }
-    }
-    widgets.addAll([
-      const Gap(14),
-      AppCard(child: Column(children: [
-        KeyValue('Последнее обновление', agoText(r['lastSentAt'] as String?)),
-        KeyValue('Точность', accuracyLabel(r['accuracyMeters'] as num?)),
-        KeyValue('Работа в фоне', d == null ? '—' : d.always ? 'разрешена' : 'ограничена'),
-        KeyValue('Основной телефон', '${r['primaryDevice'] ?? 'этот'}'),
-      ])),
-      const Gap(12),
-      OutlinedButton.icon(onPressed: busy ? null : () => run(() => LocationAgent.captureAndSend(SessionScope.of(context).api, force: true)), icon: const Icon(Icons.refresh_rounded), label: const Text('Отправить сейчас')),
-      TextButton(onPressed: busy ? null : disable, child: const Text('Выключить передачу')),
-    ]);
-    return widgets;
-  }
-
-  Widget _hero(IconData icon, Tone tone, String title, String text) => AppCard(child: Column(children: [
-        IconChip(icon, tone: tone, size: 64),
-        const Gap(14),
-        Semantics(header: true, child: Text(title, textAlign: TextAlign.center, style: manrope(20, FontWeight.w800))),
-        const Gap(6),
-        Text(text, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Brand.gray500, height: 1.45)),
-      ]));
+  return true;
 }
 
-/// Profile card that opens the location screen and shows its state in one line.
-class LocationCard extends StatelessWidget {
-  const LocationCard({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final s = SessionScope.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: LiveData<Map<String, dynamic>>(
-        topics: const {'location'},
-        load: () async => (await s.api.get('/tenant/location')) as Map<String, dynamic>,
-        builder: (context, r, _) => AppCard(
-          semanticLabel: 'Геолокация: открыть',
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LocationScreen())),
-          child: Row(children: [
-            IconChip(Icons.location_on_rounded, tone: r['sharingEnabled'] == true ? (r['status'] == 'LIVE' ? Tone.green : Tone.orange) : Tone.gray),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Геолокация', style: manrope(15, FontWeight.w700)),
-              Text(r['sharingEnabled'] == true ? (r['status'] == 'LIVE' ? 'Активна · ${agoText(r['lastSentAt'] as String?)}' : 'Включена · ждём свежую точку') : 'Выключена', style: Theme.of(context).textTheme.bodySmall),
-            ])),
-            const Icon(Icons.chevron_right_rounded),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-/// While the resident's app is open, a position stream sends real movement (every 30 s / 25 m at most);
-/// in the background WorkManager takes over. Paused when the app leaves the screen.
 class ForegroundLocation extends StatefulWidget {
   const ForegroundLocation({super.key, required this.child});
   final Widget child;
@@ -274,11 +95,12 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
   void pause() { active = false; sub?.cancel(); sub = null; services?.cancel(); services = null; tick?.cancel(); tick = null; }
 
   Future<void> resume() async {
-    if (kIsWeb || active || !mounted) return;
+    if (kIsWeb || active || asking || !mounted) return;
     final api = SessionScope.of(context).api;
     try {
       final r = await api.get('/tenant/location') as Map<String, dynamic>;
-      if (r['sharingEnabled'] != true || r['thisDeviceIsPrimary'] != true || r['resident'] != true) return;
+      if (r['resident'] != true) return;
+      if (r['thisDeviceIsPrimary'] != true && !await _arrange(api, r)) return;
       active = true;
       await LocationAgent.start(); // re-registers the background task after an update or reboot
       // GPS switched off or on in the shade: tell the server at once, restart the stream when it is back.
@@ -289,6 +111,32 @@ class _ForegroundLocationState extends State<ForegroundLocation> with WidgetsBin
       await check(api, capture: true);
     } on ApiException {
       // Offline at start: the background task and the next resume will try again.
+    }
+  }
+
+  bool asking = false;
+
+  /// Not sending from this phone yet. Asks once for consent; after a sign-out (consent given, no phone signed in)
+  /// resumes on this phone; leaves another signed-in phone alone. True when this phone now sends.
+  Future<bool> _arrange(ApiClient api, Map<String, dynamic> r) async {
+    if (asking || !mounted) return false;
+    asking = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (r['sharingEnabled'] == true) {
+        if (r['primaryDevice'] != null) return false;
+        if (!mounted || !await _grant(context, explainAlways: false)) return false;
+      } else {
+        if (prefs.getBool(_askedKey) == true || !mounted) return false;
+        final yes = await _consentDialog(context);
+        await prefs.setBool(_askedKey, true);
+        if (!yes || !mounted || !await _grant(context)) return false;
+      }
+      await api.post('/tenant/location/consent', {'enabled': true});
+      await LocationAgent.start(); // registers the background task; the listener is ignored while asking
+      return true;
+    } finally {
+      asking = false;
     }
   }
 
