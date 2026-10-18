@@ -498,3 +498,12 @@ label.with-icon>input{padding-left:44px}
 .place-add{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px;border:1px dashed var(--line-strong);border-radius:12px;background:transparent;color:var(--brand);font-weight:700;font-size:14px}
 .place-add span{color:var(--muted);font-weight:400;font-size:12px;width:100%}
 @media(max-width:700px){.room-stats{gap:8px}.room-stats .stat{flex-direction:column;align-items:flex-start;gap:8px;padding:13px}.room-stats .stat strong{font-size:20px}.room-row-income strong{font-size:13px}}
+/* Staff management actions (owner only) */
+.staff-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.icon-button.danger{color:var(--bad)}
+.icon-button.danger:hover{background:var(--bad-soft)}
+.button.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.button.danger:hover{background:#cf3b40;border-color:#cf3b40}
+.owner-warn{display:flex;gap:8px;align-items:flex-start;background:var(--brand-soft);border:1px solid #C9DAFF;border-radius:10px;padding:12px 14px;color:var(--ink)}
+.owner-warn svg{color:var(--brand);flex:none;margin-top:2px}
+@media(max-width:700px){.staff-row{flex-wrap:wrap}.staff-actions{width:100%;justify-content:flex-start}}

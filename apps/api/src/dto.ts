@@ -49,6 +49,14 @@ export class AdminDto {
   @IsString() @Length(8, 128, { message: 'Пароль: от 8 до 128 символов.' }) password!: string;
 }
 export class AdminActiveDto { @IsBoolean() active!: boolean; }
+export class StaffEditDto {
+  @IsOptional() @IsString() @Length(8, 30) phone?: string;
+  @IsOptional() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @Length(1, 160) fullName?: string;
+}
+export class StaffPasswordDto {
+  @IsString() @Length(8, 128, { message: 'Пароль: от 8 до 128 символов.' }) password!: string;
+}
+export class MakeOwnerDto { @IsBoolean() confirm!: boolean; }
 export class PasswordDto {
   @IsString() @Length(1, 128) currentPassword!: string;
   @IsString() @Length(8, 128, { message: 'Новый пароль: от 8 до 128 символов.' }) newPassword!: string;

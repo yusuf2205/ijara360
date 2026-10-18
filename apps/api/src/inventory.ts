@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { AuthModule, AuthRequest, Actor, SessionGuard, userSelect } from './auth';
 import { Database } from './database';
 import { DEFAULT_ADMIN_PERMISSIONS, PermissionCode, requireAccess } from './permission-policy';
-import { AdminActiveDto, AdminDto, BedDto, PropertyDto, RoomDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
+import { AdminActiveDto, AdminDto, BedDto, MakeOwnerDto, PropertyDto, RoomDto, StaffEditDto, StaffPasswordDto, UpdateRoomDto, RoomVersionDto, RoomArchiveDto } from './dto';
 import { hashPassword, normalizePhone } from './security';
 import { publish } from './realtime';
 
@@ -163,6 +163,71 @@ class InventoryController {
       const updated = await tx.user.update({ where: { id }, data: { active: dto.active }, select: userSelect });
       if (!dto.active) await tx.session.deleteMany({ where: { userId: id } });
       await this.inventory.audit(tx, req.actor, 'ADMIN_ACCESS_CHANGED', 'User', id, { active: dto.active, fullName: user.fullName });
+      return updated;
+    }, 'SUPER_ADMIN');
+  }
+  // Only the owner edits a staff member, and never another owner.
+  private async staff(tx: Prisma.TransactionClient, actor: Actor, id: string) {
+    const user = await tx.user.findFirst({ where: { id, propertyId: actor.propertyId } });
+    if (!user) throw new NotFoundException('Сотрудник не найден.');
+    if (['OWNER', 'SUPER_ADMIN'].includes(user.role)) throw new ConflictException('Это владелец. Его данные меняет он сам.');
+    return user;
+  }
+  @Post('users/:id/profile') async editStaff(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StaffEditDto) {
+    return this.inventory.write(req.actor, async tx => {
+      const user = await this.staff(tx, req.actor, id);
+      const phone = dto.phone ? normalizePhone(dto.phone) : user.phone;
+      try {
+        const updated = await tx.user.update({ where: { id }, data: { phone, fullName: dto.fullName ?? user.fullName }, select: userSelect });
+        await this.inventory.audit(tx, req.actor, 'ADMIN_PROFILE_CHANGED', 'User', id, { fullName: updated.fullName, phoneChanged: phone !== user.phone });
+        return updated;
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new ConflictException('Этот телефон уже используется.');
+        throw e;
+      }
+    }, 'SUPER_ADMIN');
+  }
+  @Post('users/:id/password') async resetStaffPassword(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StaffPasswordDto) {
+    const passwordHash = await hashPassword(dto.password);
+    return this.inventory.write(req.actor, async tx => {
+      const user = await this.staff(tx, req.actor, id);
+      await tx.user.update({ where: { id }, data: { passwordHash } });
+      // The new password ends every open session and forgets trusted devices, like a self password change.
+      await tx.session.deleteMany({ where: { userId: id } });
+      await tx.trustedDevice.deleteMany({ where: { userId: id } });
+      await this.inventory.audit(tx, req.actor, 'ADMIN_PASSWORD_RESET', 'User', id, { fullName: user.fullName });
+      return { ok: true };
+    }, 'SUPER_ADMIN');
+  }
+  @Delete('users/:id') async deleteStaff(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.inventory.write(req.actor, async tx => {
+      const user = await this.staff(tx, req.actor, id);
+      // The journal is append-only, so a member who ever signed in or acted leaves rows that must stay and
+      // that the person is still linked to. Such a member is disabled, never deleted; delete is only for a
+      // wrong entry that was never used.
+      const [acted, checkedIn] = await Promise.all([
+        tx.auditLog.count({ where: { actorId: id } }),
+        tx.occupancy.count({ where: { createdBy: id } }),
+      ]);
+      if (acted > 0 || checkedIn > 0) throw new ConflictException('Сотрудник уже входил или работал в системе. Его можно отключить, но не удалить — так сохраняется история.');
+      await tx.userPermission.deleteMany({ where: { userId: id } });
+      await tx.session.deleteMany({ where: { userId: id } });
+      await tx.trustedDevice.deleteMany({ where: { userId: id } });
+      await tx.staffTelegramLink.deleteMany({ where: { userId: id } });
+      await tx.loginApproval.deleteMany({ where: { userId: id } });
+      await tx.user.delete({ where: { id } });
+      await this.inventory.audit(tx, req.actor, 'ADMIN_DELETED', 'User', id, { fullName: user.fullName, phone: user.phone });
+      return { ok: true };
+    }, 'SUPER_ADMIN');
+  }
+  @Post('users/:id/owner') async makeOwner(@Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: MakeOwnerDto) {
+    if (!dto.confirm) throw new UnprocessableEntityException('Подтвердите назначение владельцем.');
+    return this.inventory.write(req.actor, async tx => {
+      const user = await this.staff(tx, req.actor, id);
+      if (!user.active) throw new ConflictException('Сначала включите доступ сотрудника.');
+      // An owner is a super-administrator: they bypass the per-function permissions, so none need to be set.
+      const updated = await tx.user.update({ where: { id }, data: { role: 'OWNER' }, select: userSelect });
+      await this.inventory.audit(tx, req.actor, 'ADMIN_PROMOTED_TO_OWNER', 'User', id, { fullName: user.fullName });
       return updated;
     }, 'SUPER_ADMIN');
   }

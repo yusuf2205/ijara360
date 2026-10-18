@@ -1,11 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 const phone = '+998900000010';
 const password = 'UI test only strong password 2026';
-async function login(page: Page, account = phone) {
+async function login(page: Page, account = phone, pass = password) {
   await page.goto('/login');
   await expect(page.getByRole('heading', {name:'Управление домом'})).toBeVisible();
   await page.getByLabel('Телефон', { exact:true }).fill(account);
-  await page.getByLabel('Пароль', { exact:true }).fill(password);
+  await page.getByLabel('Пароль', { exact:true }).fill(pass);
   await page.getByRole('button', {name:'Войти', exact:true}).click();
   await expect(page.getByRole('heading', {name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();
 }
@@ -87,6 +87,36 @@ test('owner creates ADMIN; ADMIN cannot see owner controls', async ({page}) => {
   await login(page,'+998900000011');
   await expect(page.getByRole('button',{name:'Добавить комнату'})).toHaveCount(0);
   await page.goto('/rooms'); await expect(page.locator('.room-row')).toHaveCount(8);
+});
+test('owner edits a staff member, resets the password and promotes a fresh one', async ({page}) => {
+  await login(page); await page.goto('/settings');
+  // create a staff member who never signs in
+  await page.getByRole('button',{name:'Управляющий',exact:true}).click();
+  await page.getByLabel('ФИО').fill('Сотрудник Для Правок');
+  await page.getByLabel('Телефон',{exact:true}).fill('+998900000012');
+  await page.getByLabel('Начальный пароль').fill(password);
+  await page.getByRole('dialog').getByRole('button',{name:'Сохранить',exact:true}).click();
+  const row=page.locator('.staff-row').filter({hasText:'Сотрудник Для Правок'});
+  // rename
+  await row.getByRole('button',{name:/Изменить данные/}).click();
+  await page.getByLabel('ФИО').fill('Сотрудник Переименован');
+  await page.getByRole('dialog').getByRole('button',{name:'Сохранить',exact:true}).click();
+  await expect(page.locator('.staff-list')).toContainText('Сотрудник Переименован');
+  const row2=page.locator('.staff-row').filter({hasText:'Сотрудник Переименован'});
+  // reset password
+  await row2.getByRole('button',{name:/Сбросить пароль/}).click();
+  await page.getByLabel('Новый пароль').fill('fresh staff password');
+  await page.getByRole('dialog').getByRole('button',{name:'Сбросить пароль',exact:true}).click();
+  await expect(page.getByText('Пароль сброшен')).toBeVisible();
+  // promote to owner (confirmation)
+  await row2.getByRole('button',{name:/Сделать владельцем/}).click();
+  await expect(page.getByRole('dialog')).toContainText('станет полным владельцем');
+  await page.getByRole('dialog').getByRole('button',{name:'Сделать владельцем',exact:true}).click();
+  await expect(page.locator('.staff-row').filter({hasText:'Сотрудник Переименован'})).toContainText('Владелец');
+  // the promoted owner signs in with the reset password and can manage rooms
+  await page.getByRole('button',{name:'Выйти',exact:true}).click();
+  await login(page,'+998900000012','fresh staff password');
+  await expect(page.getByRole('button',{name:'Добавить комнату'})).toBeVisible();
 });
 test('capacity card filters rooms and mobile settings allow logout', async ({page}) => {
   await page.setViewportSize({width:390,height:844}); await login(page);

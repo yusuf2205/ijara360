@@ -70,3 +70,41 @@ test('owner keeps every permission and cannot be restricted',async()=>{
  const self=await db.user.findFirst({where:{role:'OWNER'}});
  await send(owner,'put',`/permissions/users/${self.id}`).send({permissions:[]}).expect(403);
 });
+
+test('owner edits a staff member: rename, reset password, and refuse a taken phone',async()=>{
+ const {agent,u}=await admin('+998900000004');
+ await send(owner,'post',`/users/${u.id}/profile`).send({fullName:'Новое Имя',phone:'+998900000044'}).expect(201);
+ assert.equal((await db.user.findUnique({where:{id:u.id}})).fullName,'Новое Имя');
+ // reset password: old sessions end, the new password works
+ await send(owner,'post',`/users/${u.id}/password`).send({password:'brand new staff pw'}).expect(201);
+ await send(agent,'get','/auth/me').expect(401);
+ const fresh=request.agent(server);await send(fresh,'post','/auth/login').send({phone:'+998900000044',password:'brand new staff pw'}).expect(200);
+ // too-short reset refused, taken phone refused
+ await send(owner,'post',`/users/${u.id}/password`).send({password:'short'}).expect(422);
+ await send(owner,'post',`/users/${u.id}/profile`).send({phone:'+998900000001'}).expect(409);
+});
+
+test('owner deletes an unused staff member but not one with history',async()=>{
+ // created but never signed in → no journal rows, can be deleted
+ const fresh=(await send(owner,'post','/users').send({phone:'+998900000005',password,fullName:'Mistake'}).expect(201)).body;
+ await send(owner,'delete',`/users/${fresh.id}`).expect(200);
+ assert.equal(await db.user.count({where:{id:fresh.id}}),0);
+ const {agent:worked,u:busy}=await admin('+998900000006');
+ await send(owner,'put',`/permissions/users/${busy.id}`).send({permissions:['RESIDENTS_MANAGE']}).expect(200);
+ const r=(await send(worked,'post','/residents').send({fullName:'R',phone:'+998901000006'}).expect(201)).body;
+ await send(worked,'post','/occupancies/check-in').send({residentId:r.id,bedId:beds[1].id,moveInDate:'2026-09-01',monthlyPrice:'500000',paymentDay:5,depositAmount:'0'}).expect(201);
+ await send(owner,'delete',`/users/${busy.id}`).expect(409); // checked a resident in → keep for the audit trail
+});
+
+test('owner promotes a staff member to a second owner; an admin cannot',async()=>{
+ const {agent,u}=await admin('+998900000007');
+ await send(owner,'post',`/users/${u.id}/owner`).send({confirm:false}).expect(422);
+ await send(owner,'post',`/users/${u.id}/owner`).send({confirm:true}).expect(201);
+ assert.equal((await db.user.findUnique({where:{id:u.id}})).role,'OWNER');
+ // now a full owner: can manage rooms and staff
+ await send(agent,'post','/rooms').send({number:'5',capacity:2}).expect(201);
+ await send(agent,'post','/users').send({phone:'+998900000077',password,fullName:'By second owner'}).expect(201);
+ // a plain admin cannot promote anyone
+ const {agent:plain,u:other}=await admin('+998900000008');
+ await send(plain,'post',`/users/${other.id}/owner`).send({confirm:true}).expect(403);
+});

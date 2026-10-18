@@ -3,7 +3,7 @@ import { Logo, LogoMark } from './brand';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowDownLeft, Bell, ArrowLeft, ArrowRight, BedDouble, Building2, Cctv, Check, CircleHelp, DoorOpen, FileText, History, KeyRound, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, Plus, Search, Settings2, ShieldCheck, Users, Wallet, X } from 'lucide-react';
+import { ArrowDownLeft, Bell, ArrowLeft, ArrowRight, BedDouble, Building2, Cctv, Check, CircleHelp, Crown, DoorOpen, FileText, History, KeyRound, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, Pencil, Plus, Search, Settings2, ShieldCheck, Trash2, Users, Wallet, X } from 'lucide-react';
 import { api, ApiError, type Activity, type Property, type Room, type User, type Resident } from '../lib/api';
 
 import { ResidentsPanel, ResidentFlow, dateLabel, money, type ResidentAction } from './residents';
@@ -52,6 +52,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
   const [toast, setToast] = useState('');
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<Modal>(null);
+  const [staffAction, setStaffAction] = useState<{ member: User; kind: 'edit' | 'password' | 'delete' | 'owner' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -120,6 +121,19 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
     setBusy(true);
     try { await api(`/users/${member.id}`, { method: 'PATCH', body: JSON.stringify({ active: !member.active }) }); await refresh(); setToast('Доступ обновлён'); }
     catch(e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+  async function saveStaff(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!staffAction) return;
+    const form = new FormData(event.currentTarget); setFormError(''); setBusy(true);
+    const { member, kind } = staffAction;
+    try {
+      if (kind === 'edit') await api(`/users/${member.id}/profile`, { method: 'POST', body: JSON.stringify({ fullName: form.get('fullName'), phone: form.get('phone') }) });
+      else if (kind === 'password') await api(`/users/${member.id}/password`, { method: 'POST', body: JSON.stringify({ password: form.get('password') }) });
+      else if (kind === 'delete') await api(`/users/${member.id}`, { method: 'DELETE' });
+      else if (kind === 'owner') await api(`/users/${member.id}/owner`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+      setStaffAction(null); await refresh();
+      setToast(kind === 'edit' ? 'Данные сотрудника сохранены' : kind === 'password' ? 'Пароль сброшен' : kind === 'delete' ? 'Сотрудник удалён' : 'Сотрудник стал владельцем');
+    } catch(e) { setFormError((e as Error).message); } finally { setBusy(false); }
   }
   async function saveProperty(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true);
@@ -207,7 +221,13 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
           <div className="page-heading"><div><div className="heading-kicker">ВАШЕ ПРОСТРАНСТВО</div><h1>Настройки</h1><p>Данные дома и доступ сотрудников.</p></div></div>
           <div className="settings-grid"><section className="panel"><div className="panel-heading"><Building2 size={22}/><h2>Ваш дом</h2></div><form onSubmit={saveProperty} key={property?.name}><label>Название дома<input name="name" defaultValue={property?.name} required maxLength={120} disabled={!owner}/></label><label>Адрес<input name="address" defaultValue={property?.address || ''} maxLength={500} disabled={!owner}/></label>{owner && <button className="button primary" disabled={busy}>Сохранить</button>}</form></section>
           <section className="panel"><div className="panel-heading"><ShieldCheck size={22}/><h2>Моя учётная запись</h2></div><div className="account-details"><span className="avatar large">{user?.fullName.slice(0,1)}</span><div><strong>{user?.fullName}</strong><p>{user?.phone}</p><span className="status-pill">{owner ? 'Владелец' : 'Управляющий'}</span></div></div><div className="account-actions"><button className="button secondary" onClick={() => open('password')}>Изменить пароль</button><button className="button text" onClick={logout}><LogOut size={16}/>Выйти из аккаунта</button></div></section></div>
-          {owner && <section className="panel staff-panel"><div className="section-heading"><div><h2>Сотрудники</h2><p>Только владелец может управлять доступом</p></div><button className="button secondary" onClick={() => open('admin')}><Plus size={17}/>Управляющий</button></div><div className="staff-list">{staff.map(member => <div className="staff-row" key={member.id}><span className="avatar">{member.fullName.slice(0,1)}</span><div><strong>{member.fullName}</strong><small>{member.phone} · {member.role === 'OWNER' ? 'Владелец' : member.active ? 'Управляющий' : 'Доступ отключён'}</small></div>{member.role === 'ADMIN' && <button disabled={busy} className="button text" onClick={() => changeAccess(member)}>{member.active ? 'Отключить' : 'Включить'}</button>}</div>)}</div></section>}
+          {owner && <section className="panel staff-panel"><div className="section-heading"><div><h2>Сотрудники</h2><p>Только владелец может управлять доступом</p></div><button className="button secondary" onClick={() => open('admin')}><Plus size={17}/>Управляющий</button></div><div className="staff-list">{staff.map(member => <div className="staff-row" key={member.id}><span className="avatar">{member.fullName.slice(0,1)}</span><div><strong>{member.fullName}</strong><small>{member.phone} · {member.role === 'OWNER' ? 'Владелец' : member.active ? 'Управляющий' : 'Доступ отключён'}</small></div>{member.role === 'ADMIN' ? <div className="staff-actions">
+            <button disabled={busy} className="icon-button" title="Изменить данные" aria-label={`Изменить данные: ${member.fullName}`} onClick={() => { setFormError(''); setStaffAction({ member, kind: 'edit' }); }}><Pencil size={17}/></button>
+            <button disabled={busy} className="icon-button" title="Сбросить пароль" aria-label={`Сбросить пароль: ${member.fullName}`} onClick={() => { setFormError(''); setStaffAction({ member, kind: 'password' }); }}><KeyRound size={17}/></button>
+            <button disabled={busy} className="icon-button" title="Сделать владельцем" aria-label={`Сделать владельцем: ${member.fullName}`} onClick={() => { setFormError(''); setStaffAction({ member, kind: 'owner' }); }}><Crown size={17}/></button>
+            <button disabled={busy} className="button text" onClick={() => changeAccess(member)}>{member.active ? 'Отключить' : 'Включить'}</button>
+            <button disabled={busy} className="icon-button danger" title="Удалить" aria-label={`Удалить: ${member.fullName}`} onClick={() => { setFormError(''); setStaffAction({ member, kind: 'delete' }); }}><Trash2 size={17}/></button>
+          </div> : <span className="status-pill">Владелец</span>}</div>)}</div></section>}
         </>}
         <footer className="page-footer"><span><ShieldCheck size={14}/>Данные сохранены на вашем сервере</span><span>Обновлено в {updatedAt}</span></footer>
         </>}
@@ -222,6 +242,16 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
       {roomAction==='delete' && <label>Введите номер комнаты для подтверждения<input required autoFocus onChange={e=>e.target.setCustomValidity(e.target.value===currentRoom.number?'':'Введите точный номер комнаты')} /></label>}
       {formError && <div className="error" role="alert">{formError}</div>}<div className="modal-actions"><button type="button" className="button secondary" disabled={busy} onClick={()=>setRoomAction(null)}>Отмена</button><button className="button primary" disabled={busy}>{busy?'Сохраняем…':roomAction==='delete'?'Удалить навсегда':roomAction==='archive'?'Подтвердить архивирование':'Подтвердить восстановление'}</button></div>
     </form></ModalDialog>}
+    {staffAction && <ModalDialog close={() => { if (!busy) setStaffAction(null); }} title={{ edit: 'Изменить данные сотрудника', password: 'Сбросить пароль', delete: 'Удалить сотрудника', owner: 'Сделать владельцем' }[staffAction.kind]}>
+      <form onSubmit={saveStaff}>
+        {staffAction.kind === 'edit' && <><label>ФИО<input name="fullName" required maxLength={160} defaultValue={staffAction.member.fullName} autoFocus/></label><label>Телефон<input name="phone" type="tel" required defaultValue={staffAction.member.phone} placeholder="+998 90 123 45 67"/></label></>}
+        {staffAction.kind === 'password' && <><p className="form-hint">Задайте новый пароль для «{staffAction.member.fullName}». Все его текущие входы завершатся, вход с нового устройства снова нужно будет подтвердить в Telegram.</p><label>Новый пароль<input name="password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" autoFocus/><small>Не менее 8 символов. Передайте пароль сотруднику лично.</small></label></>}
+        {staffAction.kind === 'delete' && <p>Удалить «{staffAction.member.fullName}» ({staffAction.member.phone})? Это возможно, только если сотрудник ни разу не входил и не работал. Если он уже работал, его историю нужно сохранить — используйте «Отключить».</p>}
+        {staffAction.kind === 'owner' && <p className="form-hint owner-warn"><Crown size={16}/>«{staffAction.member.fullName}» станет полным владельцем: сможет управлять комнатами, другими сотрудниками, их правами и подтверждать входы в Telegram. Это нельзя отменить в приложении. Делайте это только для человека, которому полностью доверяете.</p>}
+        {formError && <div className="error" role="alert">{formError}</div>}
+        <div className="modal-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => setStaffAction(null)}>Отмена</button><button className={`button ${staffAction.kind === 'delete' ? 'danger' : 'primary'}`} disabled={busy}>{busy ? 'Сохраняем…' : staffAction.kind === 'edit' ? 'Сохранить' : staffAction.kind === 'password' ? 'Сбросить пароль' : staffAction.kind === 'delete' ? 'Удалить' : 'Сделать владельцем'}</button></div>
+      </form>
+    </ModalDialog>}
     {modal && <ModalDialog close={() => { if (!busy) setModal(null); }} title={{ room: 'Новая комната', 'edit-room': 'Изменить комнату', bed: 'Новое спальное место', admin: 'Добавить управляющего', password: 'Изменить пароль' }[modal]}>
       <form onSubmit={save}>
         {(modal === 'room' || modal === 'edit-room') && <><label>Номер комнаты<input name="number" required maxLength={20} defaultValue={modal === 'edit-room' ? currentRoom?.number : String(numberedRooms.length + 1)} placeholder="Например, 8" autoFocus/></label><div className="form-grid"><label>Вместимость<input name="capacity" type="number" required min={1} max={100} defaultValue={modal === 'edit-room' ? currentRoom?.capacity : 8}/></label>{modal === 'room' && <label>Создать мест<input name="bedCount" type="number" required min={0} max={100} defaultValue={8}/></label>}</div><p className="form-hint">У каждого места будет собственный номер. Данные сохранятся в истории.</p></>}
