@@ -527,3 +527,13 @@ label.with-icon>input{padding-left:44px}
 @media(max-width:700px){.wstep em{font-size:10px;max-width:68px}.wstep i{width:28px;height:28px}}
 .confirmation{background:var(--brand-soft);border-color:#D4E2FF}
 .steps{gap:0}
+/* v4 residents filter tabs with counts */
+.filter-tabs .selected{color:var(--brand);background:var(--brand-soft);border-color:#C9DAFF}
+.tab-count{display:inline-block;min-width:18px;padding:0 5px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700;text-align:center}
+.filter-tabs .selected .tab-count{background:var(--brand);color:#fff}
+.resident-head .status-pill.ok{background:var(--ok-soft);color:var(--ok)}
+.resident-head .status-pill.bad{background:var(--bad-soft);color:var(--bad)}
+.resident-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.resident-head>div:not(.resident-head-actions){min-width:0}
+.resident-head .status-pill{max-width:100%}
+@media(max-width:700px){.resident-head-actions{width:100%}.resident-head-actions .button{flex:1}}

@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import { ArrowLeft, ArrowRight, Plus, Search, Users, X, AlertCircle, Wallet, ShieldCheck } from 'lucide-react';
+import {useRouter} from 'next/navigation';
+import { ArrowLeft, ArrowRight, Plus, Search, Trash2, Users, X, AlertCircle, Wallet, ShieldCheck } from 'lucide-react';
 import {api,type Resident,type Room} from '../lib/api';
 import { AppAccountPanel } from './tenant-account';
 
@@ -12,32 +13,50 @@ export type ResidentAction={mode:'check-in'|'transfer'|'check-out'|'edit'|'creat
 
 export function ResidentsPanel({residents,residentId,onAction,initialFilter='all',initialQuery=''}:{residents:Resident[];residentId?:string;onAction:(action:ResidentAction)=>void;initialFilter?:string;initialQuery?:string}) {
  const [query,setQuery]=useState(initialQuery); const [filter,setFilter]=useState(initialFilter);
+ const router=useRouter();
+ const [confirmDelete,setConfirmDelete]=useState(false);
+ const [delBusy,setDelBusy]=useState(false);
+ const [delErr,setDelErr]=useState('');
+ async function doDelete(id:string){setDelBusy(true);setDelErr('');try{await api(`/residents/${id}`,{method:'DELETE'});router.replace('/residents');}catch(e){setDelErr((e as Error).message);}finally{setDelBusy(false);}}
  const resident=residents.find(r=>r.id===residentId);
  if(residentId) {
   if(!resident) return <div className="empty"><h1>Жилец не найден</h1><Link href="/residents">Все жильцы</Link></div>;
   const active=resident.occupancies.find(o=>o.status==='ACTIVE');
   return <>
    <Link href="/residents" className="back-link"><ArrowLeft size={16}/>Все жильцы</Link>
-   <div className="page-heading resident-head"><span className="avatar large">{resident.fullName.slice(0,1)}</span><div><div className="heading-kicker">КАРТОЧКА ЖИЛЬЦА</div><h1>{resident.fullName}</h1>{active&&<span className="status-pill"><span className="dot"/>Проживает · комната {active.room.number}, место {active.room.number}-{active.bed.number}</span>}<p><a href={`tel:${resident.phone}`}>{resident.phone}</a></p></div><button className="button secondary" onClick={()=>onAction({mode:'edit',resident})}>Изменить данные</button></div>
+   <div className="page-heading resident-head"><span className="avatar large">{resident.fullName.slice(0,1)}</span><div><div className="heading-kicker">КАРТОЧКА ЖИЛЬЦА</div><h1>{resident.fullName}</h1>{active&&<span className="status-pill"><span className="dot"/>Проживает · комната {active.room.number}, место {active.room.number}-{active.bed.number}</span>} <span className={`status-pill ${Number(resident.totalDebt)>0?'bad':'ok'}`}>{Number(resident.totalDebt)>0?`Долг ${money(resident.totalDebt)}`:'Оплачено'}</span><p><a href={`tel:${resident.phone}`}>{resident.phone}</a></p></div><div className="resident-head-actions"><button className="button secondary" onClick={()=>onAction({mode:'edit',resident})}>Изменить данные</button><button className="icon-button danger" aria-label="Удалить жильца" title="Удалить жильца" onClick={()=>{setDelErr('');setConfirmDelete(true);}}><Trash2 size={18}/></button></div></div>
    <section className="resident-finance"><div className="stat kpi"><span className="kpi-row"><span className={`chip ${Number(resident.totalDebt)>0?'c-red':'c-green'}`}><AlertCircle size={17}/></span><strong>{money(resident.totalDebt)}</strong></span><small>Остаток к оплате</small></div><div className="stat kpi"><span className="kpi-row"><span className="chip c-blue"><Wallet size={17}/></span><strong>{money(resident.creditBalance)}</strong></span><small>Аванс</small></div><div className="stat kpi"><span className="kpi-row"><span className={`chip ${resident.accessGranted?'c-green':'c-red'}`}><ShieldCheck size={17}/></span><strong>{resident.accessGranted?'Разрешён':'Ограничен'}</strong></span><small>{resident.accessGranted ? 'Финансовый допуск разрешён' : 'Финансовый допуск ограничен: просрочка'}{resident.accessStatusReason==='GRACE_PERIOD'?' · Льготный период':''}</small></div><Link className="inline-link" href={`/finance?residentId=${resident.id}`}>Начисления и платежи <ArrowRight size={16}/></Link></section>
    <div className="settings-grid"><section className="panel"><h2>Текущее проживание</h2>{active ? <>
     <p className="resident-location"><Link href={`/rooms/${active.roomId}`}>Комната {active.room.number} / Место {active.bed.number}</Link></p>
     <dl className="detail-grid"><dt>Статус</dt><dd>Проживает</dd><dt>Дата заселения</dt><dd>{dateLabel(active.moveInDate)}</dd><dt>Месячная цена</dt><dd>{money(active.monthlyPrice)}</dd><dt>День оплаты</dt><dd>{active.paymentDay}</dd><dt>Депозит</dt><dd>{money(active.depositAmount)}</dd></dl>
-    <div className="resident-actions"><button className="button primary" onClick={()=>onAction({mode:'transfer',resident})}>Переселить</button><button className="button secondary" onClick={()=>onAction({mode:'check-out',resident})}>Выселить</button></div>
+    <div className="resident-actions"><Link className="button confirm" href={`/finance?residentId=${resident.id}`}>Принять оплату</Link><button className="button primary" onClick={()=>onAction({mode:'transfer',resident})}>Переселить</button><button className="button secondary" onClick={()=>onAction({mode:'check-out',resident})}>Выселить</button></div>
    </> : <><p className="muted">{resident.occupancies.length?'Жилец выселен. История сохранена.':'Жилец ещё не заселён.'}</p><button className="button primary" onClick={()=>onAction({mode:'check-in',resident})}><Plus size={18}/>{resident.occupancies.length?'Заселить снова':'Заселить'}</button></>}</section>
    <section className="panel"><h2>Заметка</h2><p className="resident-note">{resident.note || 'Заметок пока нет.'}</p></section><AppAccountPanel residentId={resident.id} living={Boolean(active)}/></div>
    <section className="panel occupancy-history"><h2>История проживания</h2>{resident.occupancies.length ? resident.occupancies.map(o=><article key={o.id} className="stay-row"><div><strong>Комната {o.room.number} / Место {o.bed.number}</strong><p>{dateLabel(o.moveInDate)} → {o.moveOutDate?dateLabel(o.moveOutDate):'сейчас'}</p></div><span className={`status-pill ${o.status==='ACTIVE'?'occupied':''}`}>{o.status==='ACTIVE'?'Проживает':'Завершено'}</span></article>) : <p className="muted">История появится после первого заселения.</p>}</section>
+   {confirmDelete&&<DeleteResidentDialog name={resident.fullName} busy={delBusy} error={delErr} close={()=>{if(!delBusy)setConfirmDelete(false);}} confirm={()=>void doDelete(resident.id)}/>}
   </>;
  }
- const found=residents.filter(r=>{
-  const active=r.occupancies.some(o=>o.status==='ACTIVE');const digits=query.replace(/\D/g,'');
-  return (filter==='all'||filter==='active'&&active||filter==='closed'&&!active&&r.occupancies.length>0)&&(!query||r.fullName.toLocaleLowerCase().includes(query.toLocaleLowerCase())||Boolean(digits)&&r.phone.includes(digits));
- });
+ const matchesQuery=(r:Resident)=>{const digits=query.replace(/\D/g,'');return !query||r.fullName.toLocaleLowerCase().includes(query.toLocaleLowerCase())||Boolean(digits)&&r.phone.includes(digits);};
+ const isActive=(r:Resident)=>r.occupancies.some(o=>o.status==='ACTIVE');
+ const inFilter=(r:Resident,f:string)=>f==='all'||f==='paid'&&isActive(r)&&Number(r.totalDebt)<=0||f==='debtors'&&isActive(r)&&Number(r.totalDebt)>0||f==='closed'&&!isActive(r)&&r.occupancies.length>0;
+ const counts=Object.fromEntries((['all','paid','debtors','closed']).map(f=>[f,residents.filter(r=>inFilter(r,f)).length]));
+ const found=residents.filter(r=>inFilter(r,filter)&&matchesQuery(r));
  return <><div className="page-heading"><div><div className="heading-kicker">ЛЮДИ ВАШЕГО ДОМА</div><h1>Жильцы</h1><p>Текущее проживание и вся история в одной карточке.</p></div><div className="resident-actions"><button className="button primary" onClick={()=>onAction({mode:'check-in'})}><Plus size={18}/>Заселить</button><button className="button secondary" onClick={()=>onAction({mode:'create'})}>Добавить жильца</button></div></div>
-  <div className="resident-toolbar"><div className="filter-tabs" aria-label="Фильтр жильцов">{[['all','Все'],['active','Сейчас живут'],['closed','Выселенные']].map(([value,label])=><button key={value} className={filter===value?'selected':''} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label className="search-field"><Search size={18}/><input aria-label="Найти жильца" placeholder="Имя или телефон" value={query} onChange={e=>setQuery(e.target.value)}/></label></div>
-  <div className="resident-list">{found.map(r=>{const active=r.occupancies.find(o=>o.status==='ACTIVE');return <Link className="resident-row" href={`/residents/${r.id}`} key={r.id}><span className="avatar">{r.fullName.slice(0,1)}</span><div className="resident-person"><strong>{r.fullName}</strong><small>{r.phone}</small></div><div className="resident-place"><strong>{active?`Комната ${active.room.number} / Место ${active.bed.number}`:'Без места'}</strong><small>{active?`С ${dateLabel(active.moveInDate)}`:r.occupancies.length?'Выселен':'Не заселён'}</small></div><span className={`status-pill ${active?'occupied':''}`}>{active?'Проживает':r.occupancies.length?'Выселен':'Не заселён'}</span><ArrowRight size={17}/></Link>;})}</div>
+  <div className="resident-toolbar"><div className="filter-tabs" aria-label="Фильтр жильцов">{[['all','Все'],['paid','Оплатили'],['debtors','Должники'],['closed','Выселенные']].map(([value,label])=><button key={value} className={filter===value?'selected':''} aria-pressed={filter===value} aria-label={label} onClick={()=>setFilter(value)}>{label} <span className="tab-count" aria-hidden="true">{counts[value]}</span></button>)}</div><label className="search-field"><Search size={18}/><input aria-label="Найти жильца" placeholder="Имя или телефон" value={query} onChange={e=>setQuery(e.target.value)}/></label></div>
+  <div className="resident-list">{found.map(r=>{const active=r.occupancies.find(o=>o.status==='ACTIVE');return <Link className="resident-row" href={`/residents/${r.id}`} key={r.id}><span className="avatar">{r.fullName.slice(0,1)}</span><div className="resident-person"><strong>{r.fullName}</strong><small>{r.phone}</small></div><div className="resident-place"><strong>{active?`Комната ${active.room.number} / Место ${active.bed.number}`:'Без места'}</strong><small>{active?`С ${dateLabel(active.moveInDate)}`:r.occupancies.length?'Выселен':'Не заселён'}</small></div><span className={`status-pill ${active?(Number(r.totalDebt)>0?'bad':'ok'):''}`}>{active?(Number(r.totalDebt)>0?`Долг ${money(r.totalDebt)}`:'Оплачено'):r.occupancies.length?'Выселен':'Не заселён'}</span><ArrowRight size={17}/></Link>;})}</div>
   {!found.length&&<div className="empty"><Users size={36}/><h2>{residents.length?'Жильцы не найдены':'Жильцов пока нет'}</h2><p>{residents.length?'Измените поиск или фильтр.':'Нажмите «Заселить», чтобы добавить первого жильца и выбрать свободное место.'}</p></div>}
  </>;
+}
+
+function DeleteResidentDialog({name,busy,error,close,confirm}:{name:string;busy:boolean;error:string;close:()=>void;confirm:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{dialog.current?.showModal();},[]);
+ return <dialog className="modal" ref={dialog} onCancel={e=>{if(busy)e.preventDefault();else close();}}><div className="modal-content">
+  <header><h2>Удалить жильца</h2><button className="icon-button" aria-label="Закрыть" disabled={busy} onClick={close}><X size={20}/></button></header>
+  <p>Удалить «{name}»? Это возможно, только если у жильца нет истории проживания и платежей. Если он уже проживал, его нужно выселить — учёт сохранится.</p>
+  {error&&<div className="error" role="alert">{error}</div>}
+  <div className="modal-actions"><button type="button" className="button secondary" disabled={busy} onClick={close}>Отмена</button><button type="button" className="button danger" disabled={busy} onClick={confirm}>{busy?'Удаляем…':'Удалить'}</button></div>
+ </div></dialog>;
 }
 
 export function ResidentFlow({action,rooms,residents,close,saved}:{action:ResidentAction;rooms:Room[];residents:Resident[];close:()=>void;saved:(residentId?:string)=>Promise<void>}) {

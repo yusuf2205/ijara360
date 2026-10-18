@@ -137,3 +137,12 @@ test('occupied destination transfer rolls back and stale checkout cannot close n
  await send(agent,'post','/occupancies/'+o.id+'/check-out').send({moveOutDate:'2026-09-11'}).expect(409);
  assert.equal((await db.occupancy.findUnique({where:{id:next.id}})).status,'ACTIVE');
 });
+
+test('owner deletes a resident without history but keeps one who has lived',async()=>{
+ const fresh=await create(90);
+ await send(agent,'delete',`/residents/${fresh.id}`).expect(200);
+ assert.equal(await db.resident.count({where:{id:fresh.id}}),0);
+ const lived=await create(91);await checkin(lived.id);
+ await send(agent,'delete',`/residents/${lived.id}`).expect(409); // has a stay → keep
+ assert.equal(await db.resident.count({where:{id:lived.id}}),1);
+});

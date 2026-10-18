@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { Delete, Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { publish } from './realtime';
 import { Prisma } from '@prisma/client';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
@@ -85,6 +85,27 @@ export class ResidentsService {
       return resident;
     });
   }
+  // Delete only a resident with no stay and no money on record; anyone who ever lived or paid is kept (checkout).
+  deleteResident(actor: Actor, id: string) {
+    return this.write(actor,async tx => {
+      const resident = await tx.resident.findFirst({where:{id,propertyId:actor.propertyId}});
+      if (!resident) throw new NotFoundException('Жилец не найден.');
+      const [stays, charges, payments] = await Promise.all([
+        tx.occupancy.count({where:{residentId:id}}),
+        tx.charge.count({where:{residentId:id}}),
+        tx.payment.count({where:{residentId:id}}),
+      ]);
+      if (stays > 0 || charges > 0 || payments > 0) throw new ConflictException('У жильца есть история проживания или платежей. Его можно выселить, но не удалить — так сохраняется учёт.');
+      await this.audit(tx,actor,'RESIDENT_DELETED',id,{fullName:resident.fullName,phone:resident.phone});
+      try {
+        await tx.resident.delete({where:{id}});
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') throw new ConflictException('У жильца есть связанные записи (например, заявка или аккаунт приложения). Его можно выселить, но не удалить.');
+        throw e;
+      }
+      return { ok: true };
+    });
+  }
   async freeBed(tx: Prisma.TransactionClient, actor: Actor, bedId: string, date: Date) {
     const bed = await tx.bed.findFirst({where:{id:bedId,room:{propertyId:actor.propertyId,archivedAt:null}}});
     if (!bed) throw new NotFoundException('Место не найдено.');
@@ -154,6 +175,7 @@ class ResidentsController {
   @Get('residents/:id') detail(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) { return this.service.detail(req.actor,id); }
   @Post('residents') create(@Req() req: AuthRequest,@Body() dto: ResidentDto) { return this.service.create(req.actor,dto); }
   @Patch('residents/:id') update(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: ResidentDto) { return this.service.update(req.actor,id,dto); }
+  @Delete('residents/:id') deleteResident(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) { return this.service.deleteResident(req.actor,id); }
   @Post('occupancies/check-in') checkIn(@Req() req: AuthRequest,@Body() dto: CheckInDto) { return this.service.checkIn(req.actor,dto); }
   @Post('occupancies/:id/transfer') transfer(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: TransferDto) { return this.service.transfer(req.actor,id,dto); }
   @Post('occupancies/:id/check-out') checkOut(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string,@Body() dto: CheckOutDto) { return this.service.checkOut(req.actor,id,dto); }
