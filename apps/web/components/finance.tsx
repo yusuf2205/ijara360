@@ -1,8 +1,8 @@
 'use client';
 import { useRealtime } from '../lib/realtime';
 import Link from 'next/link';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Plus, Wallet, X } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { AlertCircle, Banknote, CheckCircle2, FileText, Plus, Wallet, X } from 'lucide-react';
 import { api, ApiError, type Resident, type Room } from '../lib/api';
 import { dateLabel } from './residents';
 
@@ -56,7 +56,7 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     <div className="finance-filters"><label>Жилец<select aria-label="Жилец" value={residentId} onChange={e=>{setResidentId(e.target.value);setPage(1);}}><option value="">Все жильцы</option>{residents.map(r=><option key={r.id} value={r.id}>{r.fullName}</option>)}</select></label><label>Статус начисления<select aria-label="Статус начисления" value={status} onChange={e=>{setStatus(e.target.value);setPage(1);}}><option value="">Все статусы</option>{Object.entries(statuses).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label></div>
     {!data&&!error&&<p role="status">Загружаем финансы…</p>}
     {data&&<>
-      <div className="stats-grid finance-stats">{[['Начислено',data.summary.charged],['Получено',data.summary.paid],['Зачтено',data.summary.applied],['Авансы',data.summary.creditBalance],['Остаток к оплате',data.summary.outstanding],['Из него просрочено',data.summary.overdue]].map(([label,value])=><div className="stat" key={label}><span>{label}</span><strong>{financeMoney(value)}</strong></div>)}</div>
+      <div className="stats-grid finance-stats">{([['Начислено',data.summary.charged,'c-blue',<FileText size={17} key="i"/>],['Получено',data.summary.paid,'c-green',<CheckCircle2 size={17} key="i"/>],['Зачтено',data.summary.applied,'c-green',<Banknote size={17} key="i"/>],['Авансы',data.summary.creditBalance,'c-blue',<Wallet size={17} key="i"/>],['Остаток к оплате',data.summary.outstanding,'c-orange',<AlertCircle size={17} key="i"/>],['Из него просрочено',data.summary.overdue,'c-red',<AlertCircle size={17} key="i"/>]] as [string,string,string,ReactNode][]).map(([label,value,tone,icon])=><div className="stat finance-kpi" key={label}><span className={`chip ${tone}`}>{icon}</span><div><strong>{financeMoney(value)}</strong><small>{label}</small></div></div>)}</div>
       <p className="muted">Итоги за всё время{residentId?' по выбранному жильцу':''}. Остаток включает начисления, срок оплаты которых ещё не наступил.</p>
       <section className="panel finance-section"><h2>Начисления <span>{data.chargeCount}</span></h2>
         {!data.charges.length?<div className="empty"><Wallet size={30}/><h3>Начисления не найдены</h3><p>Создайте начисление или измените фильтры.</p></div>:data.charges.map(c=><article key={c.id} className="finance-row" data-testid="charge-row"><div><Link href={`/residents/${c.residentId}`}><strong>{c.resident.fullName}</strong></Link><p>{types[c.type]} · Комната {c.room.number} / Место {c.bed.number}</p><small>{dateLabel(c.billingPeriodStart)} — {dateLabel(c.billingPeriodEnd)}</small><p>Оплатить до {dateLabel(c.dueDate)} · Льготный период: {c.gracePeriodDays} дн.</p></div><div><span className={'status-pill '+(c.status==='OVERDUE'?'finance-overdue':'')}>{statuses[c.status]}</span><dl className="detail-grid"><dt>Начислено</dt><dd>{financeMoney(c.amount)}</dd><dt>Оплачено</dt><dd>{financeMoney(c.paidAmount)}</dd><dt>Остаток</dt><dd>{financeMoney(c.dueAmount)}</dd></dl>{c.status!=='PAID'&&<button className="button secondary" disabled={busy||!!pending} onClick={()=>setModal(c)}>Записать платёж</button>}</div></article>)}

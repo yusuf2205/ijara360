@@ -537,3 +537,11 @@ label.with-icon>input{padding-left:44px}
 .resident-head>div:not(.resident-head-actions){min-width:0}
 .resident-head .status-pill{max-width:100%}
 @media(max-width:700px){.resident-head-actions{width:100%}.resident-head-actions .button{flex:1}}
+/* v4 finance summary + settings tidy */
+.finance-stats{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.stat.finance-kpi{display:flex;align-items:center;gap:12px;padding:16px}
+.finance-kpi>div{display:block;min-width:0}
+.finance-kpi>div>strong{display:block;font-size:17px;font-weight:800;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.finance-kpi>div>small{display:block;color:var(--muted);font-size:11px}
+.panel-heading{color:var(--brand)}
+.panel-heading svg{width:34px;height:34px;padding:7px;border-radius:10px;background:var(--brand-soft);color:var(--brand)}
