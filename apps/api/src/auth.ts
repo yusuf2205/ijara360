@@ -219,7 +219,8 @@ class AuthController {
   async password(@Body() dto: PasswordDto, @Req() req: AuthRequest) {
     await this.auth.rateLimit('password', req.actor.id, 10);
     const user = await this.db.user.findUniqueOrThrow({ where: { id: req.actor.id } });
-    if (!await verifyPassword(dto.currentPassword, user.passwordHash)) throw new UnauthorizedException('Текущий пароль неверен.');
+    // No current password is asked: a user who forgot it but is still signed in on a trusted device
+    // can set a new one. The valid session is the proof of identity; every device is signed out below.
     const passwordHash = await hashPassword(dto.newPassword);
     await this.db.$transaction(async tx => {
       const changed = await tx.user.updateMany({ where: { id: user.id, passwordHash: user.passwordHash, active: true }, data: { passwordHash } });

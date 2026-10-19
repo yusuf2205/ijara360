@@ -172,8 +172,9 @@ test('audit failure rolls back the room and beds', async () => {
 test('password change revokes every session and accepts only the new password', async () => {
   const agent=await owner();
   // Owner's rule (2026-10-17): at least 8 characters of any kind.
-  await send(agent,'post','/auth/password').send({currentPassword:password,newPassword:'abc1234'}).expect(422);
-  await send(agent,'post','/auth/password').send({currentPassword:password,newPassword:'abcd1234'}).expect(204);
+  // Owner's rule (2026-10-19): no current password is asked — a signed-in user can set a new one.
+  await send(agent,'post','/auth/password').send({newPassword:'abc1234'}).expect(422);
+  await send(agent,'post','/auth/password').send({newPassword:'abcd1234'}).expect(204);
   await send(agent,'get','/rooms').expect(401);
   await send(agent,'post','/auth/login').send({phone:setup.phone,password}).expect(401);
   await send(agent,'post','/auth/login').send({phone:setup.phone,password:'abcd1234'}).expect(200);

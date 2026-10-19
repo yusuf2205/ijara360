@@ -58,7 +58,9 @@ export class StaffPasswordDto {
 }
 export class MakeOwnerDto { @IsBoolean() confirm!: boolean; }
 export class PasswordDto {
-  @IsString() @Length(1, 128) currentPassword!: string;
+  // Optional and ignored: a signed-in user may set a new password without retyping the old one
+  // (the valid session already proves who they are). Kept whitelisted so older clients still pass.
+  @IsOptional() @IsString() @Length(0, 128) currentPassword?: string;
   @IsString() @Length(8, 128, { message: 'Новый пароль: от 8 до 128 символов.' }) newPassword!: string;
 }
 export class PropertyDto {
