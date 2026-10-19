@@ -171,3 +171,17 @@ test('home screen month: residents by rent state, received this month, six month
  assert.equal(m.received,'150.10');assert.equal(m.months.length,6);assert.equal(m.months[5].month,today.slice(0,7));assert.equal(m.months[0].received,'0.00');
  assert.deepEqual((await send(agent,'get','/occupancies/today').expect(200)).body,{movedIn:1,movedOut:0});
 });
+
+test('debtors list is sorted by days overdue with place and amount',async()=>{
+ await send(agent,'post','/occupancies/check-in').send({residentId:resident.id,bedId:bed.id,moveInDate:today,monthlyPrice:'100.10',paymentDay:5,depositAmount:'0'}).expect(201);
+ // an overdue charge (due in the past) and a not-yet-due charge for a second resident
+ await charge({dueDate:date(-10),billingPeriodStart:date(-40),billingPeriodEnd:date(-10)});
+ const second=(await send(agent,'post','/residents').send({fullName:'Not overdue yet',phone:'+998901234570'}).expect(201)).body;
+ await send(agent,'post','/finance/charges').send({...chargeBody(),residentId:second.id,amount:'200',dueDate:date(30),billingPeriodStart:today,billingPeriodEnd:date(40)}).expect(201);
+ const list=(await send(agent,'get','/finance/debtors').expect(200)).body;
+ assert.equal(list.length,2);
+ assert.equal(list[0].residentId,resident.id); // most overdue first
+ assert.ok(list[0].daysOverdue>=10);
+ assert.equal(list[0].room,'1');
+ assert.equal(list.find(d=>d.residentId===second.id).daysOverdue,0);
+});

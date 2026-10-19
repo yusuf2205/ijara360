@@ -142,6 +142,24 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       return {month:today.slice(0,7),paid:group(0),partial:group(1),unpaid:group(2),received:months[5].received,months};
     });
   }
+  /** Debtors list for the "Должники" screen: residents with debt, their current place, and days overdue. */
+  debtors(actor: Actor) {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
+      const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const now = new Date(`${today}T00:00:00.000Z`);
+      const residents = await tx.resident.findMany({where:{propertyId:actor.propertyId,totalDebt:{gt:0}},
+        select:{id:true,fullName:true,totalDebt:true,occupancies:{where:{status:'ACTIVE'},select:{room:{select:{number:true}},bed:{select:{number:true}}},take:1}}});
+      // Oldest overdue charge per resident gives the worst days-overdue; residents with debt but nothing overdue yet show 0.
+      const overdue = await tx.charge.groupBy({by:['residentId'],where:{propertyId:actor.propertyId,status:'OVERDUE',dueAmount:{gt:0}},_min:{dueDate:true}});
+      const oldest = new Map(overdue.map(o=>[o.residentId,o._min.dueDate]));
+      return residents.map(r=>{
+        const due = oldest.get(r.id);
+        const daysOverdue = due ? Math.max(0,Math.floor((now.getTime()-new Date(due).getTime())/86400000)) : 0;
+        const occ = r.occupancies[0];
+        return {residentId:r.id,fullName:r.fullName,room:occ?.room.number??null,bed:occ?.bed.number??null,totalDebt:r.totalDebt,daysOverdue};
+      }).sort((a,b)=>b.daysOverdue-a.daysOverdue||Number(b.totalDebt)-Number(a.totalDebt));
+    });
+  }
   access(actor: Actor, id: string) {
     return this.transaction(actor,'FINANCE_VIEW',async tx => {
       const r = await this.resident(tx,actor,id);
@@ -155,6 +173,7 @@ class FinanceController {
   constructor(private readonly service: FinanceService) {}
   @Get() snapshot(@Req() req: AuthRequest,@Query() query: FinanceQuery) {return this.service.snapshot(req.actor,query);}
   @Get('month') month(@Req() req: AuthRequest) {return this.service.month(req.actor);}
+  @Get('debtors') debtors(@Req() req: AuthRequest) {return this.service.debtors(req.actor);}
   @Post('charges') charge(@Req() req: AuthRequest,@Body() dto: ChargeDto) {return this.service.createCharge(req.actor,dto);}
   @Post('payments') payment(@Req() req: AuthRequest,@Body() dto: PaymentDto) {return this.service.createPayment(req.actor,dto);}
   @Get('residents/:id/access') access(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) {return this.service.access(req.actor,id);}

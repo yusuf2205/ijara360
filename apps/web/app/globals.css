@@ -545,3 +545,22 @@ label.with-icon>input{padding-left:44px}
 .finance-kpi>div>small{display:block;color:var(--muted);font-size:11px}
 .panel-heading{color:var(--brand)}
 .panel-heading svg{width:34px;height:34px;padding:7px;border-radius:10px;background:var(--brand-soft);color:var(--brand)}
+/* v4 debtors (mockup "Должники") */
+.debtors-section .debtor-list{display:flex;flex-direction:column;gap:8px}
+.debtor-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.debtor-row:hover{border-color:var(--brand)}
+.debtor-row .avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;background:var(--brand);color:#fff;flex:none}
+.debtor-main{flex:1;min-width:0}
+.debtor-main strong{display:block;font-size:14px}
+.debtor-main small{color:var(--muted);font-size:12px}
+.debtor-sum{text-align:right;flex:none}
+.debtor-sum strong{display:block;font-size:14px;font-weight:800;white-space:nowrap}
+.debtor-sum small{font-size:11px;color:var(--muted)}
+.debtor-sum small.overdue{color:var(--bad);font-weight:700}
+@media(max-width:700px){
+  .finance-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat.finance-kpi{gap:9px;padding:13px}
+  .finance-kpi>div>strong{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
+  .finance-kpi .chip{width:30px;height:30px}
+  .debtor-sum strong{font-size:12px}
+}

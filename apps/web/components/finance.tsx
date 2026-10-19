@@ -25,7 +25,9 @@ function requestKey() {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 
+type Debtor={residentId:string;fullName:string;room:string|null;bed:string|null;totalDebt:string;daysOverdue:number};
 export function FinancePanel({residents,rooms,userId,initialResidentId='',onSaved}:{residents:Resident[];rooms:Room[];userId:string;initialResidentId?:string;onSaved:()=>Promise<void>}) {
+  const [debtors,setDebtors]=useState<Debtor[]>([]);
   const [data,setData]=useState<Snapshot|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [residentId,setResidentId]=useState(initialResidentId),[status,setStatus]=useState(''),[page,setPage]=useState(1);
   const [modal,setModal]=useState<FormMode|null>(null),[pending,setPending]=useState<Pending|null>(null),[busy,setBusy]=useState(false);
@@ -35,6 +37,7 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     catch(e){setError((e as Error).message);setData(null);}
   }
   useEffect(()=>{void refresh();},[residentId,status,page]);useRealtime(['finance'],refresh); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{let live=true;void api<Debtor[]>('/finance/debtors').then(d=>{if(live)setDebtors(d);}).catch(()=>undefined);return()=>{live=false;};},[data]); // refresh the debtors list after any change
   useEffect(()=>{try{const saved=sessionStorage.getItem(storageKey);if(saved){const p=JSON.parse(saved) as Pending;if(['/finance/charges','/finance/payments'].includes(p.path)&&p.body?.idempotencyKey)setPending(p);}}catch{setError('Не удалось прочитать незавершённую запись. Проверьте журнал перед новой оплатой.');}},[storageKey]);
   async function submit(request:Pending) {
     setBusy(true);setError('');setNotice('');
@@ -58,6 +61,13 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     {data&&<>
       <div className="stats-grid finance-stats">{([['Начислено',data.summary.charged,'c-blue',<FileText size={17} key="i"/>],['Получено',data.summary.paid,'c-green',<CheckCircle2 size={17} key="i"/>],['Зачтено',data.summary.applied,'c-green',<Banknote size={17} key="i"/>],['Авансы',data.summary.creditBalance,'c-blue',<Wallet size={17} key="i"/>],['Остаток к оплате',data.summary.outstanding,'c-orange',<AlertCircle size={17} key="i"/>],['Из него просрочено',data.summary.overdue,'c-red',<AlertCircle size={17} key="i"/>]] as [string,string,string,ReactNode][]).map(([label,value,tone,icon])=><div className="stat finance-kpi" key={label}><span className={`chip ${tone}`}>{icon}</span><div><strong>{financeMoney(value)}</strong><small>{label}</small></div></div>)}</div>
       <p className="muted">Итоги за всё время{residentId?' по выбранному жильцу':''}. Остаток включает начисления, срок оплаты которых ещё не наступил.</p>
+      {debtors.length>0&&<section className="panel finance-section debtors-section"><h2>Должники <span>{debtors.length}</span></h2><p className="muted">Отсортированы по дням просрочки.</p>
+        <div className="debtor-list">{debtors.map(d=><Link className="debtor-row" href={`/residents/${d.residentId}`} key={d.residentId}>
+          <span className="avatar">{d.fullName.slice(0,1)}</span>
+          <div className="debtor-main"><strong>{d.fullName}</strong><small>{d.room?`Комната ${d.room} / Место ${d.room}-${d.bed}`:'Без места'}</small></div>
+          <div className="debtor-sum"><strong>{financeMoney(d.totalDebt)}</strong>{d.daysOverdue>0?<small className="overdue">Просрочка: {d.daysOverdue} дн.</small>:<small>Срок ещё не наступил</small>}</div>
+        </Link>)}</div>
+      </section>}
       <section className="panel finance-section"><h2>Начисления <span>{data.chargeCount}</span></h2>
         {!data.charges.length?<div className="empty"><Wallet size={30}/><h3>Начисления не найдены</h3><p>Создайте начисление или измените фильтры.</p></div>:data.charges.map(c=><article key={c.id} className="finance-row" data-testid="charge-row"><div><Link href={`/residents/${c.residentId}`}><strong>{c.resident.fullName}</strong></Link><p>{types[c.type]} · Комната {c.room.number} / Место {c.bed.number}</p><small>{dateLabel(c.billingPeriodStart)} — {dateLabel(c.billingPeriodEnd)}</small><p>Оплатить до {dateLabel(c.dueDate)} · Льготный период: {c.gracePeriodDays} дн.</p></div><div><span className={'status-pill '+(c.status==='OVERDUE'?'finance-overdue':'')}>{statuses[c.status]}</span><dl className="detail-grid"><dt>Начислено</dt><dd>{financeMoney(c.amount)}</dd><dt>Оплачено</dt><dd>{financeMoney(c.paidAmount)}</dd><dt>Остаток</dt><dd>{financeMoney(c.dueAmount)}</dd></dl>{c.status!=='PAID'&&<button className="button secondary" disabled={busy||!!pending} onClick={()=>setModal(c)}>Записать платёж</button>}</div></article>)}
       </section>
