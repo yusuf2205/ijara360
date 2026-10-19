@@ -489,7 +489,8 @@ label.with-icon>input{padding-left:44px}
 .place-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
 .place-main{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
 .place-main .avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:800;background:var(--brand);color:#fff;flex:none}
-.place-main .avatar.empty{background:var(--surface-2);color:var(--muted)}
+/* "vacant", not "empty": the global .empty utility (padding:45px, column flex) would otherwise stretch the avatar into an oval. */
+.place-main .avatar.vacant{background:var(--surface-2);color:var(--muted)}
 .place-main strong{display:block;font-size:14px;font-weight:700}
 .place-main small{color:var(--muted);font-size:12px}
 .status-pill.ok{background:var(--ok-soft);color:var(--ok)}

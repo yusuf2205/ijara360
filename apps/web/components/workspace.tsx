@@ -203,7 +203,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
           <div className="place-list">{currentRoom.beds.map(bed => { const r = bed.occupancy ? residents.find(x=>x.id===bed.occupancy!.residentId) : undefined; const debt = r?Number(r.totalDebt):0;
             return <div className={`place-row ${bed.occupancy?'':'free'}`} key={bed.id}>
               {bed.occupancy ? <Link className="place-main" href={`/residents/${bed.occupancy.residentId}`}><span className="avatar">{bed.occupancy.resident?.fullName?.slice(0,1)||'·'}</span><div><strong>Место {currentRoom.number}-{bed.number}</strong><small>{bed.occupancy.resident?.fullName}</small></div></Link>
-                : <div className="place-main"><span className="avatar empty"><BedDouble size={18}/></span><div><strong>Место {currentRoom.number}-{bed.number}</strong><small>Свободно</small></div></div>}
+                : <div className="place-main"><span className="avatar vacant"><BedDouble size={18}/></span><div><strong>Место {currentRoom.number}-{bed.number}</strong><small>Свободно</small></div></div>}
               {bed.occupancy ? <span className={`status-pill ${debt>0?'bad':'ok'}`}>{debt>0?`Долг ${money(String(debt))}`:'Оплачено'}</span>
                 : !currentRoom.archivedAt && <button className="button primary small" onClick={()=>setResidentAction({mode:'check-in',bedId:bed.id})}>Заселить</button>}
             </div>; })}
