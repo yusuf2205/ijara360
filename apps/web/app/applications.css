@@ -12,3 +12,9 @@
 .photo-frame{width:100%;max-width:320px;aspect-ratio:3/2;border-radius:10px;overflow:hidden;background:#EEF2F8;margin:4px 0 12px}
 .application-file.face .photo-frame{max-width:180px;aspect-ratio:3/4}
 .photo-frame img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* Password step at the end of the application (owner, 2026-10-18) */
+.apply-password{border:1px solid var(--line,#E3E8F0);border-radius:12px;padding:14px 16px;margin:16px 0}
+.apply-password h3{margin:0 0 4px;font-size:15px}
+.apply-password label{display:block;margin-top:10px}
+.apply-password small,.apply-pw-hint{display:block;color:#667085;font-size:11px;margin-top:5px}

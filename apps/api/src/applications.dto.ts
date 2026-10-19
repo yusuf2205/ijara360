@@ -7,6 +7,7 @@ export class StartApplicationDto {
   @IsIn(['WEB','TELEGRAM']) channel!:'WEB'|'TELEGRAM';
 }
 export class ApplicationVersionDto { @IsInt() @Min(1) version!:number; }
+export class ApplicationPasswordDto { @IsString() @Length(8,128,{message:'Пароль: от 8 до 128 символов.'}) password!:string; }
 export class DraftDto extends ApplicationVersionDto {
   @IsOptional() @IsString() @Length(0,160) fullName?:string;
   @IsOptional() @IsString() @Length(0,10) dateOfBirth?:string;

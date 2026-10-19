@@ -335,6 +335,7 @@ model RentalApplication {
   phoneHash String @map("phone_hash") @db.Char(64)
   pinflHash String? @map("pinfl_hash") @db.Char(64)
   passportHash String? @map("passport_hash") @db.Char(64)
+  tenantPasswordHash String? @map("tenant_password_hash")
   phoneVerifiedAt DateTime? @map("phone_verified_at") @db.Timestamptz(3)
   phoneVerificationMethod String? @map("phone_verification_method") @db.VarChar(40)
   residentId String? @map("resident_id") @db.Uuid

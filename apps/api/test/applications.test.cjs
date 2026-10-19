@@ -32,6 +32,7 @@ async function verify(agent,userId=22,number='+998900000022'){
 async function complete(agent,patch={}){
  await send(agent,'patch','/public/applications/me').send({...profile,...patch,version:(await mine(agent)).version}).expect(200);
  for(const kind of ['PASSPORT_FRONT','PASSPORT_BACK','FACE'])await send(agent,'put',`/public/applications/documents/${kind}`).set('Content-Type','image/png').send(image).expect(200);
+ if(patch.skipPassword!==true)await send(agent,'post','/public/applications/password').send({password:'Resident app password 1'}).expect(200);
 }
 async function submitted(){const agent=await start();await verify(agent);await complete(agent);const a=await mine(agent);await send(agent,'post','/public/applications/submit').send({version:a.version}).expect(201);return {agent,a:await mine(agent)};}
 function review(a,status,extra={}){return send(owner,'post',`/applications/${a.id}/review`).send({version:a.version,status,...extra});}
@@ -66,6 +67,7 @@ test('short form: name, place of study or work, move-in date and photos are enou
  await send(agent,'patch','/public/applications/me').send({...short,pinfl:'123',version:(await mine(agent)).version}).expect(200);
  await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(422);
  await send(agent,'patch','/public/applications/me').send({...short,pinfl:'',version:(await mine(agent)).version}).expect(200);
+ await send(agent,'post','/public/applications/password').send({password:'Short form app pass'}).expect(200);
  await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(201);
  assert.equal((await mine(agent)).status,'SUBMITTED');
 });
@@ -162,4 +164,24 @@ test('a submitted application notifies staff who may view applications, without 
  assert.equal(feed.items[0].title,'Новая заявка на проживание');assert.equal(feed.items[0].link,`/applications/${a.id}`);
  const text=JSON.stringify(feed);for(const pii of ['Test Applicant','900000022','12345678901234','1234567'])assert.ok(!text.includes(pii),'no applicant data in notifications');
  const {agent:viewer}=await admin(['APPLICATION_VIEW']);assert.equal((await send(viewer,'get','/notifications').expect(200)).body.total,0,'only staff who existed at submit time are notified');
+});
+
+test('the applicant sets their own password; submit needs it and the converted resident signs in with phone + password',async()=>{
+ const agent=await start();await verify(agent);
+ await send(agent,'patch','/public/applications/me').send({...profile,version:(await mine(agent)).version}).expect(200);
+ for(const kind of ['PASSPORT_FRONT','PASSPORT_BACK','FACE'])await send(agent,'put',`/public/applications/documents/${kind}`).set('Content-Type','image/png').send(image).expect(200);
+ // no password yet → submit refused
+ await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(422);
+ await send(agent,'post','/public/applications/password').send({password:'short'}).expect(422);
+ await send(agent,'post','/public/applications/password').send({password:'My own app pass 1'}).expect(200);
+ assert.equal((await mine(agent)).hasPassword,true);
+ let a=(await send(agent,'post','/public/applications/submit').send({version:(await mine(agent)).version}).expect(201)).body;
+ a=(await review(a,'UNDER_REVIEW').expect(201)).body;
+ a=(await review(a,'APPROVED',{identityReviewed:true,documentsReviewed:true,faceQualityConfirmed:true}).expect(201)).body;
+ const room=await db.room.findFirst({include:{beds:true}});
+ await send(owner,'post',`/applications/${a.id}/convert`).send({version:a.version,bedId:room.beds[0].id,moveInDate:'2026-09-01',monthlyPrice:'500000',paymentDay:5,depositAmount:'0'}).expect(201);
+ // the resident can log in immediately with their phone and the password they chose — no invite needed
+ const phone='+998900000022';
+ const login=await send(request(server),'post','/tenant/auth/login').send({phone,password:'My own app pass 1'}).expect(200);
+ assert.ok(login.body.token||login.headers['set-cookie']);
 });

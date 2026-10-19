@@ -35,6 +35,7 @@ async function convertedApplicant(phone='+998900000022',tgId=22){
  const me=()=>send(agent,'get','/public/applications/me').expect(200).then(r=>r.body);
  await send(agent,'patch','/public/applications/me').send({...profile,version:(await me()).version}).expect(200);
  for(const kind of ['PASSPORT_FRONT','PASSPORT_BACK','FACE'])await send(agent,'put',`/public/applications/documents/${kind}`).set('Content-Type','image/png').send(image).expect(200);
+ await send(agent,'post','/public/applications/password').send({password:'Chosen in application 1'}).expect(200);
  let a=await me();await send(agent,'post','/public/applications/submit').send({version:a.version}).expect(201);a=await me();
  a=(await send(owner,'post',`/applications/${a.id}/review`).send({version:a.version,status:'UNDER_REVIEW'}).expect(201)).body;
  a=(await send(owner,'post',`/applications/${a.id}/review`).send({version:a.version,status:'APPROVED',identityReviewed:true,documentsReviewed:true,faceQualityConfirmed:true}).expect(201)).body;

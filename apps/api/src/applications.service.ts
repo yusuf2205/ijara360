@@ -10,7 +10,7 @@ import {PermissionCode} from './permission-policy';
 import {PrivateStorage} from './private-storage';
 import {publish} from './realtime';
 import {ApplicationProfile,ConvertDto,DraftDto,ReviewDto,StartApplicationDto,conversionCheckIn,validateProfile} from './applications.dto';
-import {digest,makeToken,normalizePhone} from './security';
+import {digest,hashPassword,makeToken,normalizePhone} from './security';
 import {ResidentsService} from './residents';
 import {TenantAccountsService} from './tenant';
 
@@ -59,9 +59,17 @@ export class ApplicationService {
     });
     await this.event(app,'created');return {token,expiresAt};
   }
+  async setPassword(a:RentalApplication,password:string){
+    // The applicant chooses their own password for the resident app; only the Argon2 hash is stored.
+    const updated=await this.locked(a,async(tx,current)=>{
+      mutable(current);
+      const tenantPasswordHash=await hashPassword(password);
+      return tx.rentalApplication.update({where:{id:a.id},data:{tenantPasswordHash}});
+    });await this.event(updated,'updated');return {hasPassword:true};
+  }
   async own(a:RentalApplication){
     const current=await this.db.rentalApplication.findUniqueOrThrow({where:{id:a.id},include:{documents:{select:documentSelect}}});
-    return {id:current.id,status:current.status,version:current.version,profile:this.profile(current),phoneVerified:Boolean(current.phoneVerifiedAt),documents:current.documents,feedback:current.feedbackCipher?this.storage.open(current.feedbackCipher,`feedback:${current.id}`):null};
+    return {id:current.id,status:current.status,version:current.version,profile:this.profile(current),phoneVerified:Boolean(current.phoneVerifiedAt),hasPassword:Boolean(current.tenantPasswordHash),documents:current.documents,feedback:current.feedbackCipher?this.storage.open(current.feedbackCipher,`feedback:${current.id}`):null};
   }
   async save(a:RentalApplication,dto:DraftDto){
     const updated=await this.locked(a,async(tx,current)=>{
@@ -94,6 +102,7 @@ export class ApplicationService {
     const updated=await this.locked(a,async(tx,current)=>{
       mutable(current);version(current,v);if(!current.phoneVerifiedAt)throw new UnprocessableEntityException('Подтвердите телефон через Telegram.');
       validateProfile(this.profile(current));
+      if(!current.tenantPasswordHash)throw new UnprocessableEntityException('Придумайте пароль для входа в приложение (шаг «Фото и отправка»). Логин — ваш номер телефона.');
       const docs=await tx.applicationDocument.findMany({where:{applicationId:a.id}});
       if(!['PASSPORT_FRONT','PASSPORT_BACK','FACE'].every(k=>docs.some(d=>d.kind===k)))throw new UnprocessableEntityException('Загрузите обе стороны паспорта и фотографию лица.');
       const duplicate=await tx.rentalApplication.findFirst({where:{id:{not:a.id},propertyId:a.propertyId,phoneHash:current.phoneHash,status:{in:['SUBMITTED','UNDER_REVIEW','NEEDS_INFO','APPROVED']}}});
@@ -180,6 +189,12 @@ export class ApplicationService {
       const resident=await tx.resident.findUniqueOrThrow({where:{id:occupancy.residentId}});
       const place=await tx.occupancy.findUniqueOrThrow({where:{id:occupancy.id},include:{room:{select:{number:true}},bed:{select:{number:true}}}});
       const invite=await this.tenants.issue(tx,{propertyId:actor.propertyId,residentId:resident.id,phone:resident.phone,telegramUserId:verifiedBy?.telegramUserId??null,createdById:actor.id});
+      // The resident picked a password in the application: activate the app account with it now (login = phone).
+      // The invite above stays valid as a fallback for a forgotten password.
+      if(invite&&current.tenantPasswordHash){
+        await tx.tenantAccount.update({where:{id:invite.accountId},data:{passwordHash:current.tenantPasswordHash,activatedAt:new Date()}});
+        await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:null,action:'TENANT_ACCOUNT_ACTIVATED',entity:'Resident',entityId:resident.id,metadata:{accountId:invite.accountId,source:'APPLICATION'}}});
+      }
       return {residentId:occupancy.residentId,occupancyId:occupancy.id,invite,fullName:resident.fullName,place:`комната ${place.room.number}, место ${place.bed.number}`};
     });await this.event(a,'converted');
     const sent=result.invite?await this.tenants.deliver(result.invite,result.fullName,result.place):null;

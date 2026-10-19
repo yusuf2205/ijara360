@@ -14,6 +14,7 @@ async function apiDraft(page:Page,phone:string,pinfl:string){
   const a=await own(page);await page.request.patch('/api/public/applications/me',{headers,data:{version:a.version,fullName:`Applicant ${phone.slice(-2)}`,dateOfBirth:'2000-01-01',pinfl,passportSeries:'AB',passportNumber:phone.slice(-7),occupationType:'OTHER',organization:'Test employer',requestedMoveInDate:'2026-10-01',plannedDuration:'6 months',emergencyName:'Test Contact',emergencyRelationship:'Parent',emergencyPhone:'+998900000099',consent:true}});
   const buffer=await sharp(randomBytes(640*640*3),{raw:{width:640,height:640,channels:3}}).png().toBuffer();
   for(const kind of ['PASSPORT_FRONT','PASSPORT_BACK','FACE'])expect((await page.request.put(`/api/public/applications/documents/${kind}`,{headers:{...headers,'Content-Type':'image/png'},data:buffer})).ok()).toBe(true);
+  expect((await page.request.post('/api/public/applications/password',{headers,data:{password:'Programmatic app pass 1'}})).ok()).toBe(true);
   expect((await page.request.post('/api/public/applications/submit',{headers,data:{version:(await own(page)).version}})).ok()).toBe(true);return own(page);
 }
 test('M4 public wizard resumes, uploads previews and submits; staff sees realtime then approves and converts',async({page,browser})=>{
@@ -41,7 +42,7 @@ test('M4 public wizard resumes, uploads previews and submits; staff sees realtim
   await applicant.getByLabel('Паспорт: обратная сторона: загрузить файл').setInputFiles(file);await expect(applicant.getByAltText('Паспорт: обратная сторона',{exact:true})).toBeVisible({timeout:40000});
   await applicant.getByLabel('Фото лица: сфотографировать').setInputFiles(file);await expect(applicant.getByAltText('Фото лица',{exact:true})).toBeVisible({timeout:40000});
   await expect(applicant.getByText('Загружено фото: 3 из 3')).toBeVisible();
-  await applicant.getByRole('checkbox').check();await applicant.getByRole('button',{name:'Отправить заявку'}).click();await expect(applicant.getByText('Заявка принята',{exact:true})).toBeVisible();
+  await applicant.getByLabel('Пароль',{exact:true}).fill('Applicant own pass 1');await applicant.getByRole('checkbox').check();await applicant.getByRole('button',{name:'Отправить заявку'}).click();await expect(applicant.getByText('Заявка принята',{exact:true})).toBeVisible();
   await expect(page.getByText('M4 UI Applicant',{exact:true})).toBeVisible();await page.getByText('M4 UI Applicant',{exact:true}).click();await page.getByRole('button',{name:'Начать рассмотрение'}).click();
   await expect(page.getByRole('button',{name:'Одобрить',exact:true})).toBeVisible();await page.getByRole('button',{name:'Фото лица',exact:true}).click();await expect(page.getByAltText('Документ заявки')).toBeVisible();await page.getByRole('checkbox',{name:/Я вручную проверил/}).check();await page.getByRole('button',{name:'Одобрить',exact:true}).click();
   await expect(applicant.getByText('Одобрено',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Заселить одобренного арендатора'}).click();

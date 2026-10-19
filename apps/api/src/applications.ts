@@ -1,4 +1,4 @@
-import {Body,Controller,Get,Headers,Module,Param,ParseEnumPipe,ParseUUIDPipe,Patch,Post,Put,Query,Req,Res,UseGuards} from '@nestjs/common';
+import {Body,Controller,Get,Headers,HttpCode,Module,Param,ParseEnumPipe,ParseUUIDPipe,Patch,Post,Put,Query,Req,Res,UseGuards} from '@nestjs/common';
 import {NotificationsModule} from './notifications';
 import {DocumentKind} from '@prisma/client';
 import {Request,Response} from 'express';
@@ -10,7 +10,7 @@ import {TelegramModule} from './telegram';
 import {TenantModule} from './tenant';
 import {ApplicationService} from './applications.service';
 import {PhoneVerificationService} from './phone-verification';
-import {ApplicationVersionDto,ConvertDto,DraftDto,ReviewDto,StartApplicationDto} from './applications.dto';
+import {ApplicationPasswordDto,ApplicationVersionDto,ConvertDto,DraftDto,ReviewDto,StartApplicationDto} from './applications.dto';
 
 function imageResponse(res:Response,bytes:Buffer){res.set({'Content-Type':'image/jpeg','Cache-Control':'no-store, private','Content-Disposition':'inline; filename="document.jpg"','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'});res.send(bytes);}
 @Controller('public/applications')
@@ -24,6 +24,7 @@ class ApplicantController {
   @Get('me') async me(@Req() req:Request){return this.service.own(await this.service.session(req.cookies?.ijara_applicant));}
   @Patch('me') async save(@Req() req:Request,@Body() dto:DraftDto){return this.service.save(await this.service.session(req.cookies?.ijara_applicant),dto);}
   @Post('phone') async phoneChallenge(@Req() req:Request){return this.phone.challenge(await this.service.session(req.cookies?.ijara_applicant));}
+  @Post('password') @HttpCode(200) async password(@Req() req:Request,@Body() dto:ApplicationPasswordDto){return this.service.setPassword(await this.service.session(req.cookies?.ijara_applicant),dto.password);}
   @Post('submit') async submit(@Req() req:Request,@Body() dto:ApplicationVersionDto){return this.service.submit(await this.service.session(req.cookies?.ijara_applicant),dto.version);}
   @Post('cancel') async cancel(@Req() req:Request,@Body() dto:ApplicationVersionDto){return this.service.cancel(await this.service.session(req.cookies?.ijara_applicant),dto.version);}
   @Put('documents/:kind') async upload(@Req() req:Request,@Param('kind',new ParseEnumPipe(DocumentKind)) kind:DocumentKind){return this.service.upload(await this.service.session(req.cookies?.ijara_applicant),kind,req.body);}
