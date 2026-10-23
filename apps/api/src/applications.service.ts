@@ -10,6 +10,8 @@ import {PermissionCode} from './permission-policy';
 import {PrivateStorage} from './private-storage';
 import {publish} from './realtime';
 import {ApplicationProfile,ConvertDto,DraftDto,ReviewDto,StartApplicationDto,conversionCheckIn,validateProfile} from './applications.dto';
+import {PassportFields} from './mrz';
+import {PassportOcrService} from './passport-ocr';
 import {digest,hashPassword,makeToken,normalizePhone} from './security';
 import {ResidentsService} from './residents';
 import {TenantAccountsService} from './tenant';
@@ -19,7 +21,7 @@ const mutable=(a:RentalApplication)=>{if(!['DRAFT','NEEDS_INFO'].includes(a.stat
 const version=(a:RentalApplication,v:number)=>{if(a.version!==v)throw new ConflictException('Заявка уже была изменена. Откройте её заново.');};
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly notifications:NotificationsService,private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService){}
+  constructor(private readonly notifications:NotificationsService,private readonly db:Database,private readonly storage:PrivateStorage,private readonly permissions:PermissionService,private readonly residents:ResidentsService,private readonly auth:AuthService,private readonly tenants:TenantAccountsService,private readonly passportOcr:PassportOcrService){}
   profile(a:RentalApplication){return this.storage.open<ApplicationProfile>(a.profileCipher,`application:${a.id}`);}
   async config(){
     const property=process.env.APPLICATION_PROPERTY_ID?await this.db.property.findFirst({where:{id:process.env.APPLICATION_PROPERTY_ID,active:true}}):await this.db.property.findFirst({where:{active:true},orderBy:{createdAt:'asc'}});
@@ -86,6 +88,7 @@ export class ApplicationService {
     await this.auth.rateLimit('application-upload',a.id,30);
     const dimensions=await this.storage.image(data,kind==='FACE');
     const hash=this.storage.hash(data.toString('base64'));
+    let scanNeeded=false;
     const result=await this.locked(a,async(tx,current)=>{
       mutable(current);if(!current.phoneVerifiedAt)throw new ForbiddenException('Сначала подтвердите телефон.');
       const old=await tx.applicationDocument.findUnique({where:{applicationId_kind:{applicationId:a.id,kind}}});
@@ -94,9 +97,33 @@ export class ApplicationService {
       const doc=await tx.applicationDocument.upsert({where:{applicationId_kind:{applicationId:a.id,kind}},create:{applicationId:a.id,kind,storageKey,contentHash:hash,size:data.length,...dimensions},update:{storageKey,contentHash:hash,size:data.length,...dimensions,createdAt:new Date()}});
       if(kind==='FACE')await tx.biometricEnrollmentSource.upsert({where:{applicationId:a.id},create:{applicationId:a.id,documentId:doc.id},update:{documentId:doc.id,qualityReview:'MANUAL_REQUIRED'}});
       await tx.rentalApplication.update({where:{id:a.id},data:{version:{increment:1}}});
-      await this.audit(tx,current,'APPLICATION_DOCUMENT_UPLOADED',null,{kind,documentId:doc.id});return doc;
+      await this.audit(tx,current,'APPLICATION_DOCUMENT_UPLOADED',null,{kind,documentId:doc.id});
+      scanNeeded=kind==='PASSPORT_FRONT'||kind==='PASSPORT_BACK';
+      return doc;
     });
-    await this.event(a,'updated');return {id:result.id,kind:result.kind};
+    await this.event(a,'updated');
+    // Read the passport in the background so the upload itself stays instant; the applicant's form polls and
+    // picks up the filled fields. Best-effort — errors are swallowed and the form simply stays manual.
+    // Off under the test harness (a flood of document uploads would spawn needless OCR); tests opt in per case.
+    if(scanNeeded&&(process.env.NODE_ENV!=='test'||process.env.OCR_IN_TEST==='1'))void this.scanAndFill(a,kind,data).catch(()=>{});
+    return {id:result.id,kind:result.kind};
+  }
+  // Reads the passport on our server and fills any empty passport fields; what the applicant typed is never
+  // overwritten. Runs after the upload responds, so the applicant's form shows the data on its next poll.
+  private async scanAndFill(a:RentalApplication,kind:DocumentKind,data:Buffer){
+    const scanned=await this.passportOcr.scan(data);
+    if(!scanned||!Object.keys(scanned).length)return;
+    const updated=await this.locked(a,async(tx,current)=>{
+      if(!['DRAFT','NEEDS_INFO'].includes(current.status))return null;
+      const profile=this.profile(current) as unknown as Record<string,unknown>;
+      const filled=(Object.keys(scanned) as (keyof PassportFields)[]).filter(k=>scanned[k]&&!String(profile[k]??'').trim());
+      if(!filled.length)return null;
+      const next={...profile};for(const k of filled)next[k]=scanned[k as keyof PassportFields];
+      const u=await tx.rentalApplication.update({where:{id:a.id},data:{profileCipher:this.storage.seal(next,`application:${a.id}`),pinflHash:next.pinfl?this.storage.hash(`pinfl:${next.pinfl}`):current.pinflHash,passportHash:next.passportSeries&&next.passportNumber?this.storage.hash(`passport:${String(next.passportSeries).toUpperCase()}${String(next.passportNumber)}`):current.passportHash,version:{increment:1}}});
+      await this.audit(tx,current,'APPLICATION_OCR_FILLED',null,{kind,fields:filled});
+      return u;
+    });
+    if(updated)await this.event(updated,'updated');
   }
   async submit(a:RentalApplication,v:number){
     const updated=await this.locked(a,async(tx,current)=>{

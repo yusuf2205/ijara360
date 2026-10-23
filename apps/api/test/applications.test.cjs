@@ -38,6 +38,14 @@ async function submitted(){const agent=await start();await verify(agent);await c
 function review(a,status,extra={}){return send(owner,'post',`/applications/${a.id}/review`).send({version:a.version,status,...extra});}
 async function approved(){let {agent,a}=await submitted();a=(await review(a,'UNDER_REVIEW').expect(201)).body;a=(await review(a,'APPROVED',{identityReviewed:true,documentsReviewed:true,faceQualityConfirmed:true}).expect(201)).body;return {agent,a};}
 async function admin(rights=[]){const u=(await send(owner,'post','/users').send({phone:'+998900000002',password,fullName:'Admin'}).expect(201)).body;await send(owner,'put',`/permissions/users/${u.id}`).send({permissions:rights}).expect(200);const agent=request.agent(server);await send(agent,'post','/auth/login').send({phone:u.phone,password}).expect(200);return {agent,u};}
+// Passport OCR tests run only where tesseract is installed (the API image), skipped on a bare dev machine.
+let hasTesseract=false;try{require('node:child_process').execSync('tesseract --version',{stdio:'ignore'});hasTesseract=true;}catch{}
+const mrzVal=c=>(c>='0'&&c<='9'?c.charCodeAt(0)-48:c>='A'&&c<='Z'?c.charCodeAt(0)-55:0);
+const mrzCd=f=>{const w=[7,3,1];let s=0;for(let i=0;i<f.length;i++)s+=mrzVal(f[i])*w[i%3];return String(s%10);};
+const mrzPad=(s,n)=>s.padEnd(n,'<').slice(0,n);
+async function passportImage(){const doc='AB1234567',birth='950215';const l1=mrzPad('P<UZBALIYEV<<SARDOR',44);let l2=doc+mrzCd(doc)+'UZB'+birth+mrzCd(birth)+'M'+'330101'+mrzCd('330101')+mrzPad('',14);l2=mrzPad(l2,43)+'0';const esc=s=>s.replace(/</g,'&lt;');const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="460"><rect width="100%" height="100%" fill="white"/><text x="40" y="200" font-family="DejaVu Sans Mono, monospace" font-size="64" letter-spacing="6" fill="black" xml:space="preserve">${esc(l1)}</text><text x="40" y="340" font-family="DejaVu Sans Mono, monospace" font-size="64" letter-spacing="6" fill="black" xml:space="preserve">${esc(l2)}</text></svg>`;return sharp(Buffer.from(svg)).png().toBuffer();}
+// OCR fills the profile in the background after the upload responds, so the tests poll until it lands.
+async function waitForPassportFill(agent,ms=15000){const end=Date.now()+ms;for(;;){const p=(await mine(agent)).profile;if(p.passportSeries==='AB')return p;if(Date.now()>end)throw Error('OCR did not fill passport fields in time');await new Promise(r=>setTimeout(r,250));}}
 
 test('draft is encrypted and resumed by scoped cookie; applicant cannot forge role or access another draft',async()=>{
  const agent=await start();const a=await mine(agent);assert.equal(a.status,'DRAFT');assert.equal(await db.resident.count(),0);
@@ -184,4 +192,26 @@ test('the applicant sets their own password; submit needs it and the converted r
  const phone='+998900000022';
  const login=await send(request(server),'post','/tenant/auth/login').send({phone,password:'My own app pass 1'}).expect(200);
  assert.ok(login.body.token||login.headers['set-cookie']);
+});
+test('passport upload reads the MRZ and fills empty fields in the background',{skip:hasTesseract?false:'tesseract not installed'},async()=>{
+ process.env.OCR_IN_TEST='1';
+ try{
+  const agent=await start();await verify(agent);
+  await send(agent,'put','/public/applications/documents/PASSPORT_FRONT').set('Content-Type','image/png').send(await passportImage()).expect(200);
+  const p=await waitForPassportFill(agent);
+  assert.equal(p.passportSeries,'AB');
+  assert.equal(p.passportNumber,'1234567');
+  assert.equal(p.dateOfBirth,'1995-02-15');
+  assert.match(p.fullName,/Aliyev/);
+ }finally{delete process.env.OCR_IN_TEST;}
+});
+test('passport OCR never overwrites a name the applicant already typed',{skip:hasTesseract?false:'tesseract not installed'},async()=>{
+ process.env.OCR_IN_TEST='1';
+ try{
+  const agent=await start();await verify(agent);
+  await send(agent,'patch','/public/applications/me').send({fullName:'Введённое Имя',version:(await mine(agent)).version}).expect(200);
+  await send(agent,'put','/public/applications/documents/PASSPORT_FRONT').set('Content-Type','image/png').send(await passportImage()).expect(200);
+  const p=await waitForPassportFill(agent); // passport fields get filled...
+  assert.equal(p.fullName,'Введённое Имя'); // ...but the typed name is kept
+ }finally{delete process.env.OCR_IN_TEST;}
 });

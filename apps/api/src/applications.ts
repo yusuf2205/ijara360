@@ -9,6 +9,7 @@ import {ResidentsModule} from './residents';
 import {TelegramModule} from './telegram';
 import {TenantModule} from './tenant';
 import {ApplicationService} from './applications.service';
+import {PassportOcrService} from './passport-ocr';
 import {PhoneVerificationService} from './phone-verification';
 import {ApplicationPasswordDto,ApplicationVersionDto,ConvertDto,DraftDto,ReviewDto,StartApplicationDto} from './applications.dto';
 
@@ -44,5 +45,5 @@ class TelegramController {
   constructor(private readonly phone:PhoneVerificationService){}
   @Post('webhook') webhook(@Headers('x-telegram-bot-api-secret-token') secret:string,@Body() update:unknown){return this.phone.webhook(secret,update as Parameters<PhoneVerificationService['webhook']>[1]);}
 }
-@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule,NotificationsModule],providers:[ApplicationService,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController]})
+@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule,NotificationsModule],providers:[ApplicationService,PassportOcrService,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController]})
 export class ApplicationsModule{}

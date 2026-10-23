@@ -14,6 +14,9 @@ RUN chmod -R a+rX apps scripts prisma package.json package-lock.json
 RUN npm run db:generate
 
 FROM base AS api
+# Tesseract reads passport/ID-card MRZ on-device for KYC; eng covers the Latin MRZ (OCR-B). API image only.
+# fonts-dejavu-core lets sharp/resvg render text (used by the OCR self-test to synthesise a sample MRZ).
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 RUN npm run build -w @ijara360/api
 CMD ["node", "apps/api/dist/main.js"]
 
