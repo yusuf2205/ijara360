@@ -1,4 +1,4 @@
-import {Injectable,ServiceUnavailableException,UnprocessableEntityException} from '@nestjs/common';
+import {HttpException,Injectable,ServiceUnavailableException,UnprocessableEntityException} from '@nestjs/common';
 import {createCipheriv,createDecipheriv,createHmac,randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {isAbsolute,join} from 'node:path';
@@ -31,8 +31,22 @@ export class PrivateStorage {
       const info=await pipeline.metadata();
       if(!['jpeg','png','webp'].includes(info.format||'')||(info.pages||1)!==1||!info.width||!info.height||info.width<(face?480:600)||info.height<(face?480:400))throw Error();
       await pipeline.clone().raw().toBuffer(); // Fully decode, not merely parse headers.
+      // Clarity and lighting: a dark or out-of-focus photo is useless for reading the document or the face.
+      const {brightness,detail}=await this.quality(data);
+      if(brightness<35)throw new UnprocessableEntityException(face?'Фото лица слишком тёмное. Сфотографируйтесь при хорошем освещении.':'Фото паспорта слишком тёмное. Сфотографируйте при хорошем освещении.');
+      if(detail<100)throw new UnprocessableEntityException(face?'Фото лица размытое или не в фокусе. Держите телефон ровно и сделайте чёткое фото.':'Фото паспорта размытое или не в фокусе. Держите телефон ровно и сфотографируйте так, чтобы текст был чётким.');
       return {width:info.width,height:info.height,mimeType:`image/${info.format}`};
-    } catch {throw new UnprocessableEntityException('Нужен целый JPG, PNG или WebP достаточного размера. Для лица — минимум 480 × 480, для паспорта — 600 × 400.');}
+    } catch(e) {
+      if(e instanceof HttpException)throw e; // keep the specific clarity/lighting message
+      throw new UnprocessableEntityException('Нужен целый JPG, PNG или WebP достаточного размера. Для лица — минимум 480 × 480, для паспорта — 600 × 400.');
+    }
+  }
+  /** Lighting (mean brightness 0–255) and focus (variance of the Laplacian) of a photo, resolution-normalised. */
+  private async quality(data:Buffer){
+    const grey=await sharp(data).grayscale().resize({width:1000,fit:'inside',withoutEnlargement:true}).toBuffer();
+    const edges=await sharp(grey).convolve({width:3,height:3,kernel:[0,-1,0,-1,4,-1,0,-1,0]}).stats();
+    const brightness=(await sharp(grey).stats()).channels[0].mean;
+    return {brightness,detail:edges.channels[0].stdev**2};
   }
   async put(applicationId:string,kind:string,data:Buffer){
     if(!this.ready())throw new ServiceUnavailableException('Защищённое хранилище пока не настроено.');

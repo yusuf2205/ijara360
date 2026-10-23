@@ -215,3 +215,11 @@ test('passport OCR never overwrites a name the applicant already typed',{skip:ha
   assert.equal(p.fullName,'Введённое Имя'); // ...but the typed name is kept
  }finally{delete process.env.OCR_IN_TEST;}
 });
+test('a dark or blurry/blank photo is rejected; a clear one is accepted',async()=>{
+ const agent=await start();await verify(agent);
+ const dark=await sharp({create:{width:1200,height:800,channels:3,background:{r:12,g:12,b:14}}}).png().toBuffer();
+ await send(agent,'put','/public/applications/documents/PASSPORT_FRONT').set('Content-Type','image/png').send(dark).expect(422);
+ const flat=await sharp({create:{width:1200,height:800,channels:3,background:{r:150,g:150,b:150}}}).png().toBuffer();
+ await send(agent,'put','/public/applications/documents/FACE').set('Content-Type','image/png').send(flat).expect(422);
+ await send(agent,'put','/public/applications/documents/PASSPORT_FRONT').set('Content-Type','image/png').send(image).expect(200); // detailed photo passes
+});
