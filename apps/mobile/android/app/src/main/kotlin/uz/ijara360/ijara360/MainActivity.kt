@@ -13,6 +13,8 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "uz.ijara360/update").setMethodCallHandler { call, result ->
             when (call.method) {
                 "updateDir" -> result.success(SelfUpdate.dir(this).absolutePath)
+                // The processor family of the small per-ABI APK this phone should get.
+                "abi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull { it in listOf("arm64-v8a", "armeabi-v7a", "x86_64") })
                 "canInstall" -> result.success(SelfUpdate.canInstall(this))
                 "silentCapable" -> result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 "pendingConfirm" -> result.success(SelfUpdate.pendingConfirm(this))

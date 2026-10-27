@@ -33,12 +33,21 @@ Future<int?> newerRelease() async {
   }
 }
 
-/// Downloads to `<file>.part` and renames only once every byte has arrived.
+/// Fetches the small APK for this phone's processor (~20 MB); falls back to the universal one (~55 MB)
+/// when the processor is unknown or the server has no per-processor file.
 Future<bool> _download(File target) async {
+  String? abi;
+  try { abi = await _native.invokeMethod<String>('abi'); } catch (_) {}
+  if (abi != null && await _fetch('/app/ijara360-$abi.apk', target)) return true;
+  return _fetch('/app/ijara360.apk', target);
+}
+
+/// Downloads to `<file>.part` and renames only once every byte has arrived.
+Future<bool> _fetch(String path, File target) async {
   final part = File('${target.path}.part');
   final client = http.Client();
   try {
-    final res = await client.send(http.Request('GET', Uri.parse('${apiOrigin()}/app/ijara360.apk'))).timeout(const Duration(seconds: 30));
+    final res = await client.send(http.Request('GET', Uri.parse('${apiOrigin()}$path'))).timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) return false;
     final sink = part.openWrite();
     var got = 0;
