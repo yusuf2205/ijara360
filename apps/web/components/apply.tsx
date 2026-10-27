@@ -2,6 +2,22 @@
 import { Logo } from './brand';
 import {useEffect,useRef,useState} from 'react';
 import {api,ApiError} from '../lib/api';
+import {Camera} from './camera';
+
+// Resize + re-encode any image to a JPEG under ~1600px, so a large phone photo never fails the 8 MB upload limit.
+// `imageOrientation:'from-image'` applies the EXIF rotation (phone photos), so the saved image is upright.
+async function prepareImage(file:Blob):Promise<Blob>{
+  if(!file.type.startsWith('image/'))return file;
+  try{
+    const bitmap=await createImageBitmap(file,{imageOrientation:'from-image'});
+    const limit=1600;const scale=Math.min(1,limit/Math.max(bitmap.width,bitmap.height));
+    const w=Math.round(bitmap.width*scale),h=Math.round(bitmap.height*scale);
+    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    canvas.getContext('2d')!.drawImage(bitmap,0,0,w,h);bitmap.close();
+    const blob=await new Promise<Blob|null>(res=>canvas.toBlob(res,'image/jpeg',0.85));
+    return blob||file;
+  }catch{return file;}
+}
 
 const statuses:Record<string,string>={DRAFT:'Черновик',SUBMITTED:'Заявка принята',UNDER_REVIEW:'На рассмотрении',NEEDS_INFO:'Нужна дополнительная информация',APPROVED:'Одобрено',REJECTED:'Отклонено',CANCELLED:'Заявка отменена',CONVERTED_TO_RESIDENT:'Вы заселены'};
 // Short form (owner's decision 2026-10-15): phone, three questions, photos. Passport details are read from the photos.
@@ -14,6 +30,7 @@ export default function Apply(){
   const [phone,setPhone]=useState('');const [step,setStep]=useState(0);const [loaded,setLoaded]=useState(false);
   const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [saved,setSaved]=useState('');const [verifyUrl,setVerifyUrl]=useState('');
   const [password,setPassword]=useState('');const [pwSaved,setPwSaved]=useState(false);const [scanNote,setScanNote]=useState('');
+  const [camera,setCamera]=useState<{kind:string;mode:'face'|'document';title:string}|null>(null);
   const current=useRef<Draft|null>(null);const fields=useRef<Profile>({});const revision=useRef(0);const stored=useRef(0);const saving=useRef<Promise<void>|null>(null);
   const editable=app&&['DRAFT','NEEDS_INFO'].includes(app.status);
   function install(a:Draft){current.current=a;setApp(a);fields.current=a.profile;setProfile(a.profile);revision.current=0;stored.current=0;setPwSaved(Boolean(a.hasPassword));}
@@ -33,14 +50,17 @@ export default function Apply(){
   useEffect(()=>{if(!app||editable&&!verifyUrl)return;let disposed=false;const timer=setInterval(()=>{if(busy||saving.current||stored.current!==revision.current)return;void api<Draft>('/public/applications/me').then(a=>{if(!disposed){install(a);if(a.phoneVerified)setVerifyUrl('');}}).catch(()=>{});},4000);return()=>{disposed=true;clearInterval(timer);};},[app?.id,editable,verifyUrl,busy]);
   async function work(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   function input(key:string,label:string,type='text',maxLength=160){return <label>{label}<input type={type} maxLength={maxLength} value={String(profile[key]||'')} onChange={e=>change(key,e.target.value)} disabled={busy}/></label>;}
-  async function upload(kind:string,file:File|undefined){if(!file)return;await work(async()=>{await persist();if(file.size>8*1024*1024)throw Error('Максимальный размер — 8 МБ.');const response=await fetch(`/api/public/applications/documents/${kind}`,{method:'PUT',headers:{'Content-Type':file.type,'X-Ijara-Request':'1'},body:file,credentials:'same-origin'});if(!response.ok){const d=await response.json().catch(()=>({}));throw Error(d.message||'Не удалось загрузить документ.');}if(kind==='PASSPORT_FRONT'||kind==='PASSPORT_BACK')setScanNote('Фото паспорта загружено. Данные распознаются автоматически — через несколько секунд ФИО и данные паспорта заполнятся на шаге «О вас». Проверьте их.');await load();});}
-  // Camera or gallery. "capture" opens the camera on a phone (back for documents, front for the face);
-  // a computer ignores it and shows the file picker.
-  function picker(kind:string,text:string,name:string,className:string,capture?:'environment'|'user'){
-    return <label className={`button ${className} photo-button`}>{text}<input className="visually-hidden" type="file" aria-label={name} accept={capture?'image/*':'image/jpeg,image/png,image/webp'} capture={capture} disabled={busy||!app?.phoneVerified} onChange={e=>{const f=e.target.files?.[0];e.target.value='';void upload(kind,f);}}/></label>;
+  async function upload(kind:string,file:Blob|undefined){if(!file)return;await work(async()=>{await persist();const image=await prepareImage(file);if(image.size>8*1024*1024)throw Error('Фото слишком большое даже после сжатия. Снимите ещё раз.');const response=await fetch(`/api/public/applications/documents/${kind}`,{method:'PUT',headers:{'Content-Type':image.type||'image/jpeg','X-Ijara-Request':'1'},body:image,credentials:'same-origin'});if(!response.ok){const d=await response.json().catch(()=>({}));throw Error(d.message||'Не удалось загрузить документ.');}if(kind==='PASSPORT_FRONT'||kind==='PASSPORT_BACK')setScanNote('Фото паспорта загружено. Данные распознаются автоматически — через несколько секунд ФИО и данные паспорта заполнятся на шаге «О вас». Проверьте их.');await load();});}
+  // The built-in camera (front + auto-shoot for the face, back for documents); "Загрузить файл" is the fallback
+  // for a computer without a camera or for an existing photo.
+  function cameraBtn(kind:string,text:string,mode:'face'|'document',title:string){
+    return <button type="button" className="button primary photo-button" disabled={busy||!app?.phoneVerified} onClick={()=>setCamera({kind,mode,title})}>{text}</button>;
   }
-  function photo(kind:string,label:string,face=false){const doc=app?.documents.find(d=>d.kind===kind);return <section className={`application-file${face?' face':''}`}><h3>{label}{doc&&<span className="photo-done"> · загружено</span>}</h3>{doc&&<div className="photo-frame"><img alt={label} src={`/api/public/applications/documents/${kind}?v=${app?.version}`}/></div>}<div className="photo-actions">{face?picker(kind,doc?'Переснять лицо':'Сфотографировать лицо',`${label}: сфотографировать`,'primary','user'):<>{picker(kind,doc?'Переснять':'Сфотографировать',`${label}: сфотографировать`,'primary','environment')}{picker(kind,'Загрузить файл',`${label}: загрузить файл`,'secondary')}</>}</div></section>;}
-  return <main className="apply-shell"><header><a className="apply-brand" href="/apply" aria-label="ijara360"><Logo size={28}/></a><span>{config?.propertyName||'Анкета арендатора'}</span></header><section className="apply-card">
+  function fileBtn(kind:string,name:string){
+    return <label className="button secondary photo-button">Загрузить файл<input className="visually-hidden" type="file" aria-label={name} accept="image/jpeg,image/png,image/webp" disabled={busy||!app?.phoneVerified} onChange={e=>{const f=e.target.files?.[0];e.target.value='';void upload(kind,f);}}/></label>;
+  }
+  function photo(kind:string,label:string,face=false){const doc=app?.documents.find(d=>d.kind===kind);return <section className={`application-file${face?' face':''}`}><h3>{label}{doc&&<span className="photo-done"> · загружено</span>}</h3>{doc&&<div className="photo-frame"><img alt={label} src={`/api/public/applications/documents/${kind}?v=${app?.version}`}/></div>}<div className="photo-actions">{cameraBtn(kind,doc?(face?'Переснять лицо':'Переснять'):(face?'Сфотографировать лицо':'Сфотографировать'),face?'face':'document',label)}{fileBtn(kind,`${label}: загрузить файл`)}</div></section>;}
+  return <>{camera&&<Camera mode={camera.mode} title={camera.title} onCapture={b=>{const k=camera.kind;setCamera(null);void upload(k,b);}} onCancel={()=>setCamera(null)}/>}<main className="apply-shell"><header><a className="apply-brand" href="/apply" aria-label="ijara360"><Logo size={28}/></a><span>{config?.propertyName||'Анкета арендатора'}</span></header><section className="apply-card">
     <h1>Заявка на проживание</h1>{error&&<div className="error" role="alert">{error}</div>}
     {!loaded?<p>Загружаем анкету…</p>:!app?<><p>Заполните анкету и отправьте документы администрации. Заселение оформляется после рассмотрения.</p>{!config?.enabled?<p>Приём заявок пока не настроен. Обратитесь к администрации.</p>:<form onSubmit={e=>{e.preventDefault();void work(async()=>{await api('/public/applications',{method:'POST',body:JSON.stringify({phone,channel:new URLSearchParams(window.location.search).get('channel')==='TELEGRAM'?'TELEGRAM':'WEB'})});await load();});}}><label>Ваш телефон<input type="tel" required value={phone} maxLength={30} onChange={e=>setPhone(e.target.value)} placeholder="+998 90 123 45 67"/></label><p className="form-hint">Используйте номер, привязанный к вашему Telegram. Черновик будет доступен в этом браузере 30 дней.</p><button className="button primary" disabled={busy}>Начать анкету</button></form>}</>:<>
       <p className="status-pill">{statuses[app.status]}</p>
@@ -62,5 +82,5 @@ export default function Apply(){
         <div className="modal-actions"><button className="button secondary" disabled={busy||step===0} onClick={()=>void work(async()=>{await persist();setStep(step-1);})}>Назад</button>{step<steps.length-1?<button className="button primary" disabled={busy} onClick={()=>void work(async()=>{await persist();setStep(step+1);})}>Далее</button>:<button className="button primary" disabled={busy||!app.phoneVerified||!(pwSaved||password.length>=8)} onClick={()=>void work(async()=>{await persist();if(password.length>=8&&!pwSaved){await api('/public/applications/password',{method:'POST',body:JSON.stringify({password})});setPwSaved(true);}install(await api('/public/applications/submit',{method:'POST',body:JSON.stringify({version:current.current!.version})}));})}>Отправить заявку</button>}</div><p role="status" className="form-hint">{saved}</p>
       </>}
     </>}
-  </section><footer>Документы хранятся в закрытом хранилище. Не отправляйте паспорт или фото лица в чат Telegram.</footer></main>;
+  </section><footer>Документы хранятся в закрытом хранилище. Не отправляйте паспорт или фото лица в чат Telegram.</footer></main></>;
 }
