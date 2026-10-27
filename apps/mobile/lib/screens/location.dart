@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -265,6 +267,7 @@ class _StaffMapScreenState extends State<StaffMapScreen> {
   String query = '';
   static const labels = {'ALL': 'Все', 'LIVE': 'В сети', 'STALE': 'Давно', 'OFFLINE': 'Нет связи', 'LOCATION_DISABLED': 'Отключена'};
   static Tone tone(String s) => switch (s) { 'LIVE' => Tone.green, 'STALE' => Tone.orange, 'LOCATION_DISABLED' => Tone.red, _ => Tone.gray };
+  static Color pinColor(String s) => switch (s) { 'LIVE' => Brand.green, 'STALE' => Brand.orange, 'LOCATION_DISABLED' => Brand.red, _ => Brand.gray500 };
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +286,8 @@ class _StaffMapScreenState extends State<StaffMapScreen> {
               (filter == 'ALL' || i['status'] == filter) &&
               (q.isEmpty || '${i['fullName']}'.toLowerCase().contains(q) || i['room'] == q || i['bed'] == q)).toList();
           return PageBody(maxWidth: 900, onRefresh: refresh, children: [
+            _LiveMap(items: items, onTap: (i) => _residentSheet(context, s.api, i)),
+            const Gap(12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final k in labels.keys) ChoiceChip(
                 label: Text('${labels[k]} ${counts[k] ?? 0}'),
@@ -320,6 +325,97 @@ class _StaffMapScreenState extends State<StaffMapScreen> {
       ),
     );
   }
+}
+
+/// Live map inside the app: a marker per resident who has a point, coloured by status. Tiles are
+/// OpenStreetMap (no Yandex key needed — that key is tied to the website domain). Tapping a marker opens the
+/// resident card; "Открыть в Яндекс Навигаторе" still goes through the audited per-resident endpoint.
+class _LiveMap extends StatelessWidget {
+  const _LiveMap({required this.items, required this.onTap});
+  final List<Map<String, dynamic>> items;
+  final void Function(Map<String, dynamic>) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final markers = <Marker>[];
+    for (final i in items) {
+      final p = i['position'] as Map<String, dynamic>?;
+      if (p == null) continue;
+      markers.add(Marker(
+        point: LatLng((p['latitude'] as num).toDouble(), (p['longitude'] as num).toDouble()),
+        width: 44,
+        height: 44,
+        alignment: Alignment.topCenter,
+        child: GestureDetector(
+          onTap: () => onTap(i),
+          child: Icon(Icons.location_pin, size: 40, color: _StaffMapScreenState.pinColor('${i['status']}'), shadows: const [Shadow(color: Colors.white, blurRadius: 3)]),
+        ),
+      ));
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 280,
+        child: Stack(children: [
+          FlutterMap(
+            options: MapOptions(
+              initialCenter: markers.isEmpty ? const LatLng(41.311081, 69.279737) : markers.first.point,
+              initialZoom: markers.length == 1 ? 15 : 12,
+              initialCameraFit: markers.length > 1 ? CameraFit.coordinates(coordinates: [for (final m in markers) m.point], padding: const EdgeInsets.all(50)) : null,
+              interactionOptions: const InteractionOptions(flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag | InteractiveFlag.doubleTapZoom | InteractiveFlag.flingAnimation | InteractiveFlag.scrollWheelZoom),
+            ),
+            children: [
+              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'uz.ijara360.ijara360', maxZoom: 19),
+              MarkerLayer(markers: markers),
+            ],
+          ),
+          if (markers.isEmpty)
+            IgnorePointer(child: Container(
+              color: Brand.white.withValues(alpha: .72),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.all(16),
+              child: Text('Пока нет точек на карте — они появятся, когда жильцы включат геолокацию.', textAlign: TextAlign.center, style: manrope(13, FontWeight.w600, color: Brand.gray500)),
+            )),
+        ]),
+      ),
+    );
+  }
+}
+
+void _residentSheet(BuildContext context, ApiClient api, Map<String, dynamic> i) {
+  final p = i['position'] as Map<String, dynamic>?;
+  showModalBottomSheet<void>(
+    context: context,
+    useRootNavigator: true,
+    builder: (sheet) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Avatar('${i['fullName']}', size: 46),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${i['fullName']}', style: manrope(16, FontWeight.w800)),
+              Text([if (i['room'] != null) 'Комната ${i['room']}', if (i['bed'] != null) 'Место ${i['bed']}'].join(' · '), style: Theme.of(sheet).textTheme.bodySmall),
+            ])),
+            StatusPill('${_StaffMapScreenState.labels[i['status']]}', tone: _StaffMapScreenState.tone('${i['status']}')),
+          ]),
+          const Gap(12),
+          Text(
+            p == null ? 'Точки пока нет.' : '${i['status'] == 'LIVE' ? 'Обновлено' : 'Последняя точка'} ${agoText(p['recordedAt'] as String?)} · точность ${accuracyLabel(p['accuracy'] as num?)}',
+            style: Theme.of(sheet).textTheme.bodySmall,
+          ),
+          const Gap(16),
+          if (p != null)
+            FilledButton.icon(
+              onPressed: () { Navigator.pop(sheet); openInYandex(context, api, '${i['residentId']}'); },
+              icon: const Icon(Icons.navigation_rounded),
+              label: const Text('Открыть в Яндекс Навигаторе'),
+            ),
+        ]),
+      ),
+    ),
+  );
 }
 
 /// Yandex Navigator first, then Yandex Maps, then the browser. Only the point leaves the phone: no name or
