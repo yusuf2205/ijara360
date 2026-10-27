@@ -34,25 +34,75 @@ class IjaraApp extends StatelessWidget {
       );
 }
 
-class _Root extends StatelessWidget {
+class _Root extends StatefulWidget {
   const _Root();
+  @override
+  State<_Root> createState() => _RootState();
+}
+
+class _RootState extends State<_Root> {
+  bool _greeted = false;
+  @override
+  void initState() {
+    super.initState();
+    // Keep the animated greeting on screen a short while even when the session restores instantly, so it is seen.
+    Timer(const Duration(milliseconds: 2000), () { if (mounted) setState(() => _greeted = true); });
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
-    if (!s.ready) return const _Splash();
+    final showGreeting = !s.ready || !_greeted;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      child: !s.signedIn ? const LoginScreen(key: ValueKey('login')) : s.role == Role.tenant ? const TenantApp(key: ValueKey('tenant')) : StaffApp(key: ValueKey('staff:${s.permissions.join(',')}')),
+      duration: const Duration(milliseconds: 450),
+      child: showGreeting
+          ? const _Greeting(key: ValueKey('greeting'))
+          : !s.signedIn
+              ? const LoginScreen(key: ValueKey('login'))
+              : s.role == Role.tenant
+                  ? const TenantApp(key: ValueKey('tenant'))
+                  : StaffApp(key: ValueKey('staff:${s.permissions.join(',')}')),
     );
   }
 }
 
-class _Splash extends StatelessWidget {
-  const _Splash();
+/// Animated welcome shown as the app opens: the logo rises and fades in, then "Добро пожаловать" and the tagline.
+class _Greeting extends StatefulWidget {
+  const _Greeting({super.key});
+  @override
+  State<_Greeting> createState() => _GreetingState();
+}
+
+class _GreetingState extends State<_Greeting> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..forward();
+
+  @override
+  void dispose() { _c.dispose(); super.dispose(); }
+
+  // A fade+rise for one part, timed to a slice of the controller.
+  Widget _part(double start, double end, Widget child, {double rise = 16}) {
+    final t = CurvedAnimation(parent: _c, curve: Interval(start, end, curve: Curves.easeOutCubic));
+    return AnimatedBuilder(
+      animation: t,
+      builder: (context, _) => Opacity(opacity: t.value, child: Transform.translate(offset: Offset(0, (1 - t.value) * rise), child: child)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
         backgroundColor: Brand.navy,
-        body: Center(child: Image.asset('assets/brand/logo-light.png', height: 52, semanticLabel: 'ijara360')),
+        body: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _part(0.0, 0.55, ScaleTransition(
+              scale: Tween(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: _c, curve: const Interval(0, 0.55, curve: Curves.easeOutBack))),
+              child: Image.asset('assets/brand/logo-light.png', height: 58, semanticLabel: 'ijara360'),
+            ), rise: 0),
+            const Gap(22),
+            _part(0.35, 0.8, Text('Добро пожаловать', style: manrope(22, FontWeight.w800, color: Brand.white))),
+            const Gap(10),
+            _part(0.6, 1.0, Text('ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.', textAlign: TextAlign.center, style: manrope(11.5, FontWeight.w700, color: Brand.blueLight, spacing: 1.4))),
+          ]),
+        ),
       );
 }
 
