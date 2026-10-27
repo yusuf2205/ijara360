@@ -18,4 +18,8 @@
 .apply-password h3{margin:0 0 4px;font-size:15px}
 .apply-password label{display:block;margin-top:10px}
 .apply-password small,.apply-pw-hint{display:block;color:#667085;font-size:11px;margin-top:5px}
+.download-button{display:flex;width:100%;min-height:56px;font-size:16px;margin:22px 0 6px}
+.download-steps{padding-left:22px;line-height:1.7;margin:0 0 14px}
+.download-steps li{margin-bottom:6px}
+.download-page .form-hint a{color:var(--brand,#1F6BFF);text-decoration:underline;text-underline-offset:3px}
 .apply-scan-note{border:1px solid #BFE3CC;background:#F0FAF3;color:#2F7D52;border-radius:10px;padding:10px 12px;margin-top:12px}

@@ -59,7 +59,7 @@ http://:8082 {
     redir @root /apply 302
     @staffPage {
         host {$IJARA_DOMAIN:ijara360.uz}
-        not path /api/* /apply /apply/* /invite /invite/* /app /app/* /brand/* /_next/* /icon.png /apple-icon.png /favicon.ico /robots.txt
+        not path /api/* /apply /apply/* /invite /invite/* /app /app/* /download /brand/* /_next/* /icon.png /apple-icon.png /favicon.ico /robots.txt
     }
     redir @staffPage https://admin.{$IJARA_DOMAIN:ijara360.uz}{uri} 302
     handle /api/telegram/* {
