@@ -20,6 +20,11 @@
 .apply-password small,.apply-pw-hint{display:block;color:#667085;font-size:11px;margin-top:5px}
 .download-button{display:flex;width:100%;min-height:56px;font-size:16px;margin:22px 0 6px}
 .download-steps{padding-left:22px;line-height:1.7;margin:0 0 14px}
+.download-button+.download-steps{margin-top:18px}
 .download-steps li{margin-bottom:6px}
+.download-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:5px;background:#EEF2F8;border-radius:14px;margin:20px 0 18px}
+.download-tabs button{min-height:44px;border:0;border-radius:10px;background:transparent;font:inherit;font-size:14px;font-weight:700;color:#5B6576;cursor:pointer;padding:6px 4px;line-height:1.2}
+.download-tabs button.active{background:#fff;color:var(--brand,#1F6BFF);box-shadow:0 1px 4px #0E1A3A1A}
+.download-page [role=tabpanel]>p:first-child{margin-top:0}
 .download-page .form-hint a{color:var(--brand,#1F6BFF);text-decoration:underline;text-underline-offset:3px}
 .apply-scan-note{border:1px solid #BFE3CC;background:#F0FAF3;color:#2F7D52;border-radius:10px;padding:10px 12px;margin-top:12px}

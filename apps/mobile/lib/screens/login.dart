@@ -156,10 +156,11 @@ class _LoginScreenState extends State<LoginScreen> {
           Text('Вход из интернета с нового устройства подтверждается в Telegram.', textAlign: TextAlign.center, style: t.bodySmall),
         if (kIsWeb) ...[
           const Gap(12),
+          // The download page picks the device: APK on Android, home-screen install on iPhone/iPad, browser install on a computer.
           OutlinedButton.icon(
-            onPressed: () => launchUrl(Uri.parse('${apiOrigin()}/app/ijara360.apk')),
-            icon: const Icon(Icons.android_rounded),
-            label: const Text('Скачать приложение для Android'),
+            onPressed: () => launchUrl(Uri.parse('${apiOrigin()}/download')),
+            icon: const Icon(Icons.install_mobile_rounded),
+            label: const Text('Установить приложение'),
           ),
         ],
         const Gap(14),

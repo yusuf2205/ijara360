@@ -26,7 +26,36 @@
 </head>
 <body>
   <div id="splash" aria-label="Ijara360 загружается" role="status"><img src="icons/Icon-192.png" alt=""><i></i></div>
+  <!-- Install offer, shown when the download page sends a computer here with ?install=1. -->
+  <div id="install" hidden role="dialog" aria-label="Установка приложения"><span></span><button id="install-yes" type="button">Установить</button><button id="install-no" type="button" aria-label="Закрыть">×</button></div>
+  <style>
+    #install{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:10px;background:#0E1A3A;color:#fff;padding:10px 10px 10px 16px;border-radius:14px;box-shadow:0 8px 24px #0006;font:600 14px system-ui,sans-serif;max-width:calc(100vw - 32px);box-sizing:border-box}
+    #install[hidden],#install button[hidden]{display:none}
+    #install button{border:0;border-radius:10px;font:700 14px system-ui,sans-serif;cursor:pointer}
+    #install-yes{background:#1F6BFF;color:#fff;padding:9px 14px;white-space:nowrap}
+    #install-no{background:transparent;color:#ffffffb0;font-size:20px;padding:4px 8px}
+  </style>
   <script>
+    (function () {
+      var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+      var asked = /[?&]install=1/.test(location.search);
+      var deferred = null;
+      function box() { return document.getElementById('install'); }
+      function show(text, canInstall) { var b = box(); if (!b || standalone) return; b.querySelector('span').textContent = text; document.getElementById('install-yes').hidden = !canInstall; b.hidden = false; }
+      window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; if (asked) show('Установить Ijara360 на этот компьютер?', true); });
+      window.addEventListener('appinstalled', function () { var b = box(); if (b) b.hidden = true; });
+      document.addEventListener('click', function (e) {
+        var id = e.target && e.target.id;
+        if (id === 'install-yes' && deferred) { deferred.prompt(); deferred.userChoice.finally(function () { deferred = null; box().hidden = true; }); }
+        if (id === 'install-no') box().hidden = true;
+      });
+      // No install prompt: Safari/Firefox can't offer one, and Chromium stays silent when it's already installed.
+      if (asked && !standalone) setTimeout(function () {
+        if (deferred) return;
+        var safariMac = /Mac/.test(navigator.platform) && /Safari/.test(navigator.userAgent) && !/Chrome|Edg/.test(navigator.userAgent);
+        show(safariMac ? 'Чтобы установить: меню «Файл» → «Добавить в Dock».' : 'Если Ijara360 ещё не установлено: меню браузера → «Установить приложение».', false);
+      }, 3500);
+    })();
     // Remove the splash once Flutter shows its first frame.
     window.addEventListener('flutter-first-frame', function () { var s = document.getElementById('splash'); if (s) { s.style.opacity = '0'; setTimeout(function () { s.remove(); }, 300); } });
   </script>

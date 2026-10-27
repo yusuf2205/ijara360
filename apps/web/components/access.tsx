@@ -105,7 +105,7 @@ export default function Access() {
           {!configured && step === 2 && <button className="button text wide" type="button" onClick={() => setStep(1)}>Назад</button>}
           {configured && <details className="forgot"><summary>Забыли пароль?</summary><p>Обратитесь к владельцу дома. Сменить пароль после входа можно в Настройках.</p></details>}
         </form>}
-        <div className="app-links"><a className="button secondary" href="/app">Открыть приложение</a><a className="button secondary" href="/app/ijara360.apk" download>Скачать для Android</a></div>
+        <div className="app-links"><a className="button secondary" href="/app">Открыть приложение</a><a className="button secondary" href="/download">Установить приложение</a></div>
         <p className="access-caption">Доступ только для владельца и управляющего.<br/>Роль определяется вашей учётной записью.</p>
       </div>
       <span className="access-footer">Ijara360 · Управление домом без лишних забот</span>
