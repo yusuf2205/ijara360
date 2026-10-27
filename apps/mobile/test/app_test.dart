@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -32,6 +33,8 @@ Widget host(Session s, Widget child, {Size size = const Size(390, 844)}) => Medi
     );
 
 void main() {
+  // The device-token keystore has no plugin under flutter test; this makes reads return empty instead of hanging.
+  FlutterSecureStorage.setMockInitialValues({});
   setUpAll(() => initializeDateFormatting('ru'));
 
   test('money and dates follow the Uzbek convention', () {

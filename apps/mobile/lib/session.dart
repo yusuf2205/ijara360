@@ -9,10 +9,12 @@ import 'location/agent.dart';
 enum Role { superAdmin, admin, tenant }
 
 class Approval {
-  Approval(this.id, this.pollToken, this.expiresAt, {this.byOwner = false});
+  Approval(this.id, this.pollToken, this.expiresAt, {this.byOwner = false, this.tenant = false});
   final String id;
-  /// Another staff member's login: the owner confirms it, not the person logging in.
+  /// Someone else confirms this login: for staff the owner, for a resident without Telegram the administration.
   final bool byOwner;
+  /// A resident login (polls the tenant endpoint) rather than a staff one.
+  final bool tenant;
   final String pollToken;
   final DateTime expiresAt;
 }
@@ -96,9 +98,10 @@ class Session extends ChangeNotifier {
 
   /// Polls once: true when the session exists, false while still waiting. Throws when denied or expired.
   Future<bool> pollApproval(Approval a) async {
-    final r = await api.post('/auth/login/approval', {'id': a.id, 'pollToken': a.pollToken, 'deviceToken': ?await api.deviceToken()}) as Map<String, dynamic>?;
+    final path = a.tenant ? '/tenant/auth/login/approval' : '/auth/login/approval';
+    final r = await api.post(path, {'id': a.id, 'pollToken': a.pollToken, 'deviceToken': ?await api.deviceToken()}) as Map<String, dynamic>?;
     if (r == null || r['status'] == 'PENDING') return false;
-    await _signedInStaff(r);
+    if (a.tenant) { await _signedInTenant(r); } else { await _signedInStaff(r); }
     return true;
   }
 
@@ -110,12 +113,30 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loginTenant(String phoneInput, String password, {required bool remember, String deviceName = 'Приложение Android'}) async {
-    final r = await api.post('/tenant/auth/login', {'phone': phoneInput, 'password': password, 'remember': remember, 'platform': api.platform, if (api.native) 'deviceName': deviceName}) as Map<String, dynamic>;
+  Future<void> _signedInTenant(Map<String, dynamic> r) async {
+    await api.saveDeviceToken(r['deviceToken'] as String?);
     await api.remember(Audience.tenant, r['token'] as String?);
     await _loadTenant();
     realtime.start();
     notifyListeners();
+  }
+
+  /// Resident login. Returns an [Approval] when the server wants a Telegram confirmation of this new device first.
+  Future<Approval?> loginTenant(String phoneInput, String password, {required bool remember, String deviceName = 'Приложение Android'}) async {
+    final r = await api.post('/tenant/auth/login', {
+      'phone': phoneInput,
+      'password': password,
+      'remember': remember,
+      'platform': api.platform,
+      if (api.native) 'deviceName': deviceName,
+      'deviceToken': ?await api.deviceToken(),
+    }) as Map<String, dynamic>;
+    if (r['approval'] is Map) {
+      final a = r['approval'] as Map;
+      return Approval(a['id'] as String, a['pollToken'] as String, DateTime.parse(a['expiresAt'] as String), byOwner: a['confirmBy'] == 'admin', tenant: true);
+    }
+    await _signedInTenant(r);
+    return null;
   }
 
   Future<void> logout() async {

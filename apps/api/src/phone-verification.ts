@@ -5,13 +5,14 @@ import {ApplicationService} from './applications.service';
 import {AuthService} from './auth';
 import {TelegramService} from './telegram';
 import {StaffTelegramService} from './staff-telegram';
+import {TenantTelegramService} from './tenant-telegram';
 import {digest,makeToken,normalizePhone,safeTokenEqual} from './security';
 
 type TelegramUpdate={update_id:number;message?:{from?:{id:number;is_bot?:boolean};chat:{id:number;type:string};text?:string;contact?:{user_id?:number;phone_number:string}};callback_query?:{id:string;from:{id:number};data?:string;message?:{chat:{id:number};message_id:number}}};
 @Injectable()
 export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
   private stopped=false;private timer?:NodeJS.Timeout;
-  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService,private readonly telegram:TelegramService,private readonly staff:StaffTelegramService){}
+  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService,private readonly telegram:TelegramService,private readonly staff:StaffTelegramService,private readonly tenantTg:TenantTelegramService){}
   ready(){return this.telegram.ready();}
   async challenge(a:RentalApplication){
     if(!this.ready())throw new ServiceUnavailableException('Подтверждение телефона пока не подключено.');
@@ -27,7 +28,7 @@ export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
   async call(method:string,body:unknown):Promise<any>{return this.telegram.call(method,body);}
   async send(chatId:number,text:string,reply_markup?:unknown){await this.call('sendMessage',{chat_id:chatId,text,reply_markup});}
   async handle(update:TelegramUpdate){
-    if(update.callback_query){await this.staff.decide(update.callback_query);return;}
+    if(update.callback_query){if(await this.staff.decide(update.callback_query))return;await this.tenantTg.decide(update.callback_query);return;}
     const m=update.message;if(!m||m.chat?.type!=='private'||!m.from||m.from.is_bot||m.from.id!==m.chat.id)return;
     const userId=String(m.from.id);
     if(m.text?.startsWith('/start ')){

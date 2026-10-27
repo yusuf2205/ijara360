@@ -442,10 +442,41 @@ model TenantAccount {
   resident Resident @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Restrict,onUpdate:Restrict)
   invites TenantInvite[]
   sessions TenantSession[]
+  trustedDevices TenantTrustedDevice[]
+  loginApprovals TenantLoginApproval[]
   @@unique([residentId, propertyId])
   @@index([propertyId])
   @@map("tenant_accounts")
   notifications Notification[]
+}
+// A resident's device that has already been confirmed once; later logins from it skip the Telegram step.
+model TenantTrustedDevice {
+  id String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+  label String @db.VarChar(120)
+  platform String @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  account TenantAccount @relation(fields:[accountId],references:[id],onDelete:Restrict)
+  @@index([accountId])
+  @@map("tenant_trusted_devices")
+}
+// A pending new-device login, confirmed in Telegram by the resident, or by an owner when the resident has none.
+model TenantLoginApproval {
+  id String @id @default(uuid()) @db.Uuid
+  accountId String @map("account_id") @db.Uuid
+  pollTokenHash String @unique @map("poll_token_hash") @db.Char(64)
+  status String @default("PENDING") @db.VarChar(20)
+  platform String @db.VarChar(20)
+  deviceName String @map("device_name") @db.VarChar(120)
+  remembered Boolean @default(false)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  account TenantAccount @relation(fields:[accountId],references:[id],onDelete:Restrict)
+  @@index([accountId])
+  @@map("tenant_login_approvals")
 }
 model TenantInvite {
   id String @id @default(uuid()) @db.Uuid

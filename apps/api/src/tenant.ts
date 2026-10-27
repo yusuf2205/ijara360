@@ -1,13 +1,14 @@
 import {Body,CanActivate,ConflictException,Controller,Delete,ExecutionContext,ForbiddenException,Get,GoneException,HttpCode,Injectable,Module,NotFoundException,Param,ParseUUIDPipe,Patch,Post,Req,Res,UnauthorizedException,UseGuards} from '@nestjs/common';
 import {Prisma} from '@prisma/client';
 import {Transform} from 'class-transformer';
-import {IsBoolean,IsIn,IsOptional,IsString,Length} from 'class-validator';
+import {IsBoolean,IsIn,IsOptional,IsString,IsUUID,Length} from 'class-validator';
 import {Request,Response} from 'express';
 import {Actor,AuthModule,AuthRequest,AuthService,SessionGuard,deviceLabel} from './auth';
 import {Database} from './database';
 import {requireAccess} from './permission-policy';
-import {digest,hashPassword,makeToken,normalizePhone,verifyPassword} from './security';
+import {digest,hashPassword,makeToken,normalizePhone,safeTokenEqual,verifyPassword} from './security';
 import {TelegramModule,TelegramService} from './telegram';
+import {TenantTelegramService} from './tenant-telegram';
 
 const DAY=86400000;
 const INVITE_TTL=2*DAY;
@@ -24,6 +25,12 @@ class TenantLoginDto{
   @IsOptional() @IsBoolean() remember?:boolean;
   @IsOptional() @IsIn(['WEB','ANDROID','IOS','WINDOWS']) platform?:'WEB'|'ANDROID'|'IOS'|'WINDOWS';
   @IsOptional() @Transform(({value})=>typeof value==='string'?value.trim():value) @IsString() @Length(1,120) deviceName?:string;
+  @IsOptional() @IsString() @Length(32,100) deviceToken?:string;
+}
+class TenantApprovalDto{
+  @IsUUID('4') id!:string;
+  @IsString() @Length(32,100) pollToken!:string;
+  @IsOptional() @IsString() @Length(32,100) deviceToken?:string;
 }
 type Issued={token:string;accountId:string;channel:'TELEGRAM'|'LINK';expiresAt:Date;telegramUserId:string|null};
 const sessionSelect={id:true,deviceName:true,platform:true,remembered:true,createdAt:true,lastSeenAt:true,expiresAt:true} as const;
@@ -32,10 +39,21 @@ function tenantToken(req:Request):string|undefined{
   const cookie=req.cookies?.ijara_tenant;if(typeof cookie==='string')return cookie;
   const h=req.headers.authorization;return typeof h==='string'&&h.startsWith('Bearer ')?h.slice(7).trim():undefined;
 }
+function tenantDeviceToken(req:Request,bodyToken?:string):string|undefined{
+  const c=req.cookies?.ijara_tenant_device;if(typeof c==='string'&&c)return c;
+  return bodyToken;
+}
+function tenantSession(r:{token:string;deviceToken:string|null;expiresAt:Date;platform:string},res:Response){
+  const secure=process.env.COOKIE_SECURE!=='false';
+  if(r.platform!=='WEB')return {token:r.token,deviceToken:r.deviceToken,expiresAt:r.expiresAt};
+  res.cookie('ijara_tenant',r.token,{httpOnly:true,secure,sameSite:'strict',path:'/api/tenant',expires:r.expiresAt});
+  if(r.deviceToken)res.cookie('ijara_tenant_device',r.deviceToken,{httpOnly:true,secure,sameSite:'strict',path:'/api/tenant',expires:new Date(Date.now()+400*DAY)});
+  return {expiresAt:r.expiresAt};
+}
 
 @Injectable()
 export class TenantAccountsService {
-  constructor(private readonly db:Database,private readonly telegram:TelegramService,private readonly auth:AuthService){}
+  constructor(private readonly db:Database,private readonly telegram:TelegramService,private readonly auth:AuthService,private readonly tenantTelegram:TenantTelegramService){}
   link(token:string){return `${this.telegram.origin()}/invite#${token}`;}
   /**
    * Creates or re-activates the resident's account and a fresh one-time invite inside the caller's transaction.
@@ -128,18 +146,57 @@ export class TenantAccountsService {
       return {phone:a.phone};
     });
   }
-  async login(dto:TenantLoginDto,ip:string,userAgent?:string){
+  /**
+   * A new device is confirmed in Telegram first (owner's decision 2026-10-27): the resident confirms in their own
+   * Telegram, or an owner confirms for a resident who has none. A device confirmed once is trusted afterwards. If
+   * nobody can confirm (resident has no Telegram and no owner linked one) the login goes through, so no lockout.
+   */
+  async login(dto:TenantLoginDto,ip:string,userAgent:string|undefined,ctx:{deviceToken?:string}){
     const phone=normalizePhone(dto.phone);
     await this.auth.rateLimit('tenant-login-ip',ip,40);
     await this.auth.rateLimit('tenant-login-phone',phone,10);
-    const a=await this.db.tenantAccount.findUnique({where:{phone},include:{resident:{include:{property:{select:{active:true}},occupancies:{where:{status:'ACTIVE'},select:{id:true}}}}}});
+    const a=await this.db.tenantAccount.findUnique({where:{phone},include:{resident:{select:{fullName:true,property:{select:{active:true}},occupancies:{where:{status:'ACTIVE'},select:{id:true}}}}}});
     const valid=await verifyPassword(dto.password,a?.passwordHash||'scrypt$00$00');
     if(!valid||!a?.active||!a.resident.property.active||!a.resident.occupancies.length)throw new UnauthorizedException('Неверный телефон или пароль.');
-    const token=makeToken();const now=new Date();const remembered=Boolean(dto.remember);
-    const expiresAt=new Date(now.getTime()+(remembered?30:1)*DAY);const platform=dto.platform??'WEB';
-    await this.db.tenantSession.create({data:{tokenHash:digest(token),accountId:a.id,expiresAt,platform,deviceName:dto.deviceName||deviceLabel(userAgent),remembered,lastSeenAt:now}});
-    await this.db.tenantSession.deleteMany({where:{expiresAt:{lt:now}}});
-    return {token,expiresAt,platform};
+    const device={platform:dto.platform??'WEB',deviceName:dto.deviceName||deviceLabel(userAgent),remembered:Boolean(dto.remember)};
+    const trusted=ctx.deviceToken?await this.db.tenantTrustedDevice.findFirst({where:{tokenHash:digest(ctx.deviceToken),accountId:a.id}}):null;
+    if(trusted)return this.issueSession(a.id,device,trusted.id);
+    // The first device is trusted without a second step: the registration was already confirmed through the
+    // Telegram invite. Every later new device is confirmed in Telegram (resident's own, or an owner's).
+    const known=await this.db.tenantTrustedDevice.count({where:{accountId:a.id}});
+    if(known===0)return this.issueSession(a.id,device,null);
+    const approval=await this.tenantTelegram.requestApproval({id:a.id,residentId:a.residentId,propertyId:a.propertyId,telegramUserId:a.telegramUserId,fullName:a.resident.fullName},device);
+    if(!approval)return this.issueSession(a.id,device,null);
+    return {kind:'approval' as const,approval};
+  }
+  private async issueSession(accountId:string,device:{platform:string;deviceName:string;remembered:boolean},trustedId:string|null){
+    const token=makeToken();const deviceToken=trustedId?null:makeToken();const now=new Date();
+    const expiresAt=new Date(now.getTime()+(device.remembered?30:1)*DAY);
+    await this.db.$transaction(async tx=>{
+      await tx.tenantSession.create({data:{tokenHash:digest(token),accountId,expiresAt,platform:device.platform,deviceName:device.deviceName,remembered:device.remembered,lastSeenAt:now}});
+      if(trustedId)await tx.tenantTrustedDevice.update({where:{id:trustedId},data:{lastUsedAt:now}});
+      else{
+        await tx.tenantTrustedDevice.create({data:{accountId,tokenHash:digest(deviceToken!),label:device.deviceName,platform:device.platform}});
+        // Keep the 20 most recently used devices per account.
+        const stale=await tx.tenantTrustedDevice.findMany({where:{accountId},orderBy:{lastUsedAt:'desc'},skip:20,select:{id:true}});
+        if(stale.length)await tx.tenantTrustedDevice.deleteMany({where:{id:{in:stale.map(d=>d.id)}}});
+      }
+      await tx.tenantSession.deleteMany({where:{expiresAt:{lt:now}}});
+    });
+    return {kind:'session' as const,token,deviceToken,expiresAt,platform:device.platform};
+  }
+  /** The app or browser polls until the Telegram button is pressed; an approved request yields exactly one session. */
+  async completeApproval(dto:TenantApprovalDto,ctx:{deviceToken?:string}){
+    await this.auth.rateLimit('tenant-login-approval',dto.id,200);
+    const a=await this.db.tenantLoginApproval.findUnique({where:{id:dto.id}});
+    if(!a||!safeTokenEqual(digest(dto.pollToken),a.pollTokenHash))throw new NotFoundException('Запрос на вход не найден.');
+    if(a.status==='DENIED')throw new ForbiddenException('Вход отклонён.');
+    if(a.status==='USED'||(a.status==='PENDING'&&a.expiresAt<=new Date()))throw new GoneException('Время на подтверждение истекло. Войдите снова.');
+    if(a.status==='PENDING')return {kind:'pending' as const};
+    const used=await this.db.tenantLoginApproval.updateMany({where:{id:a.id,status:'APPROVED'},data:{status:'USED'}});
+    if(!used.count)throw new GoneException('Время на подтверждение истекло. Войдите снова.');
+    const trusted=ctx.deviceToken?await this.db.tenantTrustedDevice.findFirst({where:{tokenHash:digest(ctx.deviceToken),accountId:a.accountId}}):null;
+    return this.issueSession(a.accountId,{platform:a.platform,deviceName:a.deviceName,remembered:a.remembered},trusted?.id??null);
   }
   async me(t:Tenant){
     const r=await this.db.resident.findUniqueOrThrow({where:{id:t.residentId},include:{property:{select:{name:true,address:true}},occupancies:{where:{status:'ACTIVE'},include:{room:{select:{number:true}},bed:{select:{number:true}}}}}});
@@ -180,10 +237,15 @@ class TenantController {
   @Post('invites/accept') @HttpCode(200) accept(@Body() dto:AcceptInviteDto,@Req() req:Request){return this.service.accept(dto,req.ip||'unknown');}
   @Post('auth/login') @HttpCode(200)
   async login(@Body() dto:TenantLoginDto,@Req() req:Request,@Res({passthrough:true}) res:Response){
-    const r=await this.service.login(dto,req.ip||'unknown',req.headers['user-agent']);
-    if(r.platform!=='WEB')return {token:r.token,expiresAt:r.expiresAt};
-    res.cookie('ijara_tenant',r.token,{httpOnly:true,secure:process.env.COOKIE_SECURE!=='false',sameSite:'strict',path:'/api/tenant',expires:r.expiresAt});
-    return {expiresAt:r.expiresAt};
+    const r=await this.service.login(dto,req.ip||'unknown',req.headers['user-agent'],{deviceToken:tenantDeviceToken(req,dto.deviceToken)});
+    if(r.kind==='approval'){res.status(202);return {approval:r.approval};}
+    return tenantSession(r,res);
+  }
+  @Post('auth/login/approval') @HttpCode(200)
+  async approval(@Body() dto:TenantApprovalDto,@Req() req:Request,@Res({passthrough:true}) res:Response){
+    const r=await this.service.completeApproval(dto,{deviceToken:tenantDeviceToken(req,dto.deviceToken)});
+    if(r.kind==='pending'){res.status(202);return {status:'PENDING'};}
+    return tenantSession(r,res);
   }
   @Post('auth/logout') @HttpCode(204)
   async logout(@Req() req:Request,@Res({passthrough:true}) res:Response){
@@ -206,5 +268,5 @@ class TenantAccountController {
   }
 }
 
-@Module({imports:[AuthModule,TelegramModule],providers:[TenantAccountsService,TenantGuard],controllers:[TenantController,TenantAccountController],exports:[TenantAccountsService,TenantGuard]})
+@Module({imports:[AuthModule,TelegramModule],providers:[TenantAccountsService,TenantTelegramService,TenantGuard],controllers:[TenantController,TenantAccountController],exports:[TenantAccountsService,TenantTelegramService,TenantGuard]})
 export class TenantModule{}

@@ -47,6 +47,13 @@ async function livingResident(n=1){
  await send(owner,'post','/occupancies/check-in').send({residentId:r.id,bedId:beds[n].id,moveInDate:'2026-09-01',monthlyPrice:'500000',paymentDay:5,depositAmount:'0'}).expect(201);
  return r;
 }
+async function linkOwnerTelegram(tg=7,phone='+998900000001'){
+ const {url}=(await send(owner,'post','/auth/telegram/link').expect(201)).body;
+ const token=new URL(url).searchParams.get('start');
+ await phoneService.handle({update_id:1,message:{from:{id:tg},chat:{id:tg,type:'private'},text:`/start ${token}`}});
+ await phoneService.handle({update_id:2,message:{from:{id:tg},chat:{id:tg,type:'private'},contact:{user_id:tg,phone_number:phone}}});
+}
+const pollTenant=(id,pollToken)=>request(server).post('/api/tenant/auth/login/approval').set('X-Ijara-Request','1').send({id,pollToken});
 
 test('converted applicant receives a Telegram invite, sets a password once and signs in to the tenant API only',async()=>{
  const result=await convertedApplicant();
@@ -155,4 +162,54 @@ test('tenants list and end their own sessions; a new password signs out every de
  await send(request(server),'post','/tenant/invites/accept').send({token:tokenFrom(reset),password:'Tenant own password 2'}).expect(200);
  await bearer('get','/tenant/me',a).expect(401);
  assert.ok(await db.auditLog.findFirst({where:{action:'TENANT_PASSWORD_RESET'}}));
+});
+
+test('a resident is confirmed in their Telegram on a new device; the first device needs no second step',async()=>{
+ const phone='+998900000033',pw='Chosen in application 1';
+ await convertedApplicant(phone,33);
+ sent=[];
+ // First device: trusted straight away — the registration was already confirmed through the Telegram invite.
+ const a=(await tenantLogin(phone,{password:pw}).expect(200)).body;
+ assert.ok(a.token&&a.deviceToken,'the first device gets a session and a device token');
+ assert.equal(sent.filter(s=>s.method==='sendMessage').length,0,'no confirmation on the first device');
+ // Second device: confirmed in the resident's own Telegram.
+ const pending=(await tenantLogin(phone,{password:pw,deviceName:'Second phone'}).expect(202)).body.approval;
+ assert.equal(pending.confirmBy,'self');
+ const msg=sent.find(s=>s.method==='sendMessage');assert.equal(String(msg.body.chat_id),'33');
+ const [yes,no]=msg.body.reply_markup.inline_keyboard[0];
+ assert.equal(yes.callback_data,`tla:${pending.id}`);assert.equal(no.callback_data,`tld:${pending.id}`);
+ assert.equal((await pollTenant(pending.id,pending.pollToken).expect(202)).body.status,'PENDING');
+ // Another Telegram account cannot approve.
+ await phoneService.handle({update_id:50,callback_query:{id:'c1',from:{id:999},data:`tla:${pending.id}`}});
+ assert.equal((await pollTenant(pending.id,pending.pollToken).expect(202)).body.status,'PENDING');
+ await phoneService.handle({update_id:51,callback_query:{id:'c2',from:{id:33},data:`tla:${pending.id}`,message:{chat:{id:33},message_id:7}}});
+ const done=(await pollTenant(pending.id,pending.pollToken).expect(200)).body;
+ assert.ok(done.token&&done.deviceToken,'the approval yields a session and a device token');
+ await pollTenant(pending.id,pending.pollToken).expect(410);
+ // The confirmed device is trusted now: a later login from it needs no confirmation.
+ sent=[];
+ await tenantLogin(phone,{password:pw,deviceToken:done.deviceToken}).expect(200);
+ assert.equal(sent.filter(s=>s.method==='sendMessage').length,0);
+ const audit=(await db.auditLog.findMany({where:{action:{in:['TENANT_LOGIN_APPROVAL_REQUESTED','TENANT_LOGIN_APPROVED']}}})).map(x=>x.action).sort();
+ assert.deepEqual(audit,['TENANT_LOGIN_APPROVAL_REQUESTED','TENANT_LOGIN_APPROVED']);
+});
+
+test('a resident without Telegram is confirmed by the owner; with no channel at all the login goes through',async()=>{
+ const r=await livingResident();
+ const link=(await send(owner,'post',`/residents/${r.id}/app-invite`).send({}).expect(200)).body.link;
+ await send(request(server),'post','/tenant/invites/accept').send({token:tokenFrom(link),password:'Tenant own password 1'}).expect(200);
+ await tenantLogin('+998901000001').expect(200); // first device, trusted
+ sent=[];
+ // No owner Telegram and the resident has none: a second device is let through so no one is locked out.
+ await tenantLogin('+998901000001',{deviceName:'Device 2'}).expect(200);
+ assert.equal(sent.filter(s=>s.method==='sendMessage').length,0,'nobody to confirm → login allowed');
+ // Link the owner's Telegram: now a new resident device is confirmed by the administration (the owner).
+ await linkOwnerTelegram();
+ sent=[];
+ const pending=(await tenantLogin('+998901000001',{deviceName:'Device 3'}).expect(202)).body.approval;
+ assert.equal(pending.confirmBy,'admin');
+ const msg=sent.find(s=>s.method==='sendMessage');assert.equal(String(msg.body.chat_id),'7');
+ assert.match(msg.body.text,/Manual Resident 1/);
+ await phoneService.handle({update_id:60,callback_query:{id:'o1',from:{id:7},data:`tla:${pending.id}`}});
+ assert.ok((await pollTenant(pending.id,pending.pollToken).expect(200)).body.token);
 });

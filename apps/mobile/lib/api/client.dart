@@ -63,8 +63,9 @@ class ApiClient {
   }
 
   String? get token => _token;
-  Future<String?> deviceToken() async => native ? _storage.read(key: _deviceKey) : null;
-  Future<void> saveDeviceToken(String? t) async { if (native && t != null) await _storage.write(key: _deviceKey, value: t); }
+  // The keystore can be unavailable (tests, a device without secure storage): never let that break a login.
+  Future<String?> deviceToken() async { if (!native) return null; try { return await _storage.read(key: _deviceKey); } catch (_) { return null; } }
+  Future<void> saveDeviceToken(String? t) async { if (native && t != null) { try { await _storage.write(key: _deviceKey, value: t); } catch (_) {} } }
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',

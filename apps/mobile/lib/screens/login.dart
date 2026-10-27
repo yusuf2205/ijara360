@@ -33,14 +33,12 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() { busy = true; error = null; });
     final session = SessionScope.of(context);
     try {
-      if (who == Audience.tenant) {
-        await session.loginTenant(phone.text.trim(), password.text, remember: remember);
-      } else {
-        final approval = await session.loginStaff(phone.text.trim(), password.text, remember: remember);
-        if (approval != null && mounted) {
-          final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => ApprovalScreen(approval: approval)));
-          if (ok != true && mounted) setState(() => error = 'Вход не подтверждён. Попробуйте снова.');
-        }
+      final approval = who == Audience.tenant
+          ? await session.loginTenant(phone.text.trim(), password.text, remember: remember)
+          : await session.loginStaff(phone.text.trim(), password.text, remember: remember);
+      if (approval != null && mounted) {
+        final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => ApprovalScreen(approval: approval)));
+        if (ok != true && mounted) setState(() => error = 'Вход не подтверждён. Попробуйте снова.');
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => error = e.message);
