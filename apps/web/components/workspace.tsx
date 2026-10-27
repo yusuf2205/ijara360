@@ -217,7 +217,6 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
         {view === 'location-history' && residentId && (permissions.includes('VIEW_LOCATION_HISTORY') ? <LocationHistory residentId={residentId} name={residents.find(r=>r.id===residentId)?.fullName}/> : loaded && <p className="error" role="alert">У вас нет доступа к истории перемещений.</p>)}
         {view === 'history' && <><div className="page-heading"><div><div className="heading-kicker">ПРОЗРАЧНЫЙ УЧЁТ</div><h1>История действий</h1><p>Кто и когда менял данные. Последние 100 действий.</p></div></div><ActivityList items={activity}/></>}
         {view === 'settings' && <>
-          {owner && <SystemPanel/>}{owner && <PermissionPanel/>}<TelegramPanel/><SessionsPanel owner={owner}/>
           <div className="page-heading"><div><div className="heading-kicker">ВАШЕ ПРОСТРАНСТВО</div><h1>Настройки</h1><p>Данные дома и доступ сотрудников.</p></div></div>
           <div className="settings-grid"><section className="panel"><div className="panel-heading"><Building2 size={22}/><h2>Ваш дом</h2></div><form onSubmit={saveProperty} key={property?.name}><label>Название дома<input name="name" defaultValue={property?.name} required maxLength={120} disabled={!owner}/></label><label>Адрес<input name="address" defaultValue={property?.address || ''} maxLength={500} disabled={!owner}/></label>{owner && <button className="button primary" disabled={busy}>Сохранить</button>}</form></section>
           <section className="panel"><div className="panel-heading"><ShieldCheck size={22}/><h2>Моя учётная запись</h2></div><div className="account-details"><span className="avatar large">{user?.fullName.slice(0,1)}</span><div><strong>{user?.fullName}</strong><p>{user?.phone}</p><span className="status-pill">{owner ? 'Владелец' : 'Управляющий'}</span></div></div><div className="account-actions"><button className="button secondary" onClick={() => open('password')}>Изменить пароль</button><button className="button text" onClick={logout}><LogOut size={16}/>Выйти из аккаунта</button></div></section></div>
@@ -228,6 +227,10 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
             <button disabled={busy} className="button text" onClick={() => changeAccess(member)}>{member.active ? 'Отключить' : 'Включить'}</button>
             <button disabled={busy} className="icon-button danger" title="Удалить" aria-label={`Удалить: ${member.fullName}`} onClick={() => { setFormError(''); setStaffAction({ member, kind: 'delete' }); }}><Trash2 size={17}/></button>
           </div> : <span className="status-pill">Владелец</span>}</div>)}</div></section>}
+          {owner && <PermissionPanel/>}
+          <TelegramPanel/>
+          <SessionsPanel owner={owner}/>
+          {owner && <SystemPanel/>}
         </>}
         <footer className="page-footer"><span><ShieldCheck size={14}/>Данные сохранены на вашем сервере</span><span>Обновлено в {updatedAt}</span></footer>
         </>}

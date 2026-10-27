@@ -41,3 +41,10 @@
 .camera-error{padding:28px;text-align:center;font-weight:600}
 .camera-actions{display:flex;gap:12px;padding:16px;justify-content:center}
 .camera-actions .button{flex:1;max-width:220px}
+.permission-staff{border:1px solid var(--line,#E3E8F0);border-radius:12px;margin:10px 0;overflow:hidden;background:#fff}
+.permission-staff>summary{cursor:pointer;padding:14px 16px;font-weight:700;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.permission-staff>summary::-webkit-details-marker{display:none}
+.permission-staff>summary::after{content:'▾';color:#667085;font-size:12px;transition:transform .2s}
+.permission-staff[open]>summary{border-bottom:1px solid var(--line,#E3E8F0)}
+.permission-staff[open]>summary::after{transform:rotate(180deg)}
+.permission-staff>form{padding:16px}
