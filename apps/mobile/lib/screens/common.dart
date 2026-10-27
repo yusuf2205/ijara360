@@ -5,6 +5,7 @@ import '../api/client.dart';
 import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
+import '../update.dart';
 
 String monthName(Object? iso) => iso == null ? '' : DateFormat('LLLL', 'ru').format(DateTime.parse('$iso').toUtc());
 
@@ -233,6 +234,39 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
       );
 }
 
+/// Version line plus a manual "Проверить обновления" button. The app also updates itself in the background;
+/// this is for when that has not happened yet (the owner asked for a manual check as a fallback).
+class _AppVersionCard extends StatefulWidget {
+  const _AppVersionCard();
+  @override
+  State<_AppVersionCard> createState() => _AppVersionCardState();
+}
+
+class _AppVersionCardState extends State<_AppVersionCard> {
+  bool busy = false;
+  @override
+  Widget build(BuildContext context) => AppCard(
+        child: Row(children: [
+          const IconChip(Icons.info_outline_rounded, tone: Tone.gray),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Ijara360', style: manrope(15, FontWeight.w700)),
+            Text('Версия $appVersionLabel', style: Theme.of(context).textTheme.bodySmall),
+          ])),
+          if (updatesSupported)
+            busy
+                ? const Padding(padding: EdgeInsets.all(8), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4)))
+                : TextButton(
+                    onPressed: () async {
+                      setState(() => busy = true);
+                      try { await checkForUpdateNow(context); } finally { if (mounted) setState(() => busy = false); }
+                    },
+                    child: const Text('Проверить обновления'),
+                  ),
+        ]),
+      );
+}
+
 /// A ticket thread. Tenants and staff use the same screen; staff with TICKETS_MANAGE get status buttons.
 class TicketScreen extends StatefulWidget {
   const TicketScreen({super.key, required this.id});
@@ -382,6 +416,9 @@ class ProfileScreen extends StatelessWidget {
               }, child: const Text('Завершить')),
             ])),
           ),
+          const Gap(20),
+          const SectionTitle('О приложении'),
+          const _AppVersionCard(),
           const Gap(20),
           OutlinedButton.icon(
             onPressed: () async {

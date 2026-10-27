@@ -65,6 +65,41 @@ Future<bool> _fetch(String path, File target) async {
   }
 }
 
+/// Whether this build can update itself (Android release build). False on web and in debug/test runs.
+bool get updatesSupported => _enabled;
+
+/// Version line for the Профиль «О приложении» card.
+String get appVersionLabel => buildNumber > 0 ? '1.0.$buildNumber' : 'веб-версия';
+
+/// The Профиль button. Checks the server now and answers either way, then downloads and installs if there is
+/// a newer build. Auto-update still runs on its own in the background; this is the manual fallback for when it
+/// has not happened yet (no internet earlier, install permission not granted, etc.).
+Future<void> checkForUpdateNow(BuildContext context) async {
+  final messenger = ScaffoldMessenger.of(context);
+  void say(String m) { messenger.clearSnackBars(); messenger.showSnackBar(SnackBar(content: Text(m))); }
+  if (!_enabled) { say('Обновление устанавливается только в приложении для Android. Веб-версия обновляется сама.'); return; }
+  say('Проверяем обновления…');
+  final latest = await newerRelease();
+  if (latest == null) { say('Установлена последняя версия (1.0.$buildNumber).'); return; }
+  try {
+    final dir = Directory((await _native.invokeMethod<String>('updateDir'))!);
+    final apk = File('${dir.path}/ijara360-$latest.apk');
+    if (!await apk.exists()) {
+      say('Скачиваем новую версию (1.0.$latest)…');
+      if (!await _download(apk)) { say('Не удалось скачать. Проверьте интернет и попробуйте ещё раз.'); return; }
+    }
+    if (!(await _native.invokeMethod<bool>('canInstall') ?? false)) {
+      say('Разрешите установку обновлений — сейчас откроются настройки.');
+      await _native.invokeMethod('openInstallSettings');
+      return;
+    }
+    messenger.clearSnackBars();
+    await _native.invokeMethod('installNow', {'path': apk.path});
+  } catch (_) {
+    say('Не удалось обновить. Попробуйте позже.');
+  }
+}
+
 enum _Stage { idle, silent, needsPermission, needsConfirm, failed }
 
 /// Updates the Android app in the background: a newer release is downloaded while the app is in use and

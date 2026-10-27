@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -732,16 +733,85 @@ class ApplicationScreen extends StatelessWidget {
             if (text('position') != null) KeyValue('Должность', text('position')!),
             KeyValue('Заселение', day(p['requestedMoveInDate'])),
             if (text('plannedDuration') != null) KeyValue('Срок', text('plannedDuration')!),
+            if (text('dateOfBirth') != null) KeyValue('Дата рождения', day(p['dateOfBirth'])),
+            if (text('passportSeries') != null || text('passportNumber') != null) KeyValue('Паспорт', '${p['passportSeries'] ?? ''} ${p['passportNumber'] ?? ''}'.trim()),
+            if (text('pinfl') != null) KeyValue('ПИНФЛ', text('pinfl')!),
+            if (text('emergencyName') != null || text('emergencyPhone') != null)
+              KeyValue('Экстренный контакт', [text('emergencyName'), if (text('emergencyRelationship') != null) '(${text('emergencyRelationship')})', text('emergencyPhone')].where((x) => x != null).join(' ')),
+            if (text('comment') != null) KeyValue('Комментарий', text('comment')!),
           ])),
           const Gap(14),
-          AppCard(color: Brand.blueSoft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Документы и решение', style: manrope(15, FontWeight.w800)),
-            const Gap(4),
-            const Text('Паспорт и фото лица открываются только в кабинете: там просмотр записывается в журнал доступа.'),
-            const Gap(12),
-            FilledButton.icon(onPressed: () => launchUrl(Uri.parse('${apiOrigin()}/applications/$id'), mode: LaunchMode.externalApplication), icon: const Icon(Icons.open_in_new_rounded), label: const Text('Открыть в кабинете')),
-          ])),
+          _DocumentsCard(applicationId: id, documents: (a['documents'] as List?)?.cast<Map<String, dynamic>>() ?? const [], version: a['version']),
         ]);
+        },
+      ),
+    );
+  }
+}
+
+String docLabel(String kind) => switch (kind) {
+      'FACE' => 'Фото лица',
+      'PASSPORT_FRONT' => 'Паспорт: лицевая сторона',
+      'PASSPORT_BACK' => 'Паспорт: обратная сторона',
+      _ => 'Документ',
+    };
+
+/// Passport and face photos, shown inside the app. Each image is fetched through the audited endpoint, so a
+/// view here is written to the access journal exactly as in the cabinet. The list is already filtered by the
+/// viewer's rights on the server, so a staffer without passport rights simply sees nothing to open.
+class _DocumentsCard extends StatelessWidget {
+  const _DocumentsCard({required this.applicationId, required this.documents, required this.version});
+  final String applicationId;
+  final List<Map<String, dynamic>> documents;
+  final Object? version;
+  @override
+  Widget build(BuildContext context) => AppCard(
+        color: Brand.blueSoft,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Документы и фото', style: manrope(15, FontWeight.w800)),
+          const Gap(4),
+          Text(documents.isEmpty
+              ? 'Нет прав на просмотр паспорта и фото лица, либо документы ещё не загружены.'
+              : 'Каждое открытие фиксируется в журнале доступа.'),
+          if (documents.isNotEmpty) ...[
+            const Gap(12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final d in documents)
+                FilledButton.icon(
+                  onPressed: () => openPage(context, _DocViewer(applicationId: applicationId, kind: '${d['kind']}', version: version, title: docLabel('${d['kind']}'))),
+                  icon: Icon('${d['kind']}' == 'FACE' ? Icons.face_rounded : Icons.badge_outlined, size: 18),
+                  label: Text(docLabel('${d['kind']}')),
+                ),
+            ]),
+          ],
+        ]),
+      );
+}
+
+/// Full-screen, zoomable view of one document. The bytes come with the bearer token (ApiClient.bytes).
+class _DocViewer extends StatelessWidget {
+  const _DocViewer({required this.applicationId, required this.kind, required this.version, required this.title});
+  final String applicationId;
+  final String kind;
+  final Object? version;
+  final String title;
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    return Scaffold(
+      backgroundColor: Brand.ink,
+      appBar: AppBar(backgroundColor: Brand.ink, foregroundColor: Brand.white, title: Text(title)),
+      body: FutureBuilder<Uint8List>(
+        future: api.bytes('/applications/$applicationId/documents/$kind', {'v': '$version'}),
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator(color: Brand.white));
+          if (snap.hasError) {
+            return Center(child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('${snap.error}', textAlign: TextAlign.center, style: manrope(14, FontWeight.w600, color: Brand.white)),
+            ));
+          }
+          return InteractiveViewer(minScale: 1, maxScale: 6, child: Center(child: Image.memory(snap.data!)));
         },
       ),
     );

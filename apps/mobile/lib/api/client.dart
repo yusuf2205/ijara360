@@ -104,6 +104,28 @@ class ApiClient {
     return data;
   }
 
+  /// Raw bytes from an authenticated GET — passport and face images, which come back as JPEG, not JSON.
+  /// The server audits each view (DOCUMENT_VIEWED / BIOMETRIC_SOURCE_VIEWED) exactly as for the web cabinet.
+  Future<Uint8List> bytes(String path, [Map<String, String>? query]) async {
+    final request = http.Request('GET', _uri(path, query))
+      ..headers.addAll({'X-Ijara-Request': '1', if (native && _token != null) 'Authorization': 'Bearer $_token'});
+    http.StreamedResponse res;
+    try {
+      res = await _http.send(request).timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      throw ApiException(0, 'Сервер не отвечает. Проверьте интернет и попробуйте ещё раз.');
+    } catch (_) {
+      throw ApiException(0, 'Нет соединения с сервером. Проверьте интернет и попробуйте ещё раз.');
+    }
+    final body = await res.stream.toBytes();
+    if (res.statusCode >= 400) {
+      String? m;
+      try { final d = jsonDecode(utf8.decode(body)); if (d is Map && d['message'] is String) m = d['message'] as String; } catch (_) {}
+      throw ApiException(res.statusCode, m ?? 'Не удалось открыть изображение.');
+    }
+    return body;
+  }
+
   dynamic _decode(String text) { try { return jsonDecode(text); } catch (_) { return null; } }
 
   /// Random UUID v4 for idempotent writes (payments): a retried request never records twice.
