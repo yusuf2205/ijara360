@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api/client.dart';
@@ -100,7 +102,7 @@ Future<void> checkForUpdateNow(BuildContext context) async {
   }
 }
 
-enum _Stage { idle, silent, needsPermission, needsConfirm, failed }
+enum _Stage { idle, silent, needsPermission, needsConfirm, failed, updated }
 
 /// Updates the Android app in the background: a newer release is downloaded while the app is in use and
 /// installed by the system once the app leaves the screen (SelfUpdate.kt), so the next launch is already new.
@@ -121,7 +123,27 @@ class _UpdateBannerState extends State<UpdateBanner> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _check();
+    _startup();
+  }
+
+  Future<void> _startup() async {
+    await _announceIfUpdated();
+    await _check();
+  }
+
+  /// Shows a short "Обновлено до 1.0.X" confirmation the first time a build runs after it was installed — so a
+  /// silent background update is visible to the person. Compares this build to the last one that ran on the phone.
+  Future<void> _announceIfUpdated() async {
+    if (!_enabled) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final last = prefs.getInt('ijara_last_build') ?? 0;
+      await prefs.setInt('ijara_last_build', buildNumber);
+      if (last > 0 && buildNumber > last) {
+        _set(_Stage.updated);
+        Timer(const Duration(seconds: 6), () { if (mounted && _stage == _Stage.updated) _set(_Stage.idle); });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -151,7 +173,7 @@ class _UpdateBannerState extends State<UpdateBanner> with WidgetsBindingObserver
         // Up to date (or offline): drop leftovers of an update that has been installed meanwhile.
         if (await dir.exists()) { for (final f in dir.listSync()) { try { f.deleteSync(); } catch (_) {} } }
         await _native.invokeMethod('clear');
-        _set(_Stage.idle);
+        if (_stage != _Stage.updated) _set(_Stage.idle); // don't clobber the "just updated" confirmation
         return;
       }
       final apk = File('${dir.path}/ijara360-$latest.apk');
@@ -194,6 +216,7 @@ class _UpdateBannerState extends State<UpdateBanner> with WidgetsBindingObserver
       _Stage.needsPermission => (Icons.autorenew_rounded, 'Автообновление', 'Разрешите один раз — дальше всё само', 'Разрешить'),
       _Stage.needsConfirm => (Icons.download_done_rounded, 'Версия скачана', 'Установка займёт пару секунд', 'Установить'),
       _Stage.failed => (Icons.rocket_launch_rounded, 'Новая версия', 'Скачайте и установите', 'Обновить'),
+      _Stage.updated => (Icons.check_circle_rounded, 'Готово', 'Обновлено до версии 1.0.$buildNumber', ''),
       _ => (Icons.circle, '', '', ''),
     };
     final visible = title.isNotEmpty && !_dismissed;
@@ -238,22 +261,25 @@ class _UpdateBannerState extends State<UpdateBanner> with WidgetsBindingObserver
                           Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: manrope(12.5, FontWeight.w600, color: Brand.blueLight, height: 1.3)),
                         ]),
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _busy ? null : _act,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Brand.white,
-                          foregroundColor: Brand.blue,
-                          disabledBackgroundColor: Brand.white.withValues(alpha: .6),
-                          minimumSize: const Size(0, 40),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          shape: const StadiumBorder(),
-                          textStyle: manrope(13.5, FontWeight.w800),
+                      if (action.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _busy ? null : _act,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Brand.white,
+                            foregroundColor: Brand.blue,
+                            disabledBackgroundColor: Brand.white.withValues(alpha: .6),
+                            minimumSize: const Size(0, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            shape: const StadiumBorder(),
+                            textStyle: manrope(13.5, FontWeight.w800),
+                          ),
+                          child: _busy
+                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Brand.blue))
+                              : Text(action),
                         ),
-                        child: _busy
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Brand.blue))
-                            : Text(action),
-                      ),
+                      ] else
+                        const SizedBox(width: 8),
                       // No tooltip: this card sits above the Navigator, where there is no Overlay for one.
                       Semantics(
                         label: 'Позже',
