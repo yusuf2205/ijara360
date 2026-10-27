@@ -66,6 +66,7 @@ class StaffHome extends StatelessWidget {
         final rooms = (d['rooms'] as List).cast<Map<String, dynamic>>();
         final beds = rooms.fold<int>(0, (n, r) => n + (r['totalBeds'] as int));
         final busy = rooms.fold<int>(0, (n, r) => n + (r['occupiedBeds'] as int));
+        final busyRooms = rooms.where((r) => (r['occupiedBeds'] as int? ?? 0) > 0).length;
         final fin = d['finance'] as Map<String, dynamic>?;
         final debtors = fin == null ? null : (fin['residents'] as List).where((r) => (num.tryParse('${r['totalDebt']}') ?? 0) > 0).length;
         final newApps = (d['apps'] as Map?)?['counts']?['SUBMITTED'] as int?;
@@ -108,10 +109,11 @@ class StaffHome extends StatelessWidget {
           ]),
           const Gap(18),
           TileGrid(minTile: 150, max: 5, spacing: 10, children: [
-            ColorTile(icon: Icons.meeting_room_outlined, value: '${rooms.length}', label: 'Комнаты', onTap: () => go('rooms')),
+            ColorTile(icon: Icons.meeting_room_outlined, value: '${rooms.length}', label: 'Всего комнат', onTap: () => go('rooms')),
+            ColorTile(icon: Icons.meeting_room_rounded, tone: Tone.blue, value: '$busyRooms', label: 'Занятые комнаты', onTap: () => go('rooms')),
             ColorTile(icon: Icons.bed_outlined, tone: Tone.green, value: '$beds', label: 'Мест всего', onTap: () => go('rooms')),
-            ColorTile(icon: Icons.people_outline_rounded, tone: Tone.red, value: '$busy', label: 'Занято', onTap: () => go('residents')),
-            ColorTile(icon: Icons.check_circle_outline_rounded, tone: Tone.green, value: '${beds - busy}', label: 'Свободно', onTap: () => go('rooms')),
+            ColorTile(icon: Icons.people_outline_rounded, tone: Tone.red, value: '$busy', label: 'Занято мест', onTap: () => go('residents')),
+            ColorTile(icon: Icons.check_circle_outline_rounded, tone: Tone.green, value: '${beds - busy}', label: 'Свободно мест', onTap: () => go('rooms')),
             if (month != null) ...[
               ColorTile(icon: Icons.verified_outlined, tone: Tone.green, value: '${count('paid')}', label: 'Оплатили', onTap: () => go('finance')),
               ColorTile(icon: Icons.error_outline_rounded, tone: Tone.red, value: '${count('unpaid') + count('partial')}', label: 'Не оплатили', onTap: () => go('finance')),
@@ -218,7 +220,7 @@ class HousePlan extends StatelessWidget {
   final List<Map<String, dynamic>> rooms;
   @override
   Widget build(BuildContext context) {
-    if (rooms.isEmpty) return const EmptyState(icon: Icons.meeting_room_outlined, title: 'Комнат пока нет', text: 'Добавьте комнаты в кабинете на компьютере.');
+    if (rooms.isEmpty) return const EmptyState(icon: Icons.meeting_room_outlined, title: 'Комнат пока нет', text: 'Откройте «Комнаты» и нажмите «Добавить комнату».');
     return TileGrid(minTile: 108, max: 8, spacing: 10, children: [
       for (final r in rooms)
         Builder(builder: (context) {
@@ -256,6 +258,9 @@ class RoomsScreen extends StatelessWidget {
     final s = SessionScope.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Комнаты')),
+      floatingActionButton: s.can('ROOMS_MANAGE')
+          ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => _createRoom(context, s.api), icon: const Icon(Icons.add_rounded), label: const Text('Добавить комнату'))
+          : null,
       body: LiveData<List<dynamic>>(
         topics: const {'house'},
         load: () async => (await s.api.get('/rooms')) as List<dynamic>,
@@ -263,7 +268,9 @@ class RoomsScreen extends StatelessWidget {
           // Mockup "Комнаты": a row per room with its monthly income.
           final rooms = data.cast<Map<String, dynamic>>();
           return PageBody(onRefresh: refresh, children: [
+            if (rooms.isEmpty) EmptyState(icon: Icons.meeting_room_outlined, title: 'Комнат пока нет', text: s.can('ROOMS_MANAGE') ? 'Нажмите «Добавить комнату» внизу.' : 'Комнаты добавит владелец дома.'),
             for (final r in rooms) _RoomRow(room: r),
+            if (s.can('ROOMS_MANAGE')) const Gap(80),
           ]);
         },
       ),
@@ -368,7 +375,7 @@ Future<void> _roomAction(BuildContext context, ApiClient api, Map<String, dynami
   try {
     switch (action) {
       case 'edit':
-        final res = await _editRoomDialog(context, r);
+        final res = await _roomForm(context, number: '${r['number']}', capacity: (r['capacity'] ?? r['totalBeds']) as int?, title: 'Изменить комнату', ok: 'Сохранить');
         if (res == null) return;
         await api.patch('/rooms/$id', {'number': res.$1, 'capacity': res.$2, 'version': version});
         await refresh();
@@ -388,30 +395,42 @@ Future<void> _roomAction(BuildContext context, ApiClient api, Map<String, dynami
   }
 }
 
-/// Number + capacity (capacity is the maximum number of places; the server rejects a value below the beds
-/// that already exist). Returns (number, capacity) or null on cancel.
-Future<(String, int)?> _editRoomDialog(BuildContext context, Map<String, dynamic> r) async {
-  final number = TextEditingController(text: '${r['number']}');
-  final capacity = TextEditingController(text: '${r['capacity'] ?? r['totalBeds'] ?? ''}');
+/// Adds a room with the given number of places (beds). The list refreshes itself over the realtime 'house' topic.
+Future<void> _createRoom(BuildContext context, ApiClient api) async {
+  final res = await _roomForm(context, title: 'Добавить комнату', ok: 'Добавить');
+  if (res == null) return;
+  try {
+    await api.post('/rooms', {'number': res.$1, 'capacity': res.$2});
+    if (context.mounted) toast(context, 'Комната добавлена');
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
+}
+
+/// Number + places. For editing, "places" is the capacity and the server rejects a value below the beds that
+/// already exist. Returns (number, places) or null on cancel.
+Future<(String, int)?> _roomForm(BuildContext context, {String? number, int? capacity, required String title, required String ok}) async {
+  final numberC = TextEditingController(text: number ?? '');
+  final capacityC = TextEditingController(text: capacity?.toString() ?? '');
   final res = await showDialog<(String, int)>(context: context, builder: (d) => AlertDialog(
-        title: const Text('Изменить комнату'),
+        title: Text(title),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: number, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Номер комнаты')),
+          TextField(controller: numberC, autofocus: number == null, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Номер комнаты')),
           const Gap(10),
-          TextField(controller: capacity, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Вместимость, мест')),
+          TextField(controller: capacityC, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Сколько мест')),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
           FilledButton(onPressed: () {
-            final n = number.text.trim();
-            final c = int.tryParse(capacity.text.trim());
+            final n = numberC.text.trim();
+            final c = int.tryParse(capacityC.text.trim());
             if (n.isEmpty || c == null || c < 1) return;
             Navigator.pop(d, (n, c));
-          }, child: const Text('Сохранить')),
+          }, child: Text(ok)),
         ],
       ));
-  number.dispose();
-  capacity.dispose();
+  numberC.dispose();
+  capacityC.dispose();
   return res;
 }
 
