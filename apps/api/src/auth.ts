@@ -64,8 +64,9 @@ export class AuthService {
     }, { timeout: 20000 });
   }
   /**
-   * From the internet (Funnel), an unknown device needs a Telegram confirmation before any session exists.
-   * From the LAN or the tailnet the password is enough, and the device becomes trusted for later internet use.
+   * A valid password is enough from any network. The Telegram login confirmation for new internet devices was
+   * removed at the owner's request (2026-10-27); the device still becomes trusted for later. Telegram linking
+   * stays available for notifications, just not as a login step.
    */
   async login(dto: LoginDto, ip: string, userAgent: string | undefined, ctx: { publicChannel: boolean; deviceToken?: string }) {
     const phone = normalizePhone(dto.phone);
@@ -76,13 +77,6 @@ export class AuthService {
     if (!valid || !user?.active || !user.property.active) throw new UnauthorizedException('Неверный телефон или пароль.');
     const device = { platform: dto.platform ?? 'WEB', deviceName: dto.deviceName || deviceLabel(userAgent), remembered: Boolean(dto.remember) };
     const trusted = ctx.deviceToken ? await this.db.trustedDevice.findFirst({ where: { tokenHash: digest(ctx.deviceToken), userId: user.id } }) : null;
-    if (ctx.publicChannel && !trusted) {
-      // Owners confirm their own login; other staff are confirmed by the owners (owner's decision 2026-10-17).
-      if (!(await this.staffTelegram.approvers(user)).length) throw new ForbiddenException(['SUPER_ADMIN', 'OWNER'].includes(user.role)
-        ? 'Вход из интернета с нового устройства подтверждается в Telegram. Войдите из дома (Wi-Fi или Tailscale) и привяжите Telegram в настройках.'
-        : 'Вход из интернета с нового устройства подтверждает владелец в Telegram, а он ещё не привязал Telegram. Войдите из дома (Wi-Fi или Tailscale).');
-      return { kind: 'approval' as const, approval: await this.staffTelegram.requestApproval(user, device) };
-    }
     return this.issue(user, device, trusted?.id ?? null, { channel: ctx.publicChannel ? 'public' : 'private' });
   }
   /** The browser or app polls until the Telegram button is pressed; an approved request yields exactly one session. */
@@ -191,7 +185,6 @@ class AuthController {
   @Post('login') @HttpCode(200)
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const result = await this.auth.login(dto, req.ip || 'unknown', req.headers['user-agent'], { publicChannel: fromInternet(req), deviceToken: deviceToken(req, dto.deviceToken) });
-    if (result.kind === 'approval') { res.status(202); return { approval: result.approval }; }
     return sessionResponse(result, res);
   }
   @Post('login/approval') @HttpCode(200)

@@ -153,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ]),
           )
         else
-          Text('Вход из интернета с нового устройства подтверждается в Telegram.', textAlign: TextAlign.center, style: t.bodySmall),
+          const SizedBox.shrink(),
         if (kIsWeb) ...[
           const Gap(12),
           // The download page picks the device: APK on Android, home-screen install on iPhone/iPad, browser install on a computer.

@@ -33,15 +33,15 @@ async function link(agent,tg=TG,phone=OWNER){
 }
 const homeLogin=async()=>{const a=request.agent(server);await send(a,'post','/auth/login').send({phone:OWNER,password}).expect(200);return a;};
 
-test('LAN or tailnet login trusts the device; the internet asks Telegram for unknown devices and refuses without a link',async()=>{
+test('a password is enough on any network: LAN, apps and the internet all get a session and a trusted device',async()=>{
  const home=request.agent(server);
  const r=await send(home,'post','/auth/login').send({phone:OWNER,password}).expect(200);
  assert.match(cookieOf(r,'ijara_device'),/Path=\/api\/auth; .*HttpOnly/i);
  const app1=(await send(request(server),'post','/auth/login').send({phone:OWNER,password,platform:'ANDROID'}).expect(200)).body;
  assert.ok(app1.deviceToken&&app1.token,'apps get a device token in the body');
- const stranger=await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(403);
- assert.match(stranger.body.message,/привяжите Telegram/);
- assert.equal(cookieOf(stranger,'ijara_session'),undefined);
+ // Telegram login confirmation removed: an internet login from a new device now issues a session directly.
+ const stranger=await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(200);
+ assert.ok(cookieOf(stranger,'ijara_session'),'the internet login gets a session, no Telegram step');
  await internet(home,'post','/auth/login').send({phone:OWNER,password}).expect(200);
  await internet(request(server),'post','/auth/login').send({phone:OWNER,password,platform:'ANDROID',deviceToken:app1.deviceToken}).expect(200);
  assert.equal((await internet(request(server),'get','/auth/channel').expect(200)).body.internet,true);
@@ -68,48 +68,26 @@ test('linking needs the own contact with the account phone; one Telegram per sta
  assert.match(lastMessage().text,/уже привязан к другому/);
 });
 
-test('an internet login from a new device waits for the Telegram button and yields exactly one session',async()=>{
- const home=await homeLogin();await link(home);sent=[];
+test('an internet login from a new device issues a session directly, with no Telegram confirmation',async()=>{
+ sent=[];
  const away=request.agent(server);
- const pending=await internet(away,'post','/auth/login').send({phone:OWNER,password,remember:true}).expect(202);
- const {id,pollToken}=pending.body.approval;assert.equal(cookieOf(pending,'ijara_session'),undefined);
- const msg=lastMessage();assert.equal(msg.chat_id,String(TG));assert.match(msg.text,/нового устройства/);
- const [yes,no]=msg.reply_markup.inline_keyboard[0];assert.equal(yes.callback_data,`la:${id}`);assert.equal(no.callback_data,`ld:${id}`);
- assert.equal((await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(202)).body.status,'PENDING');
- await send(away,'post','/auth/login/approval').send({id,pollToken:'x'.repeat(43)}).expect(404);
- await bot.handle({update_id:6,callback_query:{id:'q1',from:{id:4242},data:`la:${id}`}});
- assert.equal((await db.loginApproval.findUnique({where:{id}})).status,'PENDING','another Telegram account cannot approve');
- await bot.handle({update_id:7,callback_query:{id:'q2',from:{id:TG},data:`la:${id}`,message:{chat:{id:TG},message_id:5}}});
- assert.ok(sent.some(s=>s.method==='editMessageText'&&/подтверждён/.test(s.body.text)));
- const done=await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(200);
- assert.ok(cookieOf(done,'ijara_session'));assert.ok(cookieOf(done,'ijara_device'));
+ const r=await internet(away,'post','/auth/login').send({phone:OWNER,password,remember:true}).expect(200);
+ assert.ok(cookieOf(r,'ijara_session')&&cookieOf(r,'ijara_device'),'session and device cookies are set at once');
  await send(away,'get','/auth/me').expect(200);
- await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(410);
- await internet(away,'post','/auth/login').send({phone:OWNER,password}).expect(200);
- const audit=await db.auditLog.findMany({where:{action:{in:['LOGIN_APPROVAL_REQUESTED','LOGIN_APPROVED']}}});assert.equal(audit.length,2);
+ assert.equal(await db.loginApproval.count(),0,'no login approval is created');
+ assert.equal(sent.filter(s=>s.method==='sendMessage').length,0,'no Telegram confirmation message is sent');
 });
 
-test('denied, expired and undeliverable approvals never create a session; a new password forgets trusted devices',async()=>{
- const home=await homeLogin();await link(home);
- let r=(await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(202)).body.approval;
- await bot.handle({update_id:8,callback_query:{id:'q3',from:{id:TG},data:`ld:${r.id}`}});
- await send(request(server),'post','/auth/login/approval').send({id:r.id,pollToken:r.pollToken}).expect(403);
- r=(await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(202)).body.approval;
- await db.loginApproval.update({where:{id:r.id},data:{expiresAt:new Date(Date.now()-1000)}});
- await bot.handle({update_id:9,callback_query:{id:'q4',from:{id:TG},data:`la:${r.id}`}});
- await send(request(server),'post','/auth/login/approval').send({id:r.id,pollToken:r.pollToken}).expect(410);
- fail=()=>new TelegramError(false);
- await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(503);fail=null;
- assert.equal(await db.loginApproval.count({where:{status:{in:['PENDING','APPROVED']},expiresAt:{gt:new Date()}}}),0,'nothing left that could still become a session');
- await internet(home,'post','/auth/login').send({phone:OWNER,password}).expect(200);
+test('a new password ends sessions, forgets trusted devices, and the old password stops working everywhere',async()=>{
+ const home=await homeLogin();
+ assert.ok(await db.trustedDevice.count()>0,'the home login left a trusted device');
  await send(home,'post','/auth/password').send({currentPassword:password,newPassword:password+'!'}).expect(204);
- assert.equal(await db.trustedDevice.count(),0);
- await internet(home,'post','/auth/login').send({phone:OWNER,password:password+'!'}).expect(202);
- const fresh=await homeLogin2(password+'!');
- await send(fresh,'delete','/auth/telegram').expect(200);
- await internet(request(server),'post','/auth/login').send({phone:OWNER,password:password+'!'}).expect(403);
+ assert.equal(await db.trustedDevice.count(),0,'the password change forgot every trusted device');
+ // The old password no longer works; the new one logs in from the internet too, directly.
+ await internet(request(server),'post','/auth/login').send({phone:OWNER,password}).expect(401);
+ const r=await internet(request(server),'post','/auth/login').send({phone:OWNER,password:password+'!'}).expect(200);
+ assert.ok(cookieOf(r,'ijara_session'));
 });
-async function homeLogin2(pw){const a=request.agent(server);await send(a,'post','/auth/login').send({phone:OWNER,password:pw}).expect(200);return a;}
 
 test('trusted devices are listed and removable by their owner only; linked staff get notification copies in Telegram',async()=>{
  const home=await homeLogin();await link(home);
@@ -123,26 +101,13 @@ test('trusted devices are listed and removable by their owner only; linked staff
  const d=await db.notificationDelivery.findMany();assert.equal(d.length,1);assert.equal(d[0].chatId,String(TG));
 });
 
-test('another staff member logging in from the internet is confirmed by the owner, never by themselves',async()=>{
+test('another staff member also logs in from the internet with just their password',async()=>{
  const home=await homeLogin();
  const ADMIN='+998900000002';
- const u=(await send(home,'post','/users').send({phone:ADMIN,password,fullName:'Admin Two'}).expect(201)).body;
- // The owner has no Telegram yet: refused, with the reason.
- const r0=await internet(request(server),'post','/auth/login').send({phone:ADMIN,password}).expect(403);
- assert.match(r0.body.message,/подтверждает владелец/);
- await link(home);
- sent=[];
+ await send(home,'post','/users').send({phone:ADMIN,password,fullName:'Admin Two'}).expect(201);
  const away=request.agent(server);
- const pending=(await internet(away,'post','/auth/login').send({phone:ADMIN,password}).expect(202)).body.approval;
- const {id,pollToken}=pending;assert.equal(pending.confirmBy,'owner');
- const msg=lastMessage();assert.equal(String(msg.chat_id),String(TG));assert.match(msg.text,/Сотрудник Admin Two/);
- assert.equal(msg.reply_markup.inline_keyboard[0][0].text,'Разрешить');
- // Anyone else's Telegram cannot decide.
- await bot.handle({update_id:20,callback_query:{id:'a1',from:{id:5555},data:`la:${id}`}});
- assert.equal((await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(202)).body.status,'PENDING');
- await bot.handle({update_id:21,callback_query:{id:'a2',from:{id:TG},data:`la:${id}`}});
- await send(away,'post','/auth/login/approval').send({id,pollToken}).expect(200);
- const audit=await db.auditLog.findFirst({where:{action:'LOGIN_APPROVED',entityId:u.id}});
- assert.ok(audit&&audit.actorId!==u.id,'the owner is recorded as the one who allowed it');
- // Residents are not affected: their app login has no Telegram step (tenant tests).
+ const r=await internet(away,'post','/auth/login').send({phone:ADMIN,password}).expect(200);
+ assert.ok(cookieOf(r,'ijara_session'),'staff get a session from the internet, no owner confirmation needed');
+ await send(away,'get','/auth/me').expect(200);
+ assert.equal(await db.loginApproval.count(),0);
 });

@@ -20,10 +20,8 @@ export default function Access() {
   const [address, setAddress] = useState('');
   const [rooms, setRooms] = useState(7);
   const [beds, setBeds] = useState(8);
-  const [internet, setInternet] = useState(false);
   const [approval, setApproval] = useState<{ id: string; pollToken: string; expiresAt: string; confirmBy?: 'self' | 'owner' } | null>(null);
   const [left, setLeft] = useState(0);
-  useEffect(() => { api<{ internet: boolean }>('/auth/channel').then(r => setInternet(r.internet)).catch(() => undefined); }, []);
   // While a Telegram confirmation is pending, ask the server every two seconds; the session exists only after the button.
   useEffect(() => {
     if (!approval) return;
@@ -99,7 +97,6 @@ export default function Access() {
             <div className="form-grid"><label>Количество комнат<input type="number" value={rooms} min={1} max={30} required onChange={e => setRooms(Number(e.target.value))}/></label><label>Мест в каждой<input type="number" value={beds} min={1} max={100} required onChange={e => setBeds(Number(e.target.value))}/></label></div>
             <div className="notice">Будет создано {rooms} комнат и {rooms * beds} свободных мест. Настройки отдельных комнат можно изменить позже.</div>
           </>}
-          {configured && internet && <p className="form-hint internet-hint"><ShieldCheck size={15}/>Вход через интернет: с нового устройства нужно будет подтвердить вход в Telegram.</p>}
           {error && <div className="error" role="alert">{error}</div>}
           <button className="button primary wide" disabled={busy}>{busy ? 'Сохраняем…' : configured ? 'Войти' : step === 1 ? 'Продолжить' : 'Создать дом'}<ArrowRight size={18}/></button>
           {!configured && step === 2 && <button className="button text wide" type="button" onClick={() => setStep(1)}>Назад</button>}
