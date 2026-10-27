@@ -50,7 +50,8 @@ void main() {
     await tester.tap(find.text('Я сотрудник'));
     await tester.pumpAndSettle();
     expect(find.text('Хочу заселиться'), findsNothing);
-    expect(find.textContaining('подтверждается в Telegram'), findsOneWidget);
+    // The Telegram login-confirmation hint was removed (owner's request).
+    expect(find.textContaining('Telegram'), findsNothing);
   });
 
   testWidgets('a wrong password shows the server message and keeps the form', (tester) async {
