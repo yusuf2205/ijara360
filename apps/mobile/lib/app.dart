@@ -12,6 +12,7 @@ import 'screens/tenant.dart';
 import 'theme.dart';
 import 'ui/kit.dart';
 import 'ui/shell.dart';
+import 'update.dart';
 
 class IjaraApp extends StatelessWidget {
   const IjaraApp({super.key, required this.session});
@@ -26,6 +27,8 @@ class IjaraApp extends StatelessWidget {
           locale: const Locale('ru'),
           supportedLocales: const [Locale('ru')],
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+          // A new-version banner sits above every screen (native only; inert on web and in tests).
+          builder: (context, child) => Column(children: [const UpdateBanner(), Expanded(child: child ?? const SizedBox.shrink())]),
           home: const _Root(),
         ),
       );
