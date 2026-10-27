@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
@@ -10,6 +11,35 @@ import '../theme.dart';
 import '../ui/kit.dart';
 import 'common.dart';
 import 'tenant.dart' show methodLabel;
+
+// ---------- Shared action helpers (edit/delete rooms, residents, staff; review applications) ----------
+Future<bool> _confirmAction(BuildContext context, {required String title, required String message, String confirm = 'Удалить', bool danger = true}) async {
+  final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Отмена')),
+          FilledButton(style: danger ? FilledButton.styleFrom(backgroundColor: Brand.red) : null, onPressed: () => Navigator.pop(d, true), child: Text(confirm)),
+        ],
+      ));
+  return ok == true;
+}
+
+Future<String?> _promptText(BuildContext context, {required String title, required String label, String ok = 'Готово', int maxLines = 3}) async {
+  final c = TextEditingController();
+  final r = await showDialog<String>(context: context, builder: (d) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: c, autofocus: true, minLines: 1, maxLines: maxLines, decoration: InputDecoration(labelText: label)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(d, c.text.trim()), child: Text(ok)),
+        ],
+      ));
+  c.dispose();
+  return r;
+}
+
+String _todayIso() { final n = DateTime.now(); return '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}'; }
 
 // ---------- Home ----------
 class StaffHome extends StatelessWidget {
@@ -296,7 +326,17 @@ class RoomScreen extends StatelessWidget {
           return sum + (occ != null ? (num.tryParse('${(occ['resident'] as Map?)?['totalDebt'] ?? 0}') ?? 0) : 0);
         });
         return Scaffold(
-          appBar: AppBar(title: Text('Комната ${r['number']}')),
+          appBar: AppBar(title: Text('Комната ${r['number']}'), actions: [
+            if (s.can('ROOMS_MANAGE'))
+              PopupMenuButton<String>(
+                onSelected: (v) => _roomAction(context, s.api, r, v, refresh),
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Изменить комнату')),
+                  PopupMenuItem(value: 'archive', child: Text(r['archivedAt'] == null ? 'Убрать в архив' : 'Вернуть из архива')),
+                  const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
+                ],
+              ),
+          ]),
           body: PageBody(onRefresh: refresh, children: [
             // Mockup "Детали комнаты": counts, income and debt, then a place per row.
             Row(children: [
@@ -320,6 +360,59 @@ class RoomScreen extends StatelessWidget {
       },
     );
   }
+}
+
+Future<void> _roomAction(BuildContext context, ApiClient api, Map<String, dynamic> r, String action, Future<void> Function() refresh) async {
+  final id = '${r['id']}';
+  final version = r['version'];
+  try {
+    switch (action) {
+      case 'edit':
+        final res = await _editRoomDialog(context, r);
+        if (res == null) return;
+        await api.patch('/rooms/$id', {'number': res.$1, 'capacity': res.$2, 'version': version});
+        await refresh();
+        if (context.mounted) toast(context, 'Комната изменена');
+      case 'archive':
+        final toArchive = r['archivedAt'] == null;
+        if (toArchive && !await _confirmAction(context, title: 'Убрать в архив?', message: 'Комнату можно вернуть позже. В архиве её не видно в списке. Нумерация активных комнат обновится.', confirm: 'В архив', danger: false)) return;
+        await api.patch('/rooms/$id/archive', {'version': version, 'archived': toArchive});
+        if (context.mounted) { toast(context, toArchive ? 'Комната в архиве' : 'Комната возвращена'); Navigator.pop(context); }
+      case 'delete':
+        if (!await _confirmAction(context, title: 'Удалить комнату?', message: 'Удалить можно только комнату без истории. Если были проживания или начисления — уберите её в архив.')) return;
+        await api.delete('/rooms/$id', {'version': version});
+        if (context.mounted) { toast(context, 'Комната удалена'); Navigator.pop(context); }
+    }
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
+}
+
+/// Number + capacity (capacity is the maximum number of places; the server rejects a value below the beds
+/// that already exist). Returns (number, capacity) or null on cancel.
+Future<(String, int)?> _editRoomDialog(BuildContext context, Map<String, dynamic> r) async {
+  final number = TextEditingController(text: '${r['number']}');
+  final capacity = TextEditingController(text: '${r['capacity'] ?? r['totalBeds'] ?? ''}');
+  final res = await showDialog<(String, int)>(context: context, builder: (d) => AlertDialog(
+        title: const Text('Изменить комнату'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: number, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: 'Номер комнаты')),
+          const Gap(10),
+          TextField(controller: capacity, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Вместимость, мест')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
+          FilledButton(onPressed: () {
+            final n = number.text.trim();
+            final c = int.tryParse(capacity.text.trim());
+            if (n.isEmpty || c == null || c < 1) return;
+            Navigator.pop(d, (n, c));
+          }, child: const Text('Сохранить')),
+        ],
+      ));
+  number.dispose();
+  capacity.dispose();
+  return res;
 }
 
 class _MiniStat extends StatelessWidget {
@@ -438,16 +531,25 @@ class ResidentScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Жилец')),
-      body: LiveData<Map<String, dynamic>>(
-        topics: const {'house', 'finance'},
-        load: () async => (await s.api.get('/residents/$id')) as Map<String, dynamic>,
-        builder: (context, r, refresh) {
+    return LiveData<Map<String, dynamic>>(
+      topics: const {'house', 'finance'},
+      load: () async => (await s.api.get('/residents/$id')) as Map<String, dynamic>,
+      builder: (context, r, refresh) {
           final stays = (r['occupancies'] as List).cast<Map<String, dynamic>>();
           final occ = stays.where((o) => o['status'] == 'ACTIVE').firstOrNull;
           final debt = num.tryParse('${r['totalDebt']}') ?? 0;
-          return PageBody(maxWidth: 820, onRefresh: refresh, children: [
+          return Scaffold(
+            appBar: AppBar(title: const Text('Жилец'), actions: [
+              if (s.can('RESIDENTS_MANAGE'))
+                PopupMenuButton<String>(
+                  onSelected: (v) => _residentAction(context, s.api, r, occ, v, refresh),
+                  itemBuilder: (_) => [
+                    if (occ != null) const PopupMenuItem(value: 'checkout', child: Text('Выселить')),
+                    const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
+                  ],
+                ),
+            ]),
+            body: PageBody(maxWidth: 820, onRefresh: refresh, children: [
             AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Avatar('${r['fullName']}', size: 60),
@@ -490,23 +592,57 @@ class ResidentScreen extends StatelessWidget {
                 child: AppCard(child: KeyValue('Комната ${o['room']['number']}, место ${o['bed']['number']}', '${day(o['moveInDate'])} — ${day(o['moveOutDate'])}')),
               ),
             ],
-          ]);
+          ]),
+          );
         },
-      ),
     );
   }
 }
 
+Future<void> _residentAction(BuildContext context, ApiClient api, Map<String, dynamic> r, Map<String, dynamic>? occ, String action, Future<void> Function() refresh) async {
+  try {
+    switch (action) {
+      case 'checkout':
+        if (occ == null) return;
+        if (!await _confirmAction(context, title: 'Выселить жильца?', message: 'Проживание закроется сегодняшней датой. История и платежи сохранятся.', confirm: 'Выселить', danger: false)) return;
+        await api.post('/occupancies/${occ['id']}/check-out', {'moveOutDate': _todayIso()});
+        await refresh();
+        if (context.mounted) toast(context, 'Жилец выселен');
+      case 'delete':
+        if (!await _confirmAction(context, title: 'Удалить жильца?', message: 'Удалить можно только жильца без истории проживания и платежей. Если история есть — его можно выселить.')) return;
+        await api.delete('/residents/${r['id']}');
+        if (context.mounted) { toast(context, 'Жилец удалён'); Navigator.pop(context); }
+    }
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
+}
+
 // ---------- Finance ----------
-class FinanceScreen extends StatelessWidget {
+class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
+  @override
+  State<FinanceScreen> createState() => _FinanceScreenState();
+}
+
+class _FinanceScreenState extends State<FinanceScreen> {
+  // The "Принять оплату" button collapses to just its icon while the list is being scrolled, and opens back
+  // up to the full label when scrolling stops (owner's request).
+  bool _extended = true;
+
   @override
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Оплаты')),
-      floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
-      body: LiveData<Map<String, dynamic>>(
+      floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(isExtended: _extended, backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
+      body: NotificationListener<UserScrollNotification>(
+        onNotification: (n) {
+          final wantExtended = n.direction == ScrollDirection.idle;
+          if (wantExtended != _extended) setState(() => _extended = wantExtended);
+          return false;
+        },
+        child: LiveData<Map<String, dynamic>>(
         topics: const {'finance'},
         load: () async => (await s.api.get('/finance')) as Map<String, dynamic>,
         builder: (context, f, refresh) {
@@ -555,6 +691,7 @@ class FinanceScreen extends StatelessWidget {
             const Gap(70),
           ]);
         },
+      ),
       ),
     );
   }
@@ -742,11 +879,115 @@ class ApplicationScreen extends StatelessWidget {
           ])),
           const Gap(14),
           _DocumentsCard(applicationId: id, documents: (a['documents'] as List?)?.cast<Map<String, dynamic>>() ?? const [], version: a['version']),
+          const Gap(14),
+          _DecisionCard(id: id, application: a, refresh: refresh),
         ]);
         },
       ),
     );
   }
+}
+
+/// The decision on an application, inside the app (same as the cabinet). SUBMITTED → «Взять в работу»;
+/// once UNDER_REVIEW → Одобрить (with the three manual-review confirmations the server requires),
+/// Запросить данные or Отклонить. Each button appears only if the viewer has that right.
+class _DecisionCard extends StatefulWidget {
+  const _DecisionCard({required this.id, required this.application, required this.refresh});
+  final String id;
+  final Map<String, dynamic> application;
+  final Future<void> Function() refresh;
+  @override
+  State<_DecisionCard> createState() => _DecisionCardState();
+}
+
+class _DecisionCardState extends State<_DecisionCard> {
+  bool busy = false;
+
+  Future<void> _run(Future<void> Function() fn) async {
+    setState(() => busy = true);
+    try { await fn(); await widget.refresh(); } on ApiException catch (e) { if (mounted) toast(context, e.message); } finally { if (mounted) setState(() => busy = false); }
+  }
+
+  Future<void> _review(Map<String, dynamic> body) => _run(() => SessionScope.of(context).api.post('/applications/${widget.id}/review', {...body, 'version': widget.application['version']}));
+
+  Future<void> _approve() async {
+    final extra = await showDialog<Map<String, dynamic>>(context: context, builder: (_) => const _ApproveDialog());
+    if (extra == null) return;
+    await _review({'status': 'APPROVED', ...extra});
+  }
+
+  Future<void> _reject() async {
+    final reason = await _promptText(context, title: 'Отклонить заявку', label: 'Причина для заявителя', ok: 'Отклонить');
+    if (reason == null || reason.isEmpty) return;
+    await _review({'status': 'REJECTED', 'reason': reason});
+  }
+
+  Future<void> _needsInfo() async {
+    final reason = await _promptText(context, title: 'Запросить данные', label: 'Комментарий для заявителя', ok: 'Далее');
+    if (reason == null || reason.isEmpty) return;
+    if (!mounted) return;
+    final fields = await _promptText(context, title: 'Что нужно дополнить', label: 'Какие данные или фото', ok: 'Отправить');
+    if (fields == null || fields.isEmpty) return;
+    await _review({'status': 'NEEDS_INFO', 'reason': reason, 'requiredFields': fields});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = SessionScope.of(context);
+    final status = '${widget.application['status']}';
+    final buttons = <Widget>[];
+    if (status == 'SUBMITTED' && s.can('APPLICATION_REVIEW')) {
+      buttons.add(FilledButton.icon(onPressed: busy ? null : () => _review({'status': 'UNDER_REVIEW'}), icon: const Icon(Icons.play_arrow_rounded), label: const Text('Взять в работу')));
+    }
+    if (status == 'UNDER_REVIEW') {
+      if (s.can('APPLICATION_APPROVE')) buttons.add(FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: busy ? null : _approve, icon: const Icon(Icons.check_rounded), label: const Text('Одобрить')));
+      if (s.can('APPLICATION_REVIEW')) buttons.add(OutlinedButton.icon(onPressed: busy ? null : _needsInfo, icon: const Icon(Icons.help_outline_rounded), label: const Text('Запросить данные')));
+      if (s.can('APPLICATION_REJECT')) buttons.add(OutlinedButton.icon(style: OutlinedButton.styleFrom(foregroundColor: Brand.red), onPressed: busy ? null : _reject, icon: const Icon(Icons.close_rounded), label: const Text('Отклонить')));
+    }
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Решение по заявке', style: manrope(15, FontWeight.w800)),
+      const Gap(4),
+      Text(status == 'SUBMITTED' ? 'Возьмите заявку в работу, затем одобрите или отклоните.' : 'Проверьте анкету и документы выше, затем примите решение.', style: Theme.of(context).textTheme.bodySmall),
+      const Gap(12),
+      Wrap(spacing: 8, runSpacing: 8, children: buttons),
+    ]));
+  }
+}
+
+/// Approval needs three manual-review confirmations (the server rejects approval without them) and, if the
+/// server reports a possible duplicate, a note about that check.
+class _ApproveDialog extends StatefulWidget {
+  const _ApproveDialog();
+  @override
+  State<_ApproveDialog> createState() => _ApproveDialogState();
+}
+
+class _ApproveDialogState extends State<_ApproveDialog> {
+  bool identity = false, documents = false, face = false;
+  final dup = TextEditingController();
+  @override
+  void dispose() { dup.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Одобрить заявку'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CheckboxListTile(contentPadding: EdgeInsets.zero, value: identity, onChanged: (v) => setState(() => identity = v ?? false), title: const Text('Проверил анкету и личные данные')),
+          CheckboxListTile(contentPadding: EdgeInsets.zero, value: documents, onChanged: (v) => setState(() => documents = v ?? false), title: const Text('Проверил фото паспорта')),
+          CheckboxListTile(contentPadding: EdgeInsets.zero, value: face, onChanged: (v) => setState(() => face = v ?? false), title: const Text('Проверил качество фото лица')),
+          const Gap(6),
+          TextField(controller: dup, minLines: 1, maxLines: 3, decoration: const InputDecoration(labelText: 'Проверка совпадений (если спросит система)')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
+          FilledButton(
+            onPressed: (identity && documents && face)
+                ? () => Navigator.pop(context, {'identityReviewed': true, 'documentsReviewed': true, 'faceQualityConfirmed': true, if (dup.text.trim().isNotEmpty) 'duplicateReview': dup.text.trim()})
+                : null,
+            child: const Text('Одобрить'),
+          ),
+        ],
+      );
 }
 
 String docLabel(String kind) => switch (kind) {
@@ -896,7 +1137,7 @@ class StaffListCard extends StatelessWidget {
     final s = SessionScope.of(context);
     return LiveData<List<dynamic>>(
       load: () async => (await s.api.get('/users')) as List<dynamic>,
-      builder: (context, users, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      builder: (context, users, refresh) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SectionTitle('Сотрудники'),
         for (final u in users.cast<Map<String, dynamic>>()) Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -908,10 +1149,38 @@ class StaffListCard extends StatelessWidget {
               Text('${u['phone']}', style: Theme.of(context).textTheme.bodySmall),
             ])),
             StatusPill(u['role'] == 'ADMIN' ? (u['active'] == false ? 'Отключён' : 'Администратор') : 'Супер-админ', tone: u['role'] == 'ADMIN' ? (u['active'] == false ? Tone.gray : Tone.blue) : Tone.ink),
+            // Only staff (ADMIN) can be disabled or removed; the owner's own row has no menu.
+            if (u['role'] == 'ADMIN')
+              PopupMenuButton<String>(
+                onSelected: (v) => _staffAction(context, s.api, u, v, refresh),
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'toggle', child: Text(u['active'] == false ? 'Включить' : 'Отключить')),
+                  const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
+                ],
+              ),
           ])),
         ),
         Text('Права сотрудников меняются в кабинете на компьютере: Настройки → Права сотрудников.', style: Theme.of(context).textTheme.bodySmall),
       ]),
     );
+  }
+}
+
+Future<void> _staffAction(BuildContext context, ApiClient api, Map<String, dynamic> u, String action, Future<void> Function() refresh) async {
+  try {
+    switch (action) {
+      case 'toggle':
+        final enable = u['active'] == false;
+        await api.patch('/users/${u['id']}', {'active': enable});
+        await refresh();
+        if (context.mounted) toast(context, enable ? 'Сотрудник включён' : 'Сотрудник отключён');
+      case 'delete':
+        if (!await _confirmAction(context, title: 'Удалить сотрудника?', message: 'Удалить можно только сотрудника, который ещё не входил и не работал в системе. Иначе его можно отключить.')) return;
+        await api.delete('/users/${u['id']}');
+        await refresh();
+        if (context.mounted) toast(context, 'Сотрудник удалён');
+    }
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
   }
 }
