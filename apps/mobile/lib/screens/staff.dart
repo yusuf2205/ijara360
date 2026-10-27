@@ -58,7 +58,8 @@ class StaffHome extends StatelessWidget {
           ]),
         ]));
         final money = fin == null ? null : AppCard(onTap: () => go('finance'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Финансы', style: t.titleMedium),
+          // All-time totals; next to "Получено за месяц" a bare "Оплачено" read as this month's figure.
+          Text('Финансы за всё время', style: t.titleMedium),
           const Gap(10),
           _MoneyRow(Icons.receipt_long_outlined, Tone.blue, sum(fin['summary']['charged']), 'Начислено'),
           _MoneyRow(Icons.check_circle_outline_rounded, Tone.green, sum(fin['summary']['paid']), 'Оплачено'),
@@ -564,6 +565,8 @@ Future<void> acceptPayment(BuildContext context, {Map<String, dynamic>? resident
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      // Above the tab bar, not under it: the tab's own navigator left the bar on top of the form.
+      useRootNavigator: true,
       builder: (_) => SessionScope(session: SessionScope.of(context), child: _PaymentSheet(resident: resident)),
     );
 
@@ -711,17 +714,24 @@ class ApplicationScreen extends StatelessWidget {
       body: LiveData<Map<String, dynamic>>(
         topics: const {'applications'},
         load: () async => (await s.api.get('/applications/$id')) as Map<String, dynamic>,
-        builder: (context, a, refresh) => PageBody(maxWidth: 760, onRefresh: refresh, children: [
+        builder: (context, a, refresh) {
+          // The questionnaire answers come nested under "profile" (the list endpoint has them flat).
+          final p = (a['profile'] as Map<String, dynamic>?) ?? a;
+          String? text(String k) => '${p[k] ?? ''}'.trim().isEmpty ? null : '${p[k]}'.trim();
+          return PageBody(maxWidth: 760, onRefresh: refresh, children: [
           AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${a['fullName'] ?? 'Без имени'}', style: Theme.of(context).textTheme.titleLarge),
             Text('${a['phone'] ?? ''}${a['phoneVerified'] == true ? ' · подтверждён в Telegram' : ''}', style: Theme.of(context).textTheme.bodySmall),
             const Gap(8),
             StatusPill(applicationStatus[a['status']] ?? '${a['status']}', tone: Tone.blue),
             const Gap(10),
-            KeyValue('Занятость', a['occupationType'] == 'STUDENT' ? 'Студент' : 'Работает'),
-            if (a['organization'] != null) KeyValue('Где', '${a['organization']}'),
-            KeyValue('Заселение', day(a['requestedMoveInDate'])),
-            if (a['plannedDuration'] != null) KeyValue('Срок', '${a['plannedDuration']}'),
+            KeyValue('Занятость', p['occupationType'] == 'STUDENT' ? 'Студент' : 'Работает'),
+            if (text('organization') != null) KeyValue(p['occupationType'] == 'STUDENT' ? 'Учёба' : 'Работа', text('organization')!),
+            if (text('faculty') != null) KeyValue('Факультет', text('faculty')!),
+            if (text('course') != null) KeyValue('Курс', text('course')!),
+            if (text('position') != null) KeyValue('Должность', text('position')!),
+            KeyValue('Заселение', day(p['requestedMoveInDate'])),
+            if (text('plannedDuration') != null) KeyValue('Срок', text('plannedDuration')!),
           ])),
           const Gap(14),
           AppCard(color: Brand.blueSoft, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -731,7 +741,8 @@ class ApplicationScreen extends StatelessWidget {
             const Gap(12),
             FilledButton.icon(onPressed: () => launchUrl(Uri.parse('${apiOrigin()}/applications/$id'), mode: LaunchMode.externalApplication), icon: const Icon(Icons.open_in_new_rounded), label: const Text('Открыть в кабинете')),
           ])),
-        ]),
+        ]);
+        },
       ),
     );
   }

@@ -156,7 +156,8 @@ class ColorTile extends StatelessWidget {
         Container(width: 38, height: 38, alignment: Alignment.center, decoration: BoxDecoration(color: Brand.white.withValues(alpha: .7), borderRadius: BorderRadius.circular(11)), child: Icon(icon, size: 20, color: fg)),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(11.5, FontWeight.w600, color: fg)),
+          // Shrinks rather than cuts: on 320 dp phones "Не оплатили" ended as "Не оплат…".
+          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(label, maxLines: 1, style: manrope(11.5, FontWeight.w600, color: fg))),
           FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(value, style: manrope(20, FontWeight.w800, color: tone == Tone.orange ? fg : Brand.ink))),
         ])),
       ])),

@@ -104,10 +104,14 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  // Scroll-controlled and scrollable: on a 480 dp tall phone the default 9/16-height sheet cut off the last
+  // item (Профиль) with no way to reach it.
   void _more(BuildContext context, int first) => showModalBottomSheet(
         context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
         builder: (sheet) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               for (var i = first; i < widget.destinations.length; i++)
