@@ -63,3 +63,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // The self-update install job (SelfUpdate.kt); same version the workmanager plugin brings.
+    implementation("androidx.work:work-runtime:2.11.2")
+}
