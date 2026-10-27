@@ -244,25 +244,32 @@ class _AppVersionCard extends StatefulWidget {
 
 class _AppVersionCardState extends State<_AppVersionCard> {
   bool busy = false;
+  Future<void> _check() async {
+    setState(() => busy = true);
+    try { await checkForUpdateNow(context); } finally { if (mounted) setState(() => busy = false); }
+  }
+
   @override
   Widget build(BuildContext context) => AppCard(
-        child: Row(children: [
-          const IconChip(Icons.info_outline_rounded, tone: Tone.gray),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Ijara360', style: manrope(15, FontWeight.w700)),
-            Text('Версия $appVersionLabel', style: Theme.of(context).textTheme.bodySmall),
-          ])),
-          if (updatesSupported)
-            busy
-                ? const Padding(padding: EdgeInsets.all(8), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4)))
-                : TextButton(
-                    onPressed: () async {
-                      setState(() => busy = true);
-                      try { await checkForUpdateNow(context); } finally { if (mounted) setState(() => busy = false); }
-                    },
-                    child: const Text('Проверить обновления'),
-                  ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const IconChip(Icons.info_outline_rounded, tone: Tone.gray),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Ijara360', style: manrope(15, FontWeight.w700)),
+              Text('Версия $appVersionLabel', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+            ])),
+          ]),
+          if (updatesSupported) ...[
+            const Gap(12),
+            OutlinedButton.icon(
+              onPressed: busy ? null : _check,
+              icon: busy
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4))
+                  : const Icon(Icons.system_update_rounded, size: 20),
+              label: Text(busy ? 'Проверяем…' : 'Проверить обновления'),
+            ),
+          ],
         ]),
       );
 }
@@ -407,8 +414,8 @@ class ProfileScreen extends StatelessWidget {
               IconChip(d['platform'] == 'WEB' ? Icons.laptop_rounded : Icons.phone_android_rounded, tone: d['current'] == true ? Tone.blue : Tone.gray),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${d['deviceName'] ?? platformLabel[d['platform']]}', style: manrope(15, FontWeight.w700)),
-                Text(d['current'] == true ? 'Это устройство' : 'Активность ${dayTime(d['lastSeenAt'] ?? d['createdAt'])}', style: Theme.of(context).textTheme.bodySmall),
+                Text('${d['deviceName'] ?? platformLabel[d['platform']]}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(15, FontWeight.w700)),
+                Text(d['current'] == true ? 'Это устройство' : 'Активность ${dayTime(d['lastSeenAt'] ?? d['createdAt'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
               ])),
               if (d['current'] != true) TextButton(onPressed: () async {
                 try { await s.api.delete('${s.isStaff ? '/auth/sessions' : '/tenant/sessions'}/${d['id']}'); await refresh(); if (context.mounted) toast(context, 'Устройство вышло из приложения'); }
