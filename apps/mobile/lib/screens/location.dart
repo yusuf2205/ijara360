@@ -365,9 +365,27 @@ class _LiveMap extends StatelessWidget {
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag | InteractiveFlag.doubleTapZoom | InteractiveFlag.flingAnimation | InteractiveFlag.scrollWheelZoom),
             ),
             children: [
-              TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'uz.ijara360.ijara360', maxZoom: 19),
+              // CartoDB "Voyager" tiles: OpenStreetMap blocks its own tile.openstreetmap.org for embedded apps
+              // (HTTP 403, tile-usage policy), and a browser cannot set a custom User-Agent to satisfy it.
+              TileLayer(
+                urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c', 'd'],
+                userAgentPackageName: 'uz.ijara360.ijara360',
+                maxZoom: 20,
+              ),
               MarkerLayer(markers: markers),
             ],
+          ),
+          Positioned(
+            right: 6,
+            bottom: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: Brand.white.withValues(alpha: .7), borderRadius: BorderRadius.circular(4)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                child: Text('© OpenStreetMap, © CARTO', style: manrope(9, FontWeight.w600, color: Brand.gray500)),
+              ),
+            ),
           ),
           if (markers.isEmpty)
             IgnorePointer(child: Container(
