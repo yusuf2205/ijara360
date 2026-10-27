@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api/client.dart';
+import 'theme.dart';
 
 /// The release this build was made from (git commit), baked in by scripts/Build-MobileWeb.ps1
 /// (`--dart-define=BUILD_COMMIT=...`). Empty in `flutter test` and in debug runs, which disables updating.
@@ -154,27 +155,86 @@ class _UpdateBannerState extends State<UpdateBanner> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    final (text, action) = switch (_stage) {
-      _Stage.needsPermission => ('Разрешите приложению устанавливать обновления — дальше оно будет обновляться само, без вашего участия.', 'Разрешить'),
-      _Stage.needsConfirm => ('Новая версия уже скачана. Нажмите «Установить» — это займёт несколько секунд.', 'Установить'),
-      _Stage.failed => ('Вышла новая версия приложения. Нажмите «Обновить» — файл скачается, откройте его и нажмите «Установить».', 'Обновить'),
-      _ => ('', ''),
+    final (icon, title, subtitle, action) = switch (_stage) {
+      _Stage.needsPermission => (Icons.autorenew_rounded, 'Автообновление', 'Разрешите один раз — дальше всё само', 'Разрешить'),
+      _Stage.needsConfirm => (Icons.download_done_rounded, 'Версия скачана', 'Установка займёт пару секунд', 'Установить'),
+      _Stage.failed => (Icons.rocket_launch_rounded, 'Новая версия', 'Скачайте и установите', 'Обновить'),
+      _ => (Icons.circle, '', '', ''),
     };
-    if (text.isEmpty || _dismissed) return const SizedBox.shrink();
-    final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: cs.primary,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 6, 8),
-          child: Row(children: [
-            const Icon(Icons.system_update_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.3))),
-            TextButton(onPressed: _busy ? null : _act, child: Text(action, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
-            IconButton(tooltip: 'Позже', onPressed: () => setState(() => _dismissed = true), icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 18)),
-          ]),
+    final visible = title.isNotEmpty && !_dismissed;
+    // A floating card over the screen (the page underneath does not jump), sliding in from the top.
+    return Align(
+      alignment: Alignment.topCenter,
+      child: AnimatedSlide(
+        offset: visible ? Offset.zero : const Offset(0, -1.4),
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: const Duration(milliseconds: 250),
+          child: !visible && title.isEmpty ? const SizedBox.shrink() : SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Material(
+                  color: Brand.navy,
+                  elevation: 8,
+                  shadowColor: Brand.navy.withValues(alpha: .35),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                    child: Row(children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: const LinearGradient(colors: [Brand.blue, Brand.blueDark], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        ),
+                        child: Icon(icon, color: Brand.white, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(14.5, FontWeight.w800, color: Brand.white)),
+                          const SizedBox(height: 2),
+                          Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: manrope(12.5, FontWeight.w600, color: Brand.blueLight, height: 1.3)),
+                        ]),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: _busy ? null : _act,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Brand.white,
+                          foregroundColor: Brand.blue,
+                          disabledBackgroundColor: Brand.white.withValues(alpha: .6),
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          shape: const StadiumBorder(),
+                          textStyle: manrope(13.5, FontWeight.w800),
+                        ),
+                        child: _busy
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4, color: Brand.blue))
+                            : Text(action),
+                      ),
+                      // No tooltip: this card sits above the Navigator, where there is no Overlay for one.
+                      Semantics(
+                        label: 'Позже',
+                        button: true,
+                        child: InkResponse(
+                          onTap: () => setState(() => _dismissed = true),
+                          radius: 20,
+                          child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.close_rounded, color: Color(0xFFAEB9D6), size: 18)),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

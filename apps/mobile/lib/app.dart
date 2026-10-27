@@ -27,8 +27,8 @@ class IjaraApp extends StatelessWidget {
           locale: const Locale('ru'),
           supportedLocales: const [Locale('ru')],
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-          // A new-version banner sits above every screen (native only; inert on web and in tests).
-          builder: (context, child) => Column(children: [const UpdateBanner(), Expanded(child: child ?? const SizedBox.shrink())]),
+          // A new-version card floats over every screen (native only; inert on web and in tests).
+          builder: (context, child) => Stack(children: [child ?? const SizedBox.shrink(), const UpdateBanner()]),
           home: const _Root(),
         ),
       );
