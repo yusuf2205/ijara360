@@ -1179,10 +1179,54 @@ class StaffListCard extends StatelessWidget {
               ),
           ])),
         ),
-        Text('Права сотрудников меняются в кабинете на компьютере: Настройки → Права сотрудников.', style: Theme.of(context).textTheme.bodySmall),
+        const Gap(10),
+        FilledButton.icon(onPressed: () => _createStaff(context, s.api, refresh), icon: const Icon(Icons.person_add_alt_1_rounded), label: const Text('Добавить сотрудника')),
+        const Gap(8),
+        Text('Новый сотрудник получает базовые права. Их можно изменить в кабинете на компьютере: Настройки → Права сотрудников.', style: Theme.of(context).textTheme.bodySmall),
       ]),
     );
   }
+}
+
+Future<void> _createStaff(BuildContext context, ApiClient api, Future<void> Function() refresh) async {
+  final data = await _staffFormDialog(context);
+  if (data == null) return;
+  try {
+    await api.post('/users', {'fullName': data.$1, 'phone': data.$2, 'password': data.$3});
+    await refresh();
+    if (context.mounted) toast(context, 'Сотрудник добавлен');
+  } on ApiException catch (e) {
+    if (context.mounted) toast(context, e.message);
+  }
+}
+
+/// ФИО, телефон и пароль нового сотрудника. Returns (fullName, phone, password) or null on cancel.
+Future<(String, String, String)?> _staffFormDialog(BuildContext context) async {
+  final name = TextEditingController(), phone = TextEditingController(), pass = TextEditingController();
+  final r = await showDialog<(String, String, String)>(context: context, builder: (d) => AlertDialog(
+        title: const Text('Новый сотрудник'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, autofocus: true, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'ФИО')),
+          const Gap(10),
+          TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Телефон', hintText: '+998 90 123 45 67')),
+          const Gap(10),
+          TextField(controller: pass, decoration: const InputDecoration(labelText: 'Пароль (не меньше 8 символов)')),
+          const Gap(8),
+          Text('Передайте пароль сотруднику лично.', style: Theme.of(d).textTheme.bodySmall),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
+          FilledButton(onPressed: () {
+            final n = name.text.trim(), ph = phone.text.trim(), pw = pass.text;
+            if (n.isEmpty || ph.length < 8 || pw.length < 8) return;
+            Navigator.pop(d, (n, ph, pw));
+          }, child: const Text('Добавить')),
+        ],
+      ));
+  name.dispose();
+  phone.dispose();
+  pass.dispose();
+  return r;
 }
 
 Future<void> _staffAction(BuildContext context, ApiClient api, Map<String, dynamic> u, String action, Future<void> Function() refresh) async {
