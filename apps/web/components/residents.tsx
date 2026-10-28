@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {useRouter} from 'next/navigation';
 import { ArrowLeft, ArrowRight, Plus, Search, Trash2, Users, X, AlertCircle, Wallet, ShieldCheck } from 'lucide-react';
 import {api,type Resident,type Room} from '../lib/api';
@@ -17,6 +17,7 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
  const [confirmDelete,setConfirmDelete]=useState(false);
  const [delBusy,setDelBusy]=useState(false);
  const [delErr,setDelErr]=useState('');
+ const [showContract,setShowContract]=useState(false);
  async function doDelete(id:string){setDelBusy(true);setDelErr('');try{await api(`/residents/${id}`,{method:'DELETE'});router.replace('/residents');}catch(e){setDelErr((e as Error).message);}finally{setDelBusy(false);}}
  const resident=residents.find(r=>r.id===residentId);
  if(residentId) {
@@ -29,11 +30,12 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
    <div className="settings-grid"><section className="panel"><h2>Текущее проживание</h2>{active ? <>
     <p className="resident-location"><Link href={`/rooms/${active.roomId}`}>Комната {active.room.number} / Место {active.bed.number}</Link></p>
     <dl className="detail-grid"><dt>Статус</dt><dd>Проживает</dd><dt>Дата заселения</dt><dd>{dateLabel(active.moveInDate)}</dd><dt>Месячная цена</dt><dd>{money(active.monthlyPrice)}</dd><dt>День оплаты</dt><dd>{active.paymentDay}</dd><dt>Депозит</dt><dd>{money(active.depositAmount)}</dd></dl>
-    <div className="resident-actions"><Link className="button confirm" href={`/finance?residentId=${resident.id}`}>Принять оплату</Link><button className="button primary" onClick={()=>onAction({mode:'transfer',resident})}>Переселить</button><button className="button secondary" onClick={()=>onAction({mode:'check-out',resident})}>Выселить</button></div>
+    <div className="resident-actions"><Link className="button confirm" href={`/finance?residentId=${resident.id}`}>Принять оплату</Link><button className="button primary" onClick={()=>onAction({mode:'transfer',resident})}>Переселить</button><button className="button secondary" onClick={()=>onAction({mode:'check-out',resident})}>Выселить</button><button className="button secondary" onClick={()=>setShowContract(true)}>Договор аренды</button></div>
    </> : <><p className="muted">{resident.occupancies.length?'Жилец выселен. История сохранена.':'Жилец ещё не заселён.'}</p><button className="button primary" onClick={()=>onAction({mode:'check-in',resident})}><Plus size={18}/>{resident.occupancies.length?'Заселить снова':'Заселить'}</button></>}</section>
    <section className="panel"><h2>Заметка</h2><p className="resident-note">{resident.note || 'Заметок пока нет.'}</p></section><AppAccountPanel residentId={resident.id} living={Boolean(active)}/></div>
    <section className="panel occupancy-history"><h2>История проживания</h2>{resident.occupancies.length ? resident.occupancies.map(o=><article key={o.id} className="stay-row"><div><strong>Комната {o.room.number} / Место {o.bed.number}</strong><p>{dateLabel(o.moveInDate)} → {o.moveOutDate?dateLabel(o.moveOutDate):'сейчас'}</p></div><span className={`status-pill ${o.status==='ACTIVE'?'occupied':''}`}>{o.status==='ACTIVE'?'Проживает':'Завершено'}</span></article>) : <p className="muted">История появится после первого заселения.</p>}</section>
    {confirmDelete&&<DeleteResidentDialog name={resident.fullName} busy={delBusy} error={delErr} close={()=>{if(!delBusy)setConfirmDelete(false);}} confirm={()=>void doDelete(resident.id)}/>}
+   {showContract&&active&&<LeaseContract resident={resident} occupancy={active} close={()=>setShowContract(false)}/>}
   </>;
  }
  const matchesQuery=(r:Resident)=>{const digits=query.replace(/\D/g,'');return !query||r.fullName.toLocaleLowerCase().includes(query.toLocaleLowerCase())||Boolean(digits)&&r.phone.includes(digits);};
@@ -46,6 +48,30 @@ export function ResidentsPanel({residents,residentId,onAction,initialFilter='all
   <div className="resident-list">{found.map(r=>{const active=r.occupancies.find(o=>o.status==='ACTIVE');return <Link className="resident-row" href={`/residents/${r.id}`} key={r.id}><span className="avatar">{r.fullName.slice(0,1)}</span><div className="resident-person"><strong>{r.fullName}</strong><small>{r.phone}</small></div><div className="resident-place"><strong>{active?`Комната ${active.room.number} / Место ${active.bed.number}`:'Без места'}</strong><small>{active?`С ${dateLabel(active.moveInDate)}`:r.occupancies.length?'Выселен':'Не заселён'}</small></div><span className={`status-pill ${active?(Number(r.totalDebt)>0?'bad':'ok'):''}`}>{active?(Number(r.totalDebt)>0?`Долг ${money(r.totalDebt)}`:'Оплачено'):r.occupancies.length?'Выселен':'Не заселён'}</span><ArrowRight size={17}/></Link>;})}</div>
   {!found.length&&<div className="empty"><Users size={36}/><h2>{residents.length?'Жильцы не найдены':'Жильцов пока нет'}</h2><p>{residents.length?'Измените поиск или фильтр.':'Нажмите «Заселить», чтобы добавить первого жильца и выбрать свободное место.'}</p></div>}
  </>;
+}
+
+// A rental agreement auto-filled from the resident and their current occupancy. "Печать / Сохранить PDF"
+// prints it or saves a PDF the resident can sign. The house name/address is read on open.
+function LeaseContract({resident,occupancy,close}:{resident:Resident;occupancy:Resident['occupancies'][number];close:()=>void}){
+ const [house,setHouse]=useState<{name:string;address:string|null}>({name:'',address:null});
+ useEffect(()=>{let live=true;void api<{name:string;address:string|null}>('/property').then(p=>{if(live)setHouse({name:p.name,address:p.address});}).catch(()=>undefined);return()=>{live=false;};},[]);
+ const dateToday=new Intl.DateTimeFormat('ru-RU',{timeZone:'Asia/Tashkent',day:'numeric',month:'long',year:'numeric'}).format(new Date());
+ const B=({children}:{children:ReactNode})=><b className="contract-fill">{children}</b>;
+ return <div className="contract-overlay" onClick={close}><div className="contract-print" onClick={e=>e.stopPropagation()}>
+  <h2 className="contract-title">Договор аренды (найма) жилого помещения</h2>
+  <p className="contract-meta"><span>{house.name||'—'}{house.address?`, ${house.address}`:''}</span><span>{dateToday}</span></p>
+  <p>Настоящий договор заключён между <B>{house.name||'наймодателем'}</B> (далее — «Наймодатель») и гражданином(кой) <B>{resident.fullName}</B>, тел. <B>{resident.phone}</B>, паспорт ________________ (далее — «Наниматель»), о нижеследующем.</p>
+  <ol className="contract-clauses">
+   <li><strong>Предмет договора.</strong> Наймодатель предоставляет Нанимателю во временное пользование место для проживания: комната № <B>{occupancy.room.number}</B>, место № <B>{occupancy.room.number}-{occupancy.bed.number}</B>{house.address?<> по адресу <B>{house.address}</B></>:null}.</li>
+   <li><strong>Срок.</strong> Проживание с <B>{dateLabel(occupancy.moveInDate)}</B>. Договор действует до его расторжения любой из сторон.</li>
+   <li><strong>Плата.</strong> Ежемесячная плата — <B>{money(occupancy.monthlyPrice)}</B>. Оплата вносится до <B>{occupancy.paymentDay}</B> числа каждого месяца. Залог (депозит) — <B>{money(occupancy.depositAmount)}</B>.</li>
+   <li><strong>Обязанности Нанимателя.</strong> Своевременно вносить плату; бережно относиться к имуществу; соблюдать правила проживания, тишину и чистоту; не передавать место третьим лицам.</li>
+   <li><strong>Обязанности Наймодателя.</strong> Предоставить пригодное для проживания место; обеспечить коммунальные условия согласно правилам дома.</li>
+   <li><strong>Расторжение.</strong> Договор может быть расторгнут по соглашению сторон либо при нарушении условий с предупреждением. Залог возвращается при отсутствии задолженности и ущерба.</li>
+  </ol>
+  <div className="contract-signs"><div><span className="sign-line"/>Наймодатель<small>{house.name}</small></div><div><span className="sign-line"/>Наниматель<small>{resident.fullName}</small></div></div>
+  <div className="receipt-actions contract-actions"><button className="button secondary" onClick={close}>Закрыть</button><button className="button primary" onClick={()=>window.print()}>Печать / Сохранить PDF</button></div>
+ </div></div>;
 }
 
 function DeleteResidentDialog({name,busy,error,close,confirm}:{name:string;busy:boolean;error:string;close:()=>void;confirm:()=>void}){

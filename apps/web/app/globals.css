@@ -53,12 +53,26 @@ label.toggle-row small{font-weight:500;opacity:.72;line-height:1.35}
 .receipt-line-single{margin-bottom:12px}
 .receipt-foot{display:flex;justify-content:space-between;font-size:12px;opacity:.6;border-top:1px dashed #bbb;padding-top:12px}
 .receipt-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+/* Lease contract (print-friendly, auto-filled) */
+.contract-overlay{position:fixed;inset:0;background:#0008;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow:auto;z-index:60}
+.contract-print{background:#fff;color:#111;border-radius:12px;width:100%;max-width:720px;padding:34px 40px;box-shadow:var(--shadow);line-height:1.5}
+.contract-title{text-align:center;font-size:19px;margin:0 0 8px}
+.contract-meta{display:flex;justify-content:space-between;gap:16px;font-size:13px;opacity:.7;border-bottom:1px solid #eee;padding-bottom:12px;margin-bottom:16px}
+.contract-print p{margin:0 0 12px}
+.contract-fill{background:#eef3ff;padding:0 4px;border-radius:3px;font-weight:700}
+.contract-clauses{margin:0 0 20px;padding-left:20px;display:flex;flex-direction:column;gap:9px}
+.contract-clauses li{padding-left:4px}
+.contract-signs{display:flex;gap:40px;margin-top:28px}
+.contract-signs>div{flex:1;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.contract-signs small{opacity:.6}
+.sign-line{display:block;border-top:1px solid #111;margin-bottom:4px;height:28px}
 @media print{
   body *{visibility:hidden!important}
-  .receipt-print,.receipt-print *{visibility:visible!important}
-  .receipt-print{position:absolute;left:0;top:0;box-shadow:none;max-width:none;width:auto}
-  .receipt-overlay{background:#fff!important}
-  .receipt-actions{display:none!important}
+  .receipt-print,.receipt-print *,.contract-print,.contract-print *{visibility:visible!important}
+  .receipt-print,.contract-print{position:absolute;left:0;top:0;box-shadow:none;max-width:none;width:auto}
+  .receipt-overlay,.contract-overlay{background:#fff!important;padding:0!important;overflow:visible!important}
+  .contract-fill{background:transparent!important}
+  .receipt-actions,.contract-actions{display:none!important}
 }
 .session-list{display:grid;gap:10px}
 .session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
