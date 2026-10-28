@@ -139,6 +139,16 @@ class StaffHome extends StatelessWidget {
           ],
           if (wide && money != null) IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: ring), const SizedBox(width: 14), Expanded(child: money)]))
           else ...[ring, if (money != null) ...[const Gap(14), money]],
+          if (month != null && (month['months'] as List?) != null && (month['months'] as List).isNotEmpty) ...[
+            const Gap(14),
+            AppCard(onTap: () => go('finance'), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Доходы за 6 месяцев', style: t.titleMedium),
+              const Gap(4),
+              Text('Получено: ${sum(month['received'])} в этом месяце', style: t.bodySmall),
+              const Gap(16),
+              _IncomeBars(months: (month['months'] as List).cast<Map<String, dynamic>>(), current: '${month['month']}'),
+            ])),
+          ],
           SectionTitle('План дома', action: 'Все комнаты', onAction: () => go('rooms')),
           HousePlan(rooms: rooms),
         ]);
@@ -180,6 +190,35 @@ class _MoneyRow extends StatelessWidget {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, style: manrope(17, FontWeight.w800)), Text(label, style: Theme.of(context).textTheme.bodySmall)])),
         ]),
       );
+}
+
+/// Six monthly income bars, newest on the right, current month highlighted — the phone's twin of the web chart.
+class _IncomeBars extends StatelessWidget {
+  const _IncomeBars({required this.months, required this.current});
+  final List<Map<String, dynamic>> months;
+  final String current;
+  static const _short = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  String _label(String ym) { final mm = int.tryParse(ym.split('-').last) ?? 1; return _short[(mm - 1).clamp(0, 11)]; }
+  @override
+  Widget build(BuildContext context) {
+    final values = [for (final m in months) num.tryParse('${m['received']}') ?? 0];
+    final peak = values.fold<num>(1, (a, b) => b > a ? b : a);
+    final label = months.map((m) => '${_label('${m['month']}')} ${sum(m['received'])}').join(', ');
+    return Semantics(label: 'Доходы по месяцам: $label', child: SizedBox(height: 128, child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+      for (var i = 0; i < months.length; i++)
+        Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Column(children: [
+          Expanded(child: Align(alignment: Alignment.bottomCenter, child: FractionallySizedBox(
+            heightFactor: (values[i] <= 0 ? 0.02 : values[i] / peak).clamp(0.02, 1.0).toDouble(),
+            widthFactor: 0.62,
+            child: Container(decoration: BoxDecoration(
+              color: '${months[i]['month']}' == current ? Brand.blue : Brand.blueLight,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))),
+          ))),
+          const Gap(6),
+          Text(_label('${months[i]['month']}'), style: manrope(11, FontWeight.w600, color: Brand.gray500)),
+        ]))),
+    ])));
+  }
 }
 
 class OccupancyRing extends StatelessWidget {
