@@ -172,6 +172,37 @@ test('home screen month: residents by rent state, received this month, six month
  assert.deepEqual((await send(agent,'get','/occupancies/today').expect(200)).body,{movedIn:1,movedOut:0});
 });
 
+test('auto-billing raises this month rent once per bed when enabled, idempotent, off by default',async()=>{
+ await send(agent,'post','/occupancies/check-in').send({residentId:resident.id,bedId:bed.id,moveInDate:today,monthlyPrice:'100.10',paymentDay:1,depositAmount:'0'}).expect(201);
+ const fin=app.get(FinanceService);
+ await fin.autobill(actor.propertyId); // switch off by default: nothing is raised
+ assert.equal(await db.charge.count({where:{type:'RENT'}}),0);
+ await db.property.update({where:{id:actor.propertyId},data:{autoBillingEnabled:true}});
+ await fin.autobill(actor.propertyId);
+ const charges=await db.charge.findMany({where:{type:'RENT'}});
+ assert.equal(charges.length,1);
+ assert.equal(charges[0].amount.toString(),'100.1');
+ assert.equal(charges[0].billingPeriodStart.toISOString().slice(0,10),today.slice(0,8)+'01');
+ assert.equal(charges[0].createdByUserId,actor.id);
+ await fin.autobill(actor.propertyId); // a second run raises nothing more for the same month
+ assert.equal(await db.charge.count({where:{type:'RENT'}}),1);
+ assert.equal(await db.auditLog.count({where:{action:'CHARGE_AUTO_CREATED'}}),1);
+});
+test('auto-billing waits for the payment day and skips a bed already charged by hand this month',async()=>{
+ const fin=app.get(FinanceService);await db.property.update({where:{id:actor.propertyId},data:{autoBillingEnabled:true}});
+ const month=today.slice(0,8)+'01';
+ // payment day still ahead this month → nothing yet
+ await send(agent,'post','/occupancies/check-in').send({residentId:resident.id,bedId:bed.id,moveInDate:today,monthlyPrice:'100.10',paymentDay:31,depositAmount:'0'}).expect(201);
+ if(Number(today.slice(8,10))<31){await fin.autobill(actor.propertyId);assert.equal(await db.charge.count({where:{type:'RENT'}}),0);}
+ // a hand-entered rent charge for this month blocks the automatic one for that bed
+ const second=(await send(agent,'post','/residents').send({fullName:'Hand charged',phone:'+998901234590'}).expect(201)).body;
+ const bed2=await db.bed.findFirst({where:{id:{not:bed.id}}});
+ await send(agent,'post','/occupancies/check-in').send({residentId:second.id,bedId:bed2.id,moveInDate:today,monthlyPrice:'250.00',paymentDay:1,depositAmount:'0'}).expect(201);
+ await send(agent,'post','/finance/charges').send({residentId:second.id,bedId:bed2.id,amount:'250.00',type:'RENT',billingPeriodStart:month,billingPeriodEnd:date(40),dueDate:today,gracePeriodDays:0,idempotencyKey:randomUUID()}).expect(201);
+ await fin.autobill(actor.propertyId);
+ assert.equal(await db.charge.count({where:{type:'RENT',residentId:second.id}}),1);
+});
+
 test('debtors list is sorted by days overdue with place and amount',async()=>{
  await send(agent,'post','/occupancies/check-in').send({residentId:resident.id,bedId:bed.id,moveInDate:today,monthlyPrice:'100.10',paymentDay:5,depositAmount:'0'}).expect(201);
  // an overdue charge (due in the past) and a not-yet-due charge for a second resident

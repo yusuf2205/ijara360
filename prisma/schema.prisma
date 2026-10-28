@@ -18,6 +18,9 @@ model Property {
   name      String   @db.VarChar(120)
   address   String?  @db.VarChar(500)
   active    Boolean  @default(true)
+  // When on, the finance worker raises each active bed's monthly rent on its payment day. Off by default so
+  // nothing is billed while the house is still being set up; the owner turns it on in Settings when ready.
+  autoBillingEnabled Boolean @default(false) @map("auto_billing_enabled")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   users     User[]

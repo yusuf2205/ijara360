@@ -1579,19 +1579,26 @@ class PropertyCard extends StatefulWidget {
 
 class _PropertyCardState extends State<PropertyCard> {
   final name = TextEditingController(), address = TextEditingController();
-  bool busy = false, loaded = false;
+  bool busy = false, loaded = false, autoBilling = false, autoBusy = false;
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
   @override
   void dispose() { name.dispose(); address.dispose(); super.dispose(); }
   Future<void> _load() async {
-    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; if (mounted) setState(() => loaded = true); } catch (_) {}
+    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; autoBilling = r['autoBillingEnabled'] == true; if (mounted) setState(() => loaded = true); } catch (_) {}
   }
   Future<void> save() async {
     setState(() => busy = true);
     try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'address': address.text.trim()}); if (mounted) toast(context, 'Сохранено'); }
     on ApiException catch (e) { if (mounted) toast(context, e.message); }
     finally { if (mounted) setState(() => busy = false); }
+  }
+  // The switch takes effect at once: from now on each bed's rent is raised on its payment day.
+  Future<void> setAutoBilling(bool value) async {
+    setState(() { autoBilling = value; autoBusy = true; });
+    try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'autoBillingEnabled': value}); if (mounted) toast(context, value ? 'Автоначисления включены' : 'Автоначисления выключены'); }
+    on ApiException catch (e) { if (mounted) { setState(() => autoBilling = !value); toast(context, e.message); } }
+    finally { if (mounted) setState(() => autoBusy = false); }
   }
   @override
   Widget build(BuildContext context) {
@@ -1605,6 +1612,15 @@ class _PropertyCardState extends State<PropertyCard> {
         const Gap(12),
         Align(alignment: Alignment.centerLeft, child: FilledButton(onPressed: busy ? null : save, child: Text(busy ? 'Сохраняем…' : 'Сохранить'))),
       ])),
+      const Gap(14),
+      const SectionTitle('Начисления'),
+      AppCard(child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: autoBilling,
+        onChanged: autoBusy ? null : setAutoBilling,
+        title: const Text('Автоматические начисления аренды'),
+        subtitle: const Text('В день оплаты каждого жильца система сама создаёт начисление за месяц. Повторно за тот же месяц не начисляет.'),
+      )),
     ]);
   }
 }

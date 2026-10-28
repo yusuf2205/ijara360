@@ -67,6 +67,7 @@ export class PropertyDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(1, 120) name!: string;
   @IsOptional() @IsString() @Length(0, 500) address?: string;
+  @IsOptional() @IsBoolean() autoBillingEnabled?: boolean;
 }
 
 export class LoginApprovalDto {

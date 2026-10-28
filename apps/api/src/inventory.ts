@@ -118,7 +118,7 @@ class InventoryController {
     return this.inventory.write(req.actor, async tx => {
       const before = await tx.property.findUniqueOrThrow({ where: { id: req.actor.propertyId } });
       const property = await tx.property.update({ where: { id: req.actor.propertyId }, data: dto });
-      await this.inventory.audit(tx, req.actor, 'PROPERTY_UPDATED', 'Property', property.id, { before: { name: before.name, address: before.address }, after: { name: property.name, address: property.address } });
+      await this.inventory.audit(tx, req.actor, 'PROPERTY_UPDATED', 'Property', property.id, { before: { name: before.name, address: before.address, autoBilling: before.autoBillingEnabled }, after: { name: property.name, address: property.address, autoBilling: property.autoBillingEnabled } });
       return property;
     }, 'SUPER_ADMIN');
   }

@@ -1,5 +1,6 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Logger, Module, NotFoundException, OnModuleDestroy, OnModuleInit, Param, ParseUUIDPipe, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
 import { PermissionCode, requireAccess } from './permission-policy';
@@ -19,6 +20,18 @@ const money = (value: string) => {
   return amount;
 };
 const chargeInclude = { resident:{select:{id:true,fullName:true}}, bed:{select:{id:true,number:true}}, room:{select:{id:true,number:true}} };
+// Today as the house lives it (Tashkent), so the payment-day decision never drifts with the server clock's zone.
+function tashkentToday() {
+  const iso = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  return { iso, month: iso.slice(0,7), year:+iso.slice(0,4), monthNo:+iso.slice(5,7), day:+iso.slice(8,10) };
+}
+// A stable UUID per (occupancy, month) so re-running the biller never raises the same month's rent twice.
+function billingKey(occupancyId: string, period: string) {
+  const b = createHash('sha256').update(`autobill:${occupancyId}:${period}`).digest().subarray(0,16);
+  b[6] = (b[6] & 0x0f) | 0x50; b[8] = (b[8] & 0x3f) | 0x80;
+  const x = b.toString('hex');
+  return `${x.slice(0,8)}-${x.slice(8,12)}-${x.slice(12,16)}-${x.slice(16,20)}-${x.slice(20,32)}`;
+}
 const paymentInclude = {resident:{select:{id:true,fullName:true}},creator:{select:{id:true,fullName:true}},allocations:{include:{charge:{select:{id:true,type:true,dueDate:true,billingPeriodStart:true,billingPeriodEnd:true}}},orderBy:[{createdAt:'asc' as const},{id:'asc' as const}]}};
 function paymentResult<T extends {amount:Prisma.Decimal;allocations:{amount:Prisma.Decimal}[]}>(payment:T) {
   return {...payment,unallocatedAmount:payment.amount.minus(payment.allocations.reduce((sum,a)=>sum.plus(a.amount),new Prisma.Decimal(0)))};
@@ -42,12 +55,45 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   async tick() {
     if (this.running) return this.running;
     this.running = (async () => {
-      for (const property of await this.db.property.findMany({select:{id:true}})) await this.refresh(property.id);
+      for (const property of await this.db.property.findMany({select:{id:true,autoBillingEnabled:true}})) {
+        // One house's billing hiccup must not hold up every house's refresh, so isolate it.
+        if (property.autoBillingEnabled) try { await this.autobill(property.id); } catch { this.logger.error('Auto-billing failed; next tick retries.'); }
+        await this.refresh(property.id);
+      }
     })().catch(() => { this.logger.error('Finance refresh failed; next tick and access reads retry.'); }).finally(() => { this.running = undefined; });
     return this.running;
   }
   async refresh(propertyId: string) {
     await this.db.$queryRaw`SELECT finance_refresh_property(${propertyId}::uuid)`;
+  }
+  /**
+   * Raises this month's rent for every active bed once its payment day has arrived. Idempotent (a stable
+   * key per occupancy+month, plus a check for an existing rent charge over the month), never backfills past
+   * months, and never bills before move-in. The resident is notified exactly as for a hand-entered charge.
+   */
+  async autobill(propertyId: string) {
+    const property = await this.db.property.findUnique({where:{id:propertyId},select:{autoBillingEnabled:true}});
+    if (!property?.autoBillingEnabled) return; // the house owner turns this on in Settings
+    const t = tashkentToday();
+    const lastDay = new Date(Date.UTC(t.year, t.monthNo, 0)).getUTCDate();
+    const monthStart = financeDate(`${t.month}-01`), monthEnd = financeDate(`${t.month}-${String(lastDay).padStart(2,'0')}`), todayDate = financeDate(t.iso);
+    // Auto-raised charges need an author for the ledger; attribute them to the house owner.
+    const creator = await this.db.user.findFirst({where:{propertyId,active:true,role:{in:['OWNER','SUPER_ADMIN']}},orderBy:{createdAt:'asc'},select:{id:true}});
+    if (!creator) return;
+    const occupancies = await this.db.occupancy.findMany({where:{propertyId,status:'ACTIVE'},select:{id:true,residentId:true,roomId:true,bedId:true,monthlyPrice:true,paymentDay:true,moveInDate:true}});
+    const due = occupancies.filter(o => o.monthlyPrice.gt(0) && o.moveInDate <= todayDate && t.day >= Math.min(o.paymentDay, lastDay));
+    if (!due.length) return;
+    await this.db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM properties WHERE id = ${propertyId}::uuid FOR UPDATE`;
+      for (const o of due) {
+        if (await tx.charge.findFirst({where:{propertyId,residentId:o.residentId,bedId:o.bedId,type:'RENT',billingPeriodStart:monthStart}})) continue;
+        const dueDate = financeDate(`${t.month}-${String(Math.min(o.paymentDay, lastDay)).padStart(2,'0')}`);
+        const charge = await tx.charge.create({data:{propertyId,residentId:o.residentId,roomId:o.roomId,bedId:o.bedId,amount:o.monthlyPrice,type:'RENT',billingPeriodStart:monthStart,billingPeriodEnd:monthEnd,dueDate,gracePeriodDays:0,idempotencyKey:billingKey(o.id,t.month),createdByUserId:creator.id}});
+        await tx.auditLog.create({data:{propertyId,actorId:null,action:'CHARGE_AUTO_CREATED',entity:'Charge',entityId:charge.id,metadata:{residentId:o.residentId,occupancyId:o.id,amount:o.monthlyPrice.toFixed(2),period:t.month,type:'RENT',auto:true}}});
+        await this.notifications.chargeCreated(tx,charge);
+        await publish(tx,{p:propertyId,topic:'finance',type:'charge',id:charge.id,need:['FINANCE_VIEW'],residents:[o.residentId]});
+      }
+    }, {maxWait:10000,timeout:20000});
   }
   async transaction<T>(actor: Actor, need: PermissionCode, action: (tx: Prisma.TransactionClient) => Promise<T>) {
     return this.db.$transaction(async tx => {
