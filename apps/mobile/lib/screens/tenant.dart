@@ -27,7 +27,7 @@ class TenantHome extends StatelessWidget {
         return PageBody(onRefresh: refresh, children: [
           Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Semantics(header: true, child: Text('${greeting()}, ${s.firstName}!', style: t.headlineMedium)),
+              Semantics(header: true, child: Text('${greetingL(context)}, ${s.firstName}!', style: t.headlineMedium)),
               Text(s.propertyName, style: t.bodySmall),
             ])),
             BellButton(unread: feed['unread'] as int? ?? 0, onTap: () => AppShell.go(context, TenantTab.feed)),
@@ -40,12 +40,12 @@ class TenantHome extends StatelessWidget {
             semanticLabel: occ == null ? 'Сейчас вы не заселены' : 'Моё место: комната ${occ['room']}, место ${occ['room']}-${occ['bed']}',
             child: ExcludeSemantics(child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('МОЁ МЕСТО', style: manrope(11, FontWeight.w800, color: Brand.blueLight, spacing: 1.4)),
+                Text(L(context, 'МОЁ МЕСТО'), style: manrope(11, FontWeight.w800, color: Brand.blueLight, spacing: 1.4)),
                 const Gap(8),
-                Text(occ == null ? 'Не заселён' : 'Комната ${occ['room']}', style: manrope(26, FontWeight.w800, color: Brand.white)),
-                if (occ != null) Text('Место ${occ['room']}-${occ['bed']} · с ${day(occ['moveInDate'])}', style: manrope(14, FontWeight.w600, color: const Color(0xFFB9B9BE))),
+                Text(occ == null ? L(context, 'Не заселён') : '${L(context, 'Комната')} ${occ['room']}', style: manrope(26, FontWeight.w800, color: Brand.white)),
+                if (occ != null) Text('${L(context, 'Место')} ${occ['room']}-${occ['bed']} · ${dayL(context, occ['moveInDate'])}', style: manrope(14, FontWeight.w600, color: const Color(0xFFB9B9BE))),
                 const Gap(12),
-                StatusPill(occ == null ? 'Нет проживания' : 'Проживаю', tone: occ == null ? Tone.gray : Tone.blue),
+                StatusPill(occ == null ? L(context, 'Нет проживания') : L(context, 'Проживаю'), tone: occ == null ? Tone.gray : Tone.blue),
               ])),
               Container(
                 width: 92, height: 92,
@@ -62,7 +62,7 @@ class TenantHome extends StatelessWidget {
               child: Row(children: [
                 const IconChip(Icons.error_outline_rounded, tone: Tone.red),
                 const SizedBox(width: 12),
-                Expanded(child: Text('Долг ${sum(debt)}. Оплатите у администратора, чтобы сохранить доступ.', style: manrope(14, FontWeight.w700, color: const Color(0xFF9B342E)))),
+                Expanded(child: Text('${L(context, 'Долг')} ${sum(debt)}. ${L(context, 'Оплатите у администратора, чтобы сохранить доступ.')}', style: manrope(14, FontWeight.w700, color: const Color(0xFF9B342E)))),
               ]),
             ),
             const Gap(12),
@@ -72,41 +72,41 @@ class TenantHome extends StatelessWidget {
               onTap: () => AppShell.go(context, TenantTab.payments),
               semanticLabel: next == null ? 'Платежей к оплате нет' : 'Следующая оплата ${sum(next['dueAmount'])} до ${day(next['dueDate'])}',
               child: ExcludeSemantics(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Следующая оплата', style: t.bodySmall),
+                Text(L(context, 'Следующая оплата'), style: t.bodySmall),
                 const Gap(6),
-                Text(next == null ? 'Нет долга' : sum(next['dueAmount']), style: manrope(20, FontWeight.w800)),
+                Text(next == null ? L(context, 'Нет долга') : sum(next['dueAmount']), style: manrope(20, FontWeight.w800)),
                 const Gap(4),
-                Text(next == null ? 'Всё оплачено' : 'до ${day(next['dueDate'])}', style: t.bodySmall),
+                Text(next == null ? L(context, 'Всё оплачено') : dueBy(context, next['dueDate']), style: t.bodySmall),
                 const Gap(12),
-                if (next != null) dueBadge(next),
+                if (next != null) dueBadge(context, next),
               ])),
             );
             final acc = AppCard(
               semanticLabel: granted ? 'Доступ разрешён' : 'Доступ ограничен',
               child: ExcludeSemantics(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Доступ', style: t.bodySmall),
+                Text(L(context, 'Доступ'), style: t.bodySmall),
                 const Gap(6),
                 // One line on narrow phones ("Разрешён" broke mid-word): shrink instead of wrapping.
-                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(granted ? 'Разрешён' : 'Ограничен', maxLines: 1, style: manrope(20, FontWeight.w800, color: granted ? Brand.green : Brand.red))),
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(granted ? L(context, 'Разрешён') : L(context, 'Ограничен'), maxLines: 1, style: manrope(20, FontWeight.w800, color: granted ? Brand.green : Brand.red))),
                 const Gap(4),
-                Text(granted ? (debt > 0 ? 'Есть долг' : 'Долга нет') : 'Есть просрочка', style: t.bodySmall),
+                Text(granted ? (debt > 0 ? L(context, 'Есть долг') : L(context, 'Долга нет')) : L(context, 'Есть просрочка'), style: t.bodySmall),
                 const Gap(12),
                 IconChip(granted ? Icons.verified_user_rounded : Icons.gpp_bad_outlined, tone: granted ? Tone.green : Tone.red, size: 34),
               ])),
             );
             return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: pay), const SizedBox(width: 12), Expanded(child: acc)]));
           }),
-          const SectionTitle('Разделы'),
+          SectionTitle(L(context, 'Разделы')),
           TileGrid(minTile: 104, max: 6, children: [
-            QuickTile(icon: Icons.account_balance_wallet_outlined, label: 'Мои платежи', onTap: () => AppShell.go(context, TenantTab.payments)),
-            QuickTile(icon: Icons.chat_bubble_outline_rounded, label: 'Обращения', onTap: () => AppShell.go(context, TenantTab.tickets)),
-            QuickTile(icon: Icons.notifications_none_rounded, label: 'Уведомления', badge: feed['unread'] as int? ?? 0, onTap: () => AppShell.go(context, TenantTab.feed)),
-            QuickTile(icon: Icons.person_outline_rounded, label: 'Профиль', onTap: () => AppShell.go(context, TenantTab.profile)),
-            const QuickTile(icon: Icons.group_outlined, label: 'Мои гости', soon: true),
-            const QuickTile(icon: Icons.campaign_outlined, label: 'Объявления', soon: true),
+            QuickTile(icon: Icons.account_balance_wallet_outlined, label: L(context, 'Мои платежи'), onTap: () => AppShell.go(context, TenantTab.payments)),
+            QuickTile(icon: Icons.chat_bubble_outline_rounded, label: L(context, 'Обращения'), onTap: () => AppShell.go(context, TenantTab.tickets)),
+            QuickTile(icon: Icons.notifications_none_rounded, label: L(context, 'Уведомления'), badge: feed['unread'] as int? ?? 0, onTap: () => AppShell.go(context, TenantTab.feed)),
+            QuickTile(icon: Icons.person_outline_rounded, label: L(context, 'Профиль'), onTap: () => AppShell.go(context, TenantTab.profile)),
+            QuickTile(icon: Icons.group_outlined, label: L(context, 'Мои гости'), soon: true),
+            QuickTile(icon: Icons.campaign_outlined, label: L(context, 'Объявления'), soon: true),
           ]),
           if ((feed['items'] as List).isNotEmpty) ...[
-            SectionTitle('Последнее', action: 'Все', onAction: () => AppShell.go(context, TenantTab.feed)),
+            SectionTitle(L(context, 'Последнее'), action: L(context, 'Все'), onAction: () => AppShell.go(context, TenantTab.feed)),
             for (final n in (feed['items'] as List).take(3)) Padding(padding: const EdgeInsets.only(bottom: 10), child: NoticeTile(n as Map<String, dynamic>)),
           ],
         ]);
@@ -115,17 +115,17 @@ class TenantHome extends StatelessWidget {
   }
 }
 
-Widget dueBadge(Map<String, dynamic> c) {
-  if (c['status'] == 'OVERDUE') return const StatusPill('Просрочено', tone: Tone.red);
+Widget dueBadge(BuildContext context, Map<String, dynamic> c) {
+  if (c['status'] == 'OVERDUE') return StatusPill(L(context, 'Просрочено'), tone: Tone.red);
   final due = DateTime.parse('${c['dueDate']}').toUtc();
   final days = due.difference(DateTime.now().toUtc()).inDays;
-  return StatusPill(days <= 0 ? 'Сегодня' : 'Через $days дн.', tone: days <= 3 ? Tone.orange : Tone.blue);
+  return StatusPill(days <= 0 ? L(context, 'Сегодня') : (isUz(context) ? '$days kundan keyin' : 'Через $days дн.'), tone: days <= 3 ? Tone.orange : Tone.blue);
 }
 
 const chargeType = {'RENT': 'Аренда', 'DEPOSIT': 'Залог', 'PENALTY': 'Штраф', 'UTILITIES': 'Коммунальные', 'OTHER': 'Начисление'};
 const methodLabel = {'CASH': 'наличные', 'CARD_TRANSFER': 'перевод на карту', 'BANK_TRANSFER': 'банковский перевод', 'OTHER': 'другое'};
 (String, Tone) chargeStatus(String s) => switch (s) { 'PAID' => ('Оплачено', Tone.green), 'PARTIALLY_PAID' => ('Частично', Tone.orange), 'OVERDUE' => ('Просрочено', Tone.red), _ => ('К оплате', Tone.blue) };
-String period(Map c) => c['type'] == 'RENT' ? 'Аренда за ${monthName(c['billingPeriodStart'])}' : chargeType[c['type']] ?? 'Начисление';
+String period(BuildContext ctx, Map c) => c['type'] == 'RENT' ? '${L(ctx, 'Аренда за')} ${monthNameL(ctx, c['billingPeriodStart'])}' : L(ctx, chargeType[c['type']] ?? 'Начисление');
 
 class TenantPayments extends StatefulWidget {
   const TenantPayments({super.key});
@@ -139,7 +139,7 @@ class _TenantPaymentsState extends State<TenantPayments> {
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Платежи')),
+      appBar: AppBar(title: Text(L(context, 'Платежи'))),
       body: LiveData<List<dynamic>>(
         topics: const {'finance'},
         load: () => Future.wait([s.api.get('/tenant/finance'), s.api.get('/tenant/charges'), s.api.get('/tenant/payments')]),
@@ -149,9 +149,9 @@ class _TenantPaymentsState extends State<TenantPayments> {
           final rent = fin['rent'] as Map<String, dynamic>?;
           return PageBody(onRefresh: refresh, children: [
             TileGrid(minTile: 150, max: 3, children: [
-              Kpi(icon: Icons.error_outline_rounded, tone: (num.tryParse('${fin['totalDebt']}') ?? 0) > 0 ? Tone.red : Tone.green, value: sum(fin['totalDebt']), label: 'Долг'),
-              Kpi(icon: Icons.savings_outlined, tone: Tone.blue, value: sum(fin['creditBalance']), label: 'Аванс'),
-              if (rent != null) Kpi(icon: Icons.event_repeat_rounded, tone: Tone.gray, value: '${rent['paymentDay']}-е', label: 'День оплаты · ${sum(rent['monthlyPrice'])} в месяц'),
+              Kpi(icon: Icons.error_outline_rounded, tone: (num.tryParse('${fin['totalDebt']}') ?? 0) > 0 ? Tone.red : Tone.green, value: sum(fin['totalDebt']), label: L(context, 'Долг')),
+              Kpi(icon: Icons.savings_outlined, tone: Tone.blue, value: sum(fin['creditBalance']), label: L(context, 'Аванс')),
+              if (rent != null) Kpi(icon: Icons.event_repeat_rounded, tone: Tone.gray, value: '${rent['paymentDay']}', label: '${L(context, 'День оплаты')} · ${sum(rent['monthlyPrice'])} ${L(context, 'в месяц')}'),
             ]),
             const Gap(16),
             AppCard(
@@ -159,21 +159,21 @@ class _TenantPaymentsState extends State<TenantPayments> {
               child: Row(children: [
                 const Icon(Icons.info_outline_rounded),
                 const SizedBox(width: 12),
-                Expanded(child: Text('Оплата принимается у администратора. После оплаты здесь появится чек, а в Telegram придёт уведомление.', style: manrope(13, FontWeight.w600))),
+                Expanded(child: Text(L(context, 'Оплата принимается у администратора. После оплаты здесь появится чек, а в Telegram придёт уведомление.'), style: manrope(13, FontWeight.w600))),
               ]),
             ),
             const Gap(16),
             SegmentedButton<bool>(
               showSelectedIcon: false,
-              segments: const [ButtonSegment(value: false, label: Text('Начисления')), ButtonSegment(value: true, label: Text('Оплаты'))],
+              segments: [ButtonSegment(value: false, label: Text(L(context, 'Начисления'))), ButtonSegment(value: true, label: Text(L(context, 'Оплаты')))],
               selected: {showPayments},
               onSelectionChanged: (v) => setState(() => showPayments = v.first),
             ),
             const Gap(14),
             if (!showPayments)
-              if (charges.isEmpty) const EmptyState(icon: Icons.receipt_long_outlined, title: 'Начислений пока нет')
+              if (charges.isEmpty) EmptyState(icon: Icons.receipt_long_outlined, title: L(context, 'Начислений пока нет'))
               else for (final c in charges.cast<Map<String, dynamic>>()) Padding(padding: const EdgeInsets.only(bottom: 10), child: _ChargeTile(c))
-            else if (payments.isEmpty) const EmptyState(icon: Icons.payments_outlined, title: 'Оплат пока нет')
+            else if (payments.isEmpty) EmptyState(icon: Icons.payments_outlined, title: L(context, 'Оплат пока нет'))
             else for (final p in payments.cast<Map<String, dynamic>>()) Padding(padding: const EdgeInsets.only(bottom: 10), child: _PaymentTile(p)),
           ]);
         },
@@ -190,15 +190,15 @@ class _ChargeTile extends StatelessWidget {
     final (label, tone) = chargeStatus(c['status'] as String);
     final due = num.tryParse('${c['dueAmount']}') ?? 0;
     return AppCard(
-      semanticLabel: '${period(c)}: ${sum(c['amount'])}, $label',
+      semanticLabel: '${period(context, c)}: ${sum(c['amount'])}, ${L(context, label)}',
       child: ExcludeSemantics(child: Row(children: [
         IconChip(Icons.receipt_long_rounded, tone: tone),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(period(c), style: manrope(15, FontWeight.w700)),
-          Text(due > 0 ? 'Осталось ${sum(due)} · до ${day(c['dueDate'])}' : 'Срок ${day(c['dueDate'])}', style: Theme.of(context).textTheme.bodySmall),
+          Text(period(context, c), style: manrope(15, FontWeight.w700)),
+          Text(due > 0 ? '${L(context, 'Осталось')} ${sum(due)} · ${dueBy(context, c['dueDate'])}' : '${L(context, 'Срок')} ${dayL(context, c['dueDate'])}', style: Theme.of(context).textTheme.bodySmall),
         ])),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(sum(c['amount']), style: manrope(15, FontWeight.w800)), const Gap(4), StatusPill(label, tone: tone)]),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(sum(c['amount']), style: manrope(15, FontWeight.w800)), const Gap(4), StatusPill(L(context, label), tone: tone)]),
       ])),
     );
   }
@@ -218,14 +218,14 @@ class _PaymentTile extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(sum(p['amount']), style: manrope(17, FontWeight.w800)),
-            Text('${dayTime(p['createdAt'])} · ${methodLabel[p['method']] ?? ''}', style: Theme.of(context).textTheme.bodySmall),
+            Text('${dayTime(p['createdAt'])} · ${L(context, methodLabel[p['method']] ?? '')}', style: Theme.of(context).textTheme.bodySmall),
           ])),
         ]),
         if (parts.isNotEmpty || extra > 0) ...[
           const Gap(10),
           const Divider(),
-          for (final a in parts) KeyValue(period(a['charge'] as Map), sum(a['amount'])),
-          if (extra > 0) KeyValue('В аванс', sum(extra), valueColor: Brand.green),
+          for (final a in parts) KeyValue(period(context, a['charge'] as Map), sum(a['amount'])),
+          if (extra > 0) KeyValue(L(context, 'В аванс'), sum(extra), valueColor: Brand.green),
         ],
       ]),
     );

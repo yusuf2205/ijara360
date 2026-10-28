@@ -140,11 +140,11 @@ class _TenantAppState extends State<TenantApp> with _Unread {
   String get feedPath => '/tenant/notifications';
   @override
   Widget build(BuildContext context) => ForegroundLocation(child: AppShell(destinations: [
-        Destination('Главная', Icons.home_outlined, Icons.home_rounded, (_) => const LocationLock(child: TenantHome())),
-        Destination('Платежи', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const TenantPayments()),
-        Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const LocationLock(child: TenantTickets())),
-        Destination('Лента', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => const LocationLock(child: NotificationsScreen()), badge: unread),
-        Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen()),
+        Destination(L(context, 'Главная'), Icons.home_outlined, Icons.home_rounded, (_) => const LocationLock(child: TenantHome())),
+        Destination(L(context, 'Платежи'), Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const TenantPayments()),
+        Destination(L(context, 'Обращения'), Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const LocationLock(child: TenantTickets())),
+        Destination(L(context, 'Лента'), Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => const LocationLock(child: NotificationsScreen()), badge: unread),
+        Destination(L(context, 'Профиль'), Icons.person_outline_rounded, Icons.person_rounded, (_) => const ProfileScreen()),
       ]));
 }
 

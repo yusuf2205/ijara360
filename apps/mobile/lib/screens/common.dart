@@ -84,7 +84,7 @@ class NotificationsScreen extends StatelessWidget {
     final s = SessionScope.of(context);
     final base = s.isStaff ? '/notifications' : '/tenant/notifications';
     return Scaffold(
-      appBar: AppBar(title: const Text('Уведомления')),
+      appBar: AppBar(title: Text(L(context, 'Уведомления'))),
       floatingActionButton: (s.isStaff && s.role == Role.superAdmin)
           ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => _announce(context), icon: const Icon(Icons.campaign_outlined), label: const Text('Объявление'))
           : null,
@@ -95,8 +95,8 @@ class NotificationsScreen extends StatelessWidget {
           final items = (feed['items'] as List).cast<Map<String, dynamic>>();
           return PageBody(maxWidth: 760, onRefresh: refresh, children: [
             if ((feed['unread'] as int? ?? 0) > 0)
-              Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async { await s.api.post('$base/read', {}); await refresh(); }, icon: const Icon(Icons.done_all_rounded), label: const Text('Прочитать все'))),
-            if (items.isEmpty) const EmptyState(icon: Icons.notifications_none_rounded, title: 'Уведомлений пока нет', text: 'Здесь появятся оплаты, начисления и ответы на обращения.'),
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: () async { await s.api.post('$base/read', {}); await refresh(); }, icon: const Icon(Icons.done_all_rounded), label: Text(L(context, 'Прочитать все')))),
+            if (items.isEmpty) EmptyState(icon: Icons.notifications_none_rounded, title: L(context, 'Уведомлений пока нет'), text: L(context, 'Здесь появятся оплаты, начисления и ответы на обращения.')),
             for (final n in items) Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: NoticeTile(n, onTap: () async {
@@ -176,10 +176,10 @@ class TicketTile extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${t['title']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: manrope(15, FontWeight.w800)),
           const Gap(2),
-          Text(subtitle ?? '${ticketCategory[t['category']]} · ${dayTime(t['updatedAt'])}', style: Theme.of(context).textTheme.bodySmall),
+          Text(subtitle ?? '${L(context, ticketCategory[t['category']] ?? '')} · ${dayTime(t['updatedAt'])}', style: Theme.of(context).textTheme.bodySmall),
         ])),
         const SizedBox(width: 8),
-        StatusPill(label, tone: tone),
+        StatusPill(L(context, label), tone: tone),
       ])),
     );
   }
@@ -191,13 +191,13 @@ class TenantTickets extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Обращения')),
+      appBar: AppBar(title: Text(L(context, 'Обращения'))),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Brand.blue,
         foregroundColor: Brand.white,
         onPressed: () => openPage(context, const NewTicketScreen()),
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Новое обращение'),
+        label: Text(L(context, 'Новое обращение')),
       ),
       body: LiveData<Map<String, dynamic>>(
         topics: const {'tickets'},
@@ -208,10 +208,10 @@ class TenantTickets extends StatelessWidget {
             AppCard(color: Brand.blueSoft, child: Row(children: [
               const Icon(Icons.shield_outlined),
               const SizedBox(width: 12),
-              Expanded(child: Text('Ваше имя видит только владелец дома. Сотрудникам — только суть, а для поломок ещё и комната.', style: manrope(13, FontWeight.w600))),
+              Expanded(child: Text(L(context, 'Ваше имя видит только владелец дома. Сотрудникам — только суть, а для поломок ещё и комната.'), style: manrope(13, FontWeight.w600))),
             ])),
             const Gap(14),
-            if (items.isEmpty) const EmptyState(icon: Icons.chat_bubble_outline_rounded, title: 'Обращений пока нет', text: 'Сломалось что-то, мешают соседи или есть идея? Напишите — администрация ответит здесь.'),
+            if (items.isEmpty) EmptyState(icon: Icons.chat_bubble_outline_rounded, title: L(context, 'Обращений пока нет'), text: L(context, 'Сломалось что-то, мешают соседи или есть идея? Напишите — администрация ответит здесь.')),
             for (final t in items) Padding(padding: const EdgeInsets.only(bottom: 10), child: TicketTile(t, onTap: () => openPage(context, TicketScreen(id: '${t['id']}')))),
             const Gap(70),
           ]);
@@ -242,7 +242,7 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
     try {
       final t = await s.api.post('/tenant/tickets', {'category': category, 'title': title.text.trim(), 'body': body.text.trim()}) as Map<String, dynamic>;
       if (!mounted) return;
-      toast(context, 'Обращение отправлено');
+      toast(context, L(context, 'Обращение отправлено'));
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TicketScreen(id: '${t['id']}')));
     } on ApiException catch (e) {
       setState(() => error = e.message);
@@ -253,29 +253,29 @@ class _NewTicketScreenState extends State<NewTicketScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Новое обращение')),
+        appBar: AppBar(title: Text(L(context, 'Новое обращение'))),
         body: PageBody(maxWidth: 640, children: [
-          Text('Что случилось?', style: Theme.of(context).textTheme.titleMedium),
+          Text(L(context, 'Что случилось?'), style: Theme.of(context).textTheme.titleMedium),
           const Gap(10),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final e in ticketCategory.entries)
               ChoiceChip(
                 avatar: Icon(ticketIcon(e.key), size: 18),
-                label: Text(e.value),
+                label: Text(L(context, e.value)),
                 selected: category == e.key,
                 showCheckmark: false,
                 onSelected: (_) => setState(() => category = e.key),
               ),
           ]),
           const Gap(18),
-          TextField(controller: title, maxLength: 120, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: 'Коротко', hintText: category == 'REPAIR' ? 'Например: течёт кран в ванной' : 'О чём обращение')),
+          TextField(controller: title, maxLength: 120, textInputAction: TextInputAction.next, decoration: InputDecoration(labelText: L(context, 'Коротко'), hintText: category == 'REPAIR' ? L(context, 'Например: течёт кран в ванной') : L(context, 'О чём обращение'))),
           const Gap(6),
-          TextField(controller: body, maxLength: 4000, minLines: 5, maxLines: 10, decoration: const InputDecoration(labelText: 'Подробнее', alignLabelWithHint: true, hintText: 'Где, когда, что уже пробовали')),
+          TextField(controller: body, maxLength: 4000, minLines: 5, maxLines: 10, decoration: InputDecoration(labelText: L(context, 'Подробнее'), alignLabelWithHint: true, hintText: L(context, 'Где, когда, что уже пробовали'))),
           const Gap(6),
-          Text(category == 'REPAIR' ? 'Сотрудники увидят вашу комнату, чтобы прийти починить, но не ваше имя.' : 'Сотрудники не увидят ваше имя и комнату.', style: Theme.of(context).textTheme.bodySmall),
+          Text(category == 'REPAIR' ? L(context, 'Сотрудники увидят вашу комнату, чтобы прийти починить, но не ваше имя.') : L(context, 'Сотрудники не увидят ваше имя и комнату.'), style: Theme.of(context).textTheme.bodySmall),
           if (error != null) ...[const Gap(12), Text(error!, style: manrope(14, FontWeight.w600, color: Brand.red))],
           const Gap(18),
-          FilledButton.icon(onPressed: busy ? null : send, icon: const Icon(Icons.send_rounded), label: const Text('Отправить')),
+          FilledButton.icon(onPressed: busy ? null : send, icon: const Icon(Icons.send_rounded), label: Text(L(context, 'Отправить'))),
         ]),
       );
 }
@@ -303,7 +303,7 @@ class _AppVersionCardState extends State<_AppVersionCard> {
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Ijara360', style: manrope(15, FontWeight.w700)),
-              Text('Версия $appVersionLabel', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+              Text('${L(context, 'Версия')} $appVersionLabel', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
             ])),
           ]),
           if (updatesSupported) ...[
@@ -313,7 +313,7 @@ class _AppVersionCardState extends State<_AppVersionCard> {
               icon: busy
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.4))
                   : const Icon(Icons.system_update_rounded, size: 20),
-              label: Text(busy ? 'Проверяем…' : 'Проверить обновления'),
+              label: Text(busy ? L(context, 'Проверяем…') : L(context, 'Проверить обновления')),
             ),
           ],
         ]),
@@ -339,7 +339,7 @@ class _TicketScreenState extends State<TicketScreen> {
     final s = SessionScope.of(context);
     final path = s.isStaff ? '/tickets/${widget.id}' : '/tenant/tickets/${widget.id}';
     return Scaffold(
-      appBar: AppBar(title: const Text('Обращение')),
+      appBar: AppBar(title: Text(L(context, 'Обращение'))),
       body: LiveData<Map<String, dynamic>>(
         topics: const {'tickets'},
         load: () async => (await s.api.get(path)) as Map<String, dynamic>,
@@ -354,7 +354,7 @@ class _TicketScreenState extends State<TicketScreen> {
           }
           return Column(children: [
             Expanded(child: PageBody(maxWidth: 760, onRefresh: refresh, children: [
-              Row(children: [StatusPill(label, tone: tone), const SizedBox(width: 8), Text('${ticketCategory[t['category']]}${t['room'] != null ? ' · комната ${t['room']}' : ''}', style: Theme.of(context).textTheme.bodySmall)]),
+              Row(children: [StatusPill(L(context, label), tone: tone), const SizedBox(width: 8), Text('${L(context, ticketCategory[t['category']] ?? '')}${t['room'] != null ? ' · ${L(context, 'комната')} ${t['room']}' : ''}', style: Theme.of(context).textTheme.bodySmall)]),
               const Gap(10),
               Text('${t['title']}', style: Theme.of(context).textTheme.headlineSmall),
               if (s.isStaff) ...[
@@ -374,17 +374,17 @@ class _TicketScreenState extends State<TicketScreen> {
                   if (!open) OutlinedButton(onPressed: busy ? null : () => run(() async { await s.api.patch(path, {'status': 'OPEN', 'version': t['version']}); }), child: const Text('Открыть снова')),
                 ]),
               ],
-              if (!open) ...[const Gap(12), Text(s.isStaff ? 'Обращение закрыто.' : 'Обращение закрыто. Если вопрос остался — создайте новое.', style: Theme.of(context).textTheme.bodySmall)],
+              if (!open) ...[const Gap(12), Text(s.isStaff ? 'Обращение закрыто.' : L(context, 'Обращение закрыто. Если вопрос остался — создайте новое.'), style: Theme.of(context).textTheme.bodySmall)],
             ])),
             if (open && canReply)
               SafeArea(top: false, child: Container(
                 color: Brand.white,
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                 child: Row(children: [
-                  Expanded(child: TextField(controller: reply, minLines: 1, maxLines: 4, maxLength: 4000, decoration: InputDecoration(counterText: '', hintText: s.isStaff ? 'Ответ жильцу' : 'Сообщение'))),
+                  Expanded(child: TextField(controller: reply, minLines: 1, maxLines: 4, maxLength: 4000, decoration: InputDecoration(counterText: '', hintText: s.isStaff ? 'Ответ жильцу' : L(context, 'Сообщение')))),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    tooltip: 'Отправить',
+                    tooltip: L(context, 'Отправить'),
                     style: IconButton.styleFrom(backgroundColor: Brand.blue, foregroundColor: Brand.white, minimumSize: const Size(52, 52)),
                     onPressed: busy ? null : () { final text = reply.text.trim(); if (text.isEmpty) return; run(() async { await s.api.post('$path/messages', {'body': text}); reply.clear(); }); },
                     icon: const Icon(Icons.send_rounded),
@@ -438,7 +438,7 @@ class ProfileScreen extends StatelessWidget {
     final s = SessionScope.of(context);
     final sessions = s.isStaff ? '/auth/sessions' : '/tenant/sessions';
     return Scaffold(
-      appBar: AppBar(title: const Text('Профиль')),
+      appBar: AppBar(title: Text(L(context, 'Профиль'))),
       body: LiveData<List<dynamic>>(
         load: () async => (await s.api.get(sessions)) as List<dynamic>,
         builder: (context, list, refresh) => PageBody(maxWidth: 760, onRefresh: refresh, children: [
@@ -449,40 +449,55 @@ class ProfileScreen extends StatelessWidget {
               Text(s.fullName, style: Theme.of(context).textTheme.titleLarge),
               Text(s.phone, style: Theme.of(context).textTheme.bodySmall),
               const Gap(6),
-              StatusPill(s.roleLabel, tone: s.role == Role.superAdmin ? Tone.ink : Tone.blue),
+              StatusPill(L(context, s.roleLabel), tone: s.role == Role.superAdmin ? Tone.ink : Tone.blue),
             ])),
           ])),
+          // Residents choose the app language; staff always see Russian.
+          if (s.role == Role.tenant) ...[
+            const Gap(12),
+            AppCard(child: Row(children: [
+              const IconChip(Icons.language_rounded, tone: Tone.blue),
+              const SizedBox(width: 12),
+              Expanded(child: Text(L(context, 'Язык'), style: manrope(15, FontWeight.w700))),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [ButtonSegment(value: 'ru', label: Text('RU')), ButtonSegment(value: 'uz', label: Text('UZ'))],
+                selected: {s.lang},
+                onSelectionChanged: (v) => s.setLang(v.first),
+              ),
+            ])),
+          ],
           ...extra,
-          const SectionTitle('Мои устройства'),
+          SectionTitle(L(context, 'Мои устройства')),
           for (final d in list.cast<Map<String, dynamic>>()) Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: AppCard(child: Row(children: [
               IconChip(d['platform'] == 'WEB' ? Icons.laptop_rounded : Icons.phone_android_rounded, tone: d['current'] == true ? Tone.blue : Tone.gray),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${d['deviceName'] ?? platformLabel[d['platform']]}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(15, FontWeight.w700)),
-                Text(d['current'] == true ? 'Это устройство' : 'Активность ${dayTime(d['lastSeenAt'] ?? d['createdAt'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                Text('${d['deviceName'] ?? L(context, platformLabel[d['platform']] ?? '')}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(15, FontWeight.w700)),
+                Text(d['current'] == true ? L(context, 'Это устройство') : '${L(context, 'Активность')} ${dayTime(d['lastSeenAt'] ?? d['createdAt'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
               ])),
               if (d['current'] != true) TextButton(onPressed: () async {
-                try { await s.api.delete('${s.isStaff ? '/auth/sessions' : '/tenant/sessions'}/${d['id']}'); await refresh(); if (context.mounted) toast(context, 'Устройство вышло из приложения'); }
+                try { await s.api.delete('${s.isStaff ? '/auth/sessions' : '/tenant/sessions'}/${d['id']}'); await refresh(); if (context.mounted) toast(context, L(context, 'Устройство вышло из приложения')); }
                 on ApiException catch (e) { if (context.mounted) toast(context, e.message); }
-              }, child: const Text('Завершить')),
+              }, child: Text(L(context, 'Завершить'))),
             ])),
           ),
           const Gap(20),
-          const SectionTitle('О приложении'),
+          SectionTitle(L(context, 'О приложении')),
           const _AppVersionCard(),
           const Gap(20),
           OutlinedButton.icon(
             onPressed: () async {
               final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
-                title: const Text('Выйти из приложения?'),
-                actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Выйти'))],
+                title: Text(L(context, 'Выйти из приложения?')),
+                actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(L(context, 'Отмена'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(L(context, 'Выйти')))],
               ));
               if (ok == true) await s.logout();
             },
             icon: const Icon(Icons.logout_rounded),
-            label: const Text('Выйти'),
+            label: Text(L(context, 'Выйти')),
           ),
           const Gap(16),
           Center(child: Image.asset('assets/brand/logo.png', height: 26, semanticLabel: 'ijara360')),

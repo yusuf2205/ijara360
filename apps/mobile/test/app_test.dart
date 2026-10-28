@@ -106,6 +106,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('resident app shows Uzbek when the language is set to uz', (tester) async {
+    final api = ApiClient(httpClient: fakeApi({
+      '/api/tenant/me': {'fullName': 'Karimov Aziz', 'phone': '+998901234567', 'property': {'name': 'Talabalar uyi'}, 'occupancy': {'room': '3', 'bed': '2', 'moveInDate': '2026-08-12T00:00:00.000Z', 'monthlyPrice': '1200000', 'paymentDay': 5, 'depositAmount': '0'}},
+      '/api/tenant/finance': {'access': {'granted': false, 'reason': 'OVERDUE'}, 'totalDebt': '1200000', 'creditBalance': '0', 'overdue': {'amount': '1200000', 'count': 1}, 'nextCharge': {'type': 'RENT', 'status': 'OVERDUE', 'dueAmount': '1200000', 'dueDate': '2026-10-05T00:00:00.000Z', 'billingPeriodStart': '2026-10-01T00:00:00.000Z'}, 'rent': null},
+      '/api/tenant/notifications': {'items': [], 'unread': 0, 'total': 0},
+    }));
+    final session = Session(api: api)..role = Role.tenant..fullName = 'Karimov Aziz'..lang = 'uz'..ready = true;
+    await tester.pumpWidget(host(session, const Scaffold(body: TenantHome())));
+    await tester.pumpAndSettle();
+    expect(find.text('MENING JOYIM'), findsOneWidget);
+    expect(find.text('Xona 3'), findsOneWidget);
+    expect(find.text('Cheklangan'), findsOneWidget);
+    expect(find.text('Bo‘limlar'), findsOneWidget);
+    expect(find.textContaining('Qarz'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('staff sections follow permissions: an accountant has finance but no tickets or applications', (tester) async {
     final api = ApiClient(httpClient: fakeApi({'/api/notifications': {'items': [], 'unread': 0, 'total': 0}, '/api/rooms': [], '/api/finance': {'summary': {'charged': '0', 'paid': '0', 'outstanding': '0', 'overdue': '0'}, 'residents': [], 'payments': []}}));
     final session = Session(api: api)..role = Role.admin..permissions = {'FINANCE_VIEW', 'FINANCE_MANAGE'}..fullName = 'Бухгалтер Тест'..ready = true;

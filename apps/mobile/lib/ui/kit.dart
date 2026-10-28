@@ -28,6 +28,66 @@ String greeting() {
   return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
 }
 
+// ---- Resident-app Uzbek. Staff always see Russian; L falls back to the Russian key when no translation. ----
+const _uzMonths = ['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+const Map<String, String> _uz = {
+  // Login
+  'Введите телефон и пароль.':'Telefon va parolni kiriting.','Вход не подтверждён. Попробуйте снова.':'Kirish tasdiqlanmadi. Yana urinib ko‘ring.',
+  'ВАШ ДОМ. ВСЁ НА СВОИХ МЕСТАХ.':'UYINGIZ. HAMMASI JOYIDA.','Меньше записей.\nБольше порядка.':'Kamroq yozuv.\nKo‘proq tartib.',
+  'Жильцы видят оплаты и обращения, сотрудники — весь дом. С телефона, планшета или компьютера.':'Ijarachilar to‘lov va murojaatlarni, xodimlar butun uyni ko‘radi. Telefon, planshet yoki kompyuterdan.',
+  'Вход':'Kirish','Для жильцов: номер телефона и пароль, который вы задали по ссылке-приглашению.':'Ijarachilar uchun: telefon raqami va taklif havolasi orqali belgilagan parolingiz.',
+  'Для владельца и администраторов дома.':'Uy egasi va administratorlari uchun.','Я жилец':'Men ijarachiman','Я сотрудник':'Men xodimman',
+  'Телефон':'Telefon','Пароль':'Parol','Показать пароль':'Parolni ko‘rsatish','Скрыть пароль':'Parolni yashirish',
+  'Запомнить меня на 30 дней':'Meni 30 kun eslab qol','Войти':'Kirish','Хочу заселиться':'Joylashmoqchiman',
+  'Подайте заявку — это займёт 5 минут':'Ariza yuboring — bu 5 daqiqa oladi','Хочу заселиться: подать заявку':'Joylashmoqchiman: ariza yuborish',
+  'Установить приложение':'Ilovani o‘rnatish','Нет пароля? Попросите администрацию прислать приглашение.':'Parol yo‘qmi? Ma’muriyatdan taklif yuborishni so‘rang.',
+  'Забыли пароль? Обратитесь к владельцу дома.':'Parolni unutdingizmi? Uy egasiga murojaat qiling.',
+  'Отмена':'Bekor qilish','Ждём подтверждения владельца':'Uy egasi tasdig‘ini kutyapmiz','Подтвердите вход в Telegram':'Telegramda kirishni tasdiqlang',
+  'Вход не выполнен':'Kirish bajarilmadi','Владелец получил запрос в Telegram. Как только он нажмёт «Разрешить», вход продолжится сам.':'Uy egasi Telegramda so‘rov oldi. U «Ruxsat» bosishi bilan kirish o‘zi davom etadi.',
+  'Мы отправили сообщение от @ijara360bot. Нажмите в нём «Это я» — вход продолжится сам.':'@ijara360bot dan xabar yubordik. Undagi «Bu men» ni bosing — kirish o‘zi davom etadi.','Назад ко входу':'Kirishga qaytish',
+  // Home
+  'МОЁ МЕСТО':'MENING JOYIM','Не заселён':'Joylashmagan','Комната':'Xona','Место':'Joy','Нет проживания':'Yashash yo‘q','Проживаю':'Yashayapman',
+  'Долг':'Qarz','Оплатите у администратора, чтобы сохранить доступ.':'Kirishni saqlab qolish uchun administratorga to‘lang.',
+  'Следующая оплата':'Keyingi to‘lov','Нет долга':'Qarz yo‘q','Всё оплачено':'Hammasi to‘langan','Доступ':'Kirish','Разрешён':'Ruxsat','Ограничен':'Cheklangan',
+  'Есть долг':'Qarz bor','Долга нет':'Qarz yo‘q','Есть просрочка':'Muddati o‘tgan','Разделы':'Bo‘limlar','Мои платежи':'Mening to‘lovlarim',
+  'Главная':'Asosiy','Лента':'Yangiliklar',
+  'Обращения':'Murojaatlar','Уведомления':'Bildirishnomalar','Профиль':'Profil','Мои гости':'Mehmonlarim','Объявления':'E’lonlar','Последнее':'So‘nggi','Все':'Hammasi',
+  'Просрочено':'Muddati o‘tgan','Сегодня':'Bugun',
+  // Payments
+  'Платежи':'To‘lovlar','Аванс':'Avans','День оплаты':'To‘lov kuni','в месяц':'oyiga',
+  'Оплата принимается у администратора. После оплаты здесь появится чек, а в Telegram придёт уведомление.':'To‘lov administrator orqali qabul qilinadi. To‘lovdan so‘ng bu yerda chek paydo bo‘ladi, Telegramga bildirishnoma keladi.',
+  'Начисления':'Hisob-kitoblar','Оплаты':'To‘lovlar','Начислений пока нет':'Hozircha hisob-kitob yo‘q','Оплат пока нет':'Hozircha to‘lov yo‘q',
+  'Осталось':'Qoldi','Срок':'Muddat','В аванс':'Avansga','Аренда за':'Ijara —',
+  'Аренда':'Ijara','Залог':'Garov','Штраф':'Jarima','Коммунальные':'Kommunal','Начисление':'Hisob',
+  'наличные':'naqd','перевод на карту':'kartaga o‘tkazma','банковский перевод':'bank o‘tkazmasi','другое':'boshqa',
+  'Оплачено':'To‘langan','Частично':'Qisman','К оплате':'To‘lanishi kerak',
+  // Tickets
+  'Новое обращение':'Yangi murojaat','Ваше имя видит только владелец дома. Сотрудникам — только суть, а для поломок ещё и комната.':'Ismingizni faqat uy egasi ko‘radi. Xodimlarga — faqat mohiyat, nosozliklar uchun esa xona ham.',
+  'Обращений пока нет':'Hozircha murojaat yo‘q','Сломалось что-то, мешают соседи или есть идея? Напишите — администрация ответит здесь.':'Biror narsa buzildimi, qo‘shnilar xalaqit beryaptimi yoki g‘oya bormi? Yozing — ma’muriyat shu yerda javob beradi.',
+  'Что случилось?':'Nima bo‘ldi?','Жалоба':'Shikoyat','Предложение':'Taklif','Поломка':'Nosozlik','Коротко':'Qisqacha',
+  'Например: течёт кран в ванной':'Masalan: hammomda jo‘mrak oqyapti','О чём обращение':'Murojaat nima haqida','Подробнее':'Batafsil','Где, когда, что уже пробовали':'Qayerda, qachon, nima qilib ko‘rdingiz',
+  'Сотрудники увидят вашу комнату, чтобы прийти починить, но не ваше имя.':'Xodimlar ta’mirlash uchun xonangizni ko‘radi, lekin ismingizni emas.','Сотрудники не увидят ваше имя и комнату.':'Xodimlar ismingiz va xonangizni ko‘rmaydi.',
+  'Отправить':'Yuborish','Обращение отправлено':'Murojaat yuborildi','Новое':'Yangi','В работе':'Ishda','Решено':'Hal qilindi','Отклонено':'Rad etildi',
+  'Обращение':'Murojaat','комната':'xona','Обращение закрыто. Если вопрос остался — создайте новое.':'Murojaat yopildi. Savol qolgan bo‘lsa — yangisini yarating.','Сообщение':'Xabar',
+  // Notifications
+  'Прочитать все':'Hammasini o‘qish','Уведомлений пока нет':'Hozircha bildirishnoma yo‘q','Здесь появятся оплаты, начисления и ответы на обращения.':'Bu yerda to‘lovlar, hisob-kitoblar va murojaatlarga javoblar paydo bo‘ladi.',
+  // Profile
+  'Мои устройства':'Qurilmalarim','Это устройство':'Bu qurilma','Активность':'Faollik','Завершить':'Tugatish','Устройство вышло из приложения':'Qurilma ilovadan chiqdi',
+  'О приложении':'Ilova haqida','Версия':'Versiya','Проверить обновления':'Yangilanishlarni tekshirish','Проверяем…':'Tekshirilyapti…',
+  'Выйти из приложения?':'Ilovadan chiqasizmi?','Выйти':'Chiqish','Жилец':'Ijarachi','Браузер':'Brauzer','Язык':'Til',
+};
+String L(BuildContext c, String ru) => SessionScope.of(c).lang == 'uz' ? (_uz[ru] ?? ru) : ru;
+bool isUz(BuildContext c) => SessionScope.of(c).lang == 'uz';
+String greetingL(BuildContext c) {
+  if (!isUz(c)) return greeting();
+  final h = _tashkent(DateTime.now()).hour;
+  return h < 5 ? 'Xayrli tun' : h < 12 ? 'Xayrli tong' : h < 18 ? 'Xayrli kun' : 'Xayrli kech';
+}
+String monthNameL(BuildContext c, Object? iso) => iso == null ? '' : (isUz(c) ? _uzMonths[(DateTime.parse('$iso').toUtc().month - 1) % 12] : DateFormat('LLLL', 'ru').format(DateTime.parse('$iso').toUtc()));
+String dayL(BuildContext c, Object? iso) { if (!isUz(c) || iso == null) return day(iso); final d = DateTime.parse('$iso').toUtc(); return '${d.day}-${_uzMonths[(d.month - 1) % 12]}'; }
+String dueBy(BuildContext c, Object? iso) => isUz(c) ? '${dayL(c, iso)} gacha' : 'до ${day(iso)}';
+String longDateL(BuildContext c, DateTime t) { if (!isUz(c)) return longDate(t); final d = _tashkent(t); return '${d.day}-${_uzMonths[(d.month - 1) % 12]} ${d.year}'; }
+
 enum Tone { blue, red, orange, green, gray, ink }
 (Color, Color) toneColors(Tone t) => switch (t) {
       Tone.blue => (Brand.blueSoft, Brand.blue),

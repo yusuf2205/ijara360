@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/client.dart';
 import 'api/realtime.dart';
@@ -26,6 +27,14 @@ class Session extends ChangeNotifier {
 
   bool ready = false;
   Role? role;
+  // Resident-app language ('ru' or 'uz'); staff always see Russian. Persisted on this device.
+  String lang = 'ru';
+  Future<void> setLang(String value) async {
+    if (value != 'ru' && value != 'uz') return;
+    lang = value;
+    notifyListeners();
+    try { await (await SharedPreferences.getInstance()).setString('ijara_lang', value); } catch (_) {}
+  }
   String fullName = '';
   String phone = '';
   String propertyName = '';
@@ -40,6 +49,7 @@ class Session extends ChangeNotifier {
   /// On start: native apps use the stored token; the web build asks both endpoints with its cookies.
   Future<void> restore() async {
     await api.restore();
+    try { lang = (await SharedPreferences.getInstance()).getString('ijara_lang') ?? 'ru'; } catch (_) {}
     try {
       if (api.native) {
         if (api.audience == Audience.staff) await _loadStaff();
