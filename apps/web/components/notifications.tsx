@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Bell, CheckCheck, FileText, MessageSquare, Wallet } from 'lucide-react';
+import { Bell, CheckCheck, FileText, MessageSquare, Send, Wallet } from 'lucide-react';
 import { api } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 
@@ -11,18 +11,25 @@ const when = (iso: string) => new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia
 const icon = (kind: string) => kind.startsWith('TICKET') ? <MessageSquare size={18}/> : kind.startsWith('APPLICATION') ? <FileText size={18}/> : kind.startsWith('PAYMENT') || kind.startsWith('CHARGE') ? <Wallet size={18}/> : <Bell size={18}/>;
 const tone = (kind: string) => kind.startsWith('TICKET') ? 'c-violet' : kind.startsWith('APPLICATION') ? 'c-orange' : 'c-blue';
 
-export function NotificationsPanel({ onChange }: { onChange?: () => void }) {
+export function NotificationsPanel({ owner = false, onChange }: { owner?: boolean; onChange?: () => void }) {
   const router = useRouter();
   const [feed, setFeed] = useState<Feed | null>(null);
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
+  const [title, setTitle] = useState(''), [body, setBody] = useState(''), [sending, setSending] = useState(false), [sent, setSent] = useState('');
   async function load() { try { setFeed(await api<Feed>(`/notifications?page=${page}`)); setError(''); } catch (e) { setError((e as Error).message); } }
   useEffect(() => { void load(); }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   useRealtime(['notifications'], load);
   async function read(ids?: string[]) { await api('/notifications/read', { method: 'POST', body: JSON.stringify(ids ? { ids } : {}) }); onChange?.(); await load(); }
   async function open(n: Item) { try { if (!n.readAt) await read([n.id]); if (n.link) router.push(n.link); } catch (e) { setError((e as Error).message); } }
+  async function announce() {
+    setSending(true); setError(''); setSent('');
+    try { const r = await api<{ recipients: number }>('/notifications/announce', { method: 'POST', body: JSON.stringify({ title: title.trim(), body: body.trim() }) }); setTitle(''); setBody(''); setSent(`Объявление отправлено: ${r.recipients} жильцам.`); }
+    catch (e) { setError((e as Error).message); } finally { setSending(false); }
+  }
   return <>
     <div className="page-heading"><div><div className="heading-kicker">ЛЕНТА</div><h1>Уведомления</h1><p>Новые заявки, обращения и сообщения жильцов.</p></div>{feed && feed.unread > 0 && <button className="button secondary" onClick={() => void read().catch(e => setError((e as Error).message))}><CheckCheck size={17}/>Прочитать все</button>}</div>
+    {owner && <section className="panel announce-box"><div className="panel-heading"><Send size={20}/><h2>Объявление всем жильцам</h2></div><p className="muted">Придёт в приложение каждому жильцу и в Telegram, если он привязан.</p><label>Заголовок<input value={title} maxLength={160} placeholder="Например: Отключение воды" onChange={e => setTitle(e.target.value)}/></label><label>Текст<textarea value={body} maxLength={1000} rows={3} placeholder="Завтра с 9:00 до 12:00 не будет воды." onChange={e => setBody(e.target.value)}/></label>{sent && <div className="finance-notice" role="status">{sent}</div>}<button className="button primary" disabled={sending || !title.trim() || !body.trim()} onClick={() => void announce()}><Send size={17}/>{sending ? 'Отправляем…' : 'Отправить объявление'}</button></section>}
     {error && <p className="error" role="alert">{error}</p>}
     {!feed ? <p role="status">Загружаем…</p> : feed.items.length === 0 ? <div className="empty"><Bell size={34}/><h3>Уведомлений пока нет</h3><p>Здесь появятся новые заявки и обращения жильцов.</p></div> :
       <ul className="notice-list">{feed.items.map(n => <li key={n.id}><button className={`notice-row ${n.readAt ? '' : 'unread'}`} onClick={() => void open(n)}>

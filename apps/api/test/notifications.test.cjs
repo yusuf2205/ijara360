@@ -117,6 +117,23 @@ test('payment reminders reach app residents near due or overdue, once a day, and
  assert.equal(await db.notification.count({where:{kind:'PAYMENT_REMINDER'}}),1,'the switch stops reminders');
 });
 
+test('owner announcement reaches every app resident; only the owner may send it',async()=>{
+ const a=await tenant(1); // Telegram linked
+ const b=await tenant(2,{telegram:false}); // app only
+ const admin=(await send(owner,'post','/users').send({phone:'+998900000009',fullName:'Admin',password}).expect(201)).body;
+ assert.ok(admin.id);
+ const other=request.agent(server);await send(other,'post','/auth/login').send({phone:'+998900000009',password}).expect(200);
+ await send(other,'post','/notifications/announce').send({title:'x',body:'y'}).expect(403); // not the owner
+ const r=(await send(owner,'post','/notifications/announce').send({title:'Отключение воды',body:'Завтра с 9:00 до 12:00 воды не будет.'}).expect(200)).body;
+ assert.equal(r.recipients,2);
+ const fa=await feed(a.token),fb=await feed(b.token);
+ assert.equal(fa.items[0].title,'Отключение воды');assert.match(fa.items[0].body,/воды не будет/);
+ assert.equal(fb.items[0].title,'Отключение воды');
+ assert.equal(await db.notificationDelivery.count(),1,'Telegram copy only for the linked resident');
+ assert.equal(await service.deliverDue(),1);
+ await send(owner,'post','/notifications/announce').send({title:'',body:'y'}).expect(422);
+});
+
 test('tickets notify staff without the author and answers notify the tenant; feeds are private',async()=>{
  const a=await tenant(1);
  const viewer=await (async()=>{const u=(await send(owner,'post','/users').send({phone:'+998900000002',fullName:'Viewer',password}).expect(201)).body;await send(owner,'put',`/permissions/users/${u.id}`).send({permissions:['TICKETS_VIEW']}).expect(200);const s=request.agent(server);await send(s,'post','/auth/login').send({phone:'+998900000002',password}).expect(200);return s;})();

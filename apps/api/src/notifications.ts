@@ -1,7 +1,8 @@
 import {Body,Controller,Get,HttpCode,Injectable,Logger,Module,OnModuleDestroy,OnModuleInit,Post,Query,Req,UseGuards} from '@nestjs/common';
 import {Prisma} from '@prisma/client';
 import {Type} from 'class-transformer';
-import {ArrayMaxSize,IsArray,IsInt,IsOptional,IsUUID,Max,Min} from 'class-validator';
+import {ArrayMaxSize,IsArray,IsInt,IsOptional,IsString,IsUUID,Length,Max,Min} from 'class-validator';
+import {ForbiddenException} from '@nestjs/common';
 import {AuthModule,AuthRequest,SessionGuard} from './auth';
 import {Database} from './database';
 import {PermissionCode} from './permission-policy';
@@ -15,6 +16,7 @@ const MAX_ATTEMPTS=6;
 const BACKOFF=[30,120,600,3600,21600].map(s=>s*1000);
 class PageQuery{@Type(()=>Number) @IsInt() @Min(1) @Max(100000) page=1;}
 class ReadDto{@IsOptional() @IsArray() @ArrayMaxSize(100) @IsUUID('4',{each:true}) ids?:string[];}
+class AnnouncementDto{@IsString() @Length(1,160) title!:string; @IsString() @Length(1,1000) body!:string;}
 
 type Message={kind:string;title:string;body:string;link?:string;entity?:string;entityId?:string};
 type Tx=Prisma.TransactionClient;
@@ -77,6 +79,20 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
     return this.tenant(tx,c.residentId,{kind:'PAYMENT_REMINDER',title,body,link:'/app/payments',entity:'Charge',entityId:c.id});
   }
 
+  /** An owner's broadcast to every resident who uses the app: one feed item each, with a Telegram copy when linked. */
+  async announce(actor:{id:string;propertyId:string},dto:{title:string;body:string}){
+    return this.db.$transaction(async tx=>{
+      const accounts=await tx.tenantAccount.findMany({where:{propertyId:actor.propertyId,active:true,activatedAt:{not:null}},select:{id:true,telegramUserId:true,residentId:true}});
+      for(const a of accounts){
+        const n=await tx.notification.create({data:{propertyId:actor.propertyId,tenantAccountId:a.id,kind:'ANNOUNCEMENT',title:dto.title,body:dto.body,link:'/app'}});
+        if(a.telegramUserId)await tx.notificationDelivery.create({data:{notificationId:n.id,chatId:a.telegramUserId}});
+      }
+      await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'ANNOUNCEMENT_SENT',entity:'Property',entityId:actor.propertyId,metadata:{title:dto.title,recipients:accounts.length}}});
+      if(accounts.length)await publish(tx,{p:actor.propertyId,topic:'notifications',type:'created',residents:accounts.map(a=>a.residentId),staff:false});
+      return {recipients:accounts.length};
+    });
+  }
+
   // Delivery worker.
   deliverDue(){
     if(this.running)return this.running;
@@ -135,6 +151,10 @@ class StaffNotificationsController{
   constructor(private readonly service:NotificationsService){}
   @Get() list(@Req() req:AuthRequest,@Query() q:PageQuery){return this.service.forStaff(req.actor,q.page);}
   @Post('read') @HttpCode(200) read(@Req() req:AuthRequest,@Body() dto:ReadDto){return this.service.readStaff(req.actor,dto.ids);}
+  @Post('announce') @HttpCode(200) announce(@Req() req:AuthRequest,@Body() dto:AnnouncementDto){
+    if(!['OWNER','SUPER_ADMIN'].includes(req.actor.role))throw new ForbiddenException('Это действие доступно владельцу.');
+    return this.service.announce(req.actor,dto);
+  }
 }
 
 @Module({imports:[AuthModule,TenantModule,TelegramModule],providers:[NotificationsService],controllers:[TenantNotificationsController,StaffNotificationsController],exports:[NotificationsService]})

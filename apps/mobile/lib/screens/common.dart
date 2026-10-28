@@ -85,6 +85,9 @@ class NotificationsScreen extends StatelessWidget {
     final base = s.isStaff ? '/notifications' : '/tenant/notifications';
     return Scaffold(
       appBar: AppBar(title: const Text('Уведомления')),
+      floatingActionButton: (s.isStaff && s.role == Role.superAdmin)
+          ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => _announce(context), icon: const Icon(Icons.campaign_outlined), label: const Text('Объявление'))
+          : null,
       body: LiveData<Map<String, dynamic>>(
         topics: const {'notifications'},
         load: () async => (await s.api.get(base)) as Map<String, dynamic>,
@@ -106,6 +109,49 @@ class NotificationsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Owner-only: broadcast an announcement to every resident who uses the app.
+Future<void> _announce(BuildContext context) => showModalBottomSheet<void>(
+      context: context, useRootNavigator: true, isScrollControlled: true,
+      builder: (_) => _AnnounceSheet(api: SessionScope.of(context).api),
+    );
+
+class _AnnounceSheet extends StatefulWidget {
+  const _AnnounceSheet({required this.api});
+  final ApiClient api;
+  @override
+  State<_AnnounceSheet> createState() => _AnnounceSheetState();
+}
+
+class _AnnounceSheetState extends State<_AnnounceSheet> {
+  final title = TextEditingController(), body = TextEditingController();
+  bool busy = false;
+  @override
+  void dispose() { title.dispose(); body.dispose(); super.dispose(); }
+  Future<void> send() async {
+    if (title.text.trim().isEmpty || body.text.trim().isEmpty) { toast(context, 'Заполните заголовок и текст'); return; }
+    setState(() => busy = true);
+    try {
+      final r = await widget.api.post('/notifications/announce', {'title': title.text.trim(), 'body': body.text.trim()}) as Map<String, dynamic>;
+      if (mounted) { Navigator.of(context).pop(); toast(context, 'Отправлено: ${r['recipients']} жильцам'); }
+    } on ApiException catch (e) { if (mounted) { setState(() => busy = false); toast(context, e.message); } }
+  }
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('Объявление всем жильцам', style: manrope(17, FontWeight.w800)),
+          const Gap(4),
+          Text('Придёт в приложение каждому жильцу и в Telegram, если привязан.', style: Theme.of(context).textTheme.bodySmall),
+          const Gap(14),
+          TextField(controller: title, maxLength: 160, decoration: const InputDecoration(labelText: 'Заголовок')),
+          const Gap(6),
+          TextField(controller: body, maxLength: 1000, maxLines: 4, minLines: 2, decoration: const InputDecoration(labelText: 'Текст')),
+          const Gap(12),
+          FilledButton.icon(onPressed: busy ? null : send, icon: const Icon(Icons.campaign_outlined), label: Text(busy ? 'Отправляем…' : 'Отправить')),
+        ]),
+      );
 }
 
 // ---------- Tickets (complaints, ideas, repairs) ----------

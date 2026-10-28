@@ -168,7 +168,7 @@ export default function Workspace({ view, roomId, capacityOnly = false, resident
       <main className="main-content" id="main">
         {error && <div className="error global-error" role="alert">{error}<button className="button secondary" onClick={refresh}>Повторить</button></div>}
         {!loaded ? <div className="loading" role="status"><div className="skeleton title"/><div className="skeleton stats"/><div className="skeleton content"/>{!error && <span>Загружаем ваш дом…</span>}</div> : <>
-        {view === 'notifications' && <NotificationsPanel onChange={() => void loadUnread()}/>}
+        {view === 'notifications' && <NotificationsPanel owner={owner} onChange={() => void loadUnread()}/>}
         {(view === 'tickets'||view==='ticket') && <TicketsPanel id={ticketId} permissions={permissions}/>}
         {(view === 'applications'||view==='application') && <ApplicationsPanel id={applicationId} permissions={permissions} rooms={rooms} initialStatus={applicationStatusFilter}/>}
         {view === 'finance' && user && <FinancePanel residents={residents} rooms={rooms} userId={user.id} initialResidentId={financeResidentId} propertyName={property?.name || ''} onSaved={refresh}/>}

@@ -66,6 +66,11 @@ label.toggle-row small{font-weight:500;opacity:.72;line-height:1.35}
 .contract-signs>div{flex:1;font-size:13px;display:flex;flex-direction:column;gap:4px}
 .contract-signs small{opacity:.6}
 .sign-line{display:block;border-top:1px solid #111;margin-bottom:4px;height:28px}
+/* Announcement composer (owner broadcast) */
+.announce-box{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.announce-box label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px}
+.announce-box .button{align-self:flex-start}
+.announce-box .muted{margin:0}
 @media print{
   body *{visibility:hidden!important}
   .receipt-print,.receipt-print *,.contract-print,.contract-print *{visibility:visible!important}
