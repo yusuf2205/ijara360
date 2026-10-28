@@ -1568,6 +1568,95 @@ class TelegramCard extends StatelessWidget {
   }
 }
 
+// Staff permissions (same set, labels and grouping as the web cabinet).
+const _permLabels = {
+  'APPLICATION_VIEW': 'Просмотр заявок', 'APPLICATION_REVIEW': 'Рассмотрение и запрос данных', 'APPLICATION_APPROVE': 'Одобрение заявок', 'APPLICATION_REJECT': 'Отклонение заявок',
+  'KYC_VIEW_BASIC': 'Личные данные и экстренный контакт', 'KYC_VIEW_DOCUMENTS': 'Изображения паспорта', 'KYC_VIEW_PASSPORT': 'ПИНФЛ и реквизиты паспорта', 'KYC_VIEW_BIOMETRIC_SOURCE': 'Фотография лица',
+  'RESIDENT_CREATE_FROM_APPLICATION': 'Заселение из заявки', 'ROOMS_MANAGE': 'Комнаты и места: создание, изменение, архив', 'RESIDENTS_MANAGE': 'Жильцы: заселение, переселение, выселение',
+  'FINANCE_VIEW': 'Финансы: просмотр', 'FINANCE_MANAGE': 'Финансы: начисления и приём оплат', 'TICKETS_VIEW': 'Обращения: просмотр без автора', 'TICKETS_MANAGE': 'Обращения: ответы и статусы',
+  'VIEW_LOCATION': 'Геолокация: карта и текущее место жильцов', 'VIEW_LOCATION_HISTORY': 'Геолокация: история перемещений',
+};
+const _permGroups = <(String, List<String>)>[
+  ('Дом и жильцы', ['ROOMS_MANAGE', 'RESIDENTS_MANAGE']),
+  ('Финансы', ['FINANCE_VIEW', 'FINANCE_MANAGE']),
+  ('Обращения жильцов', ['TICKETS_VIEW', 'TICKETS_MANAGE']),
+  ('Геолокация', ['VIEW_LOCATION', 'VIEW_LOCATION_HISTORY']),
+  ('Заявки и KYC', ['APPLICATION_VIEW', 'APPLICATION_REVIEW', 'APPLICATION_APPROVE', 'APPLICATION_REJECT', 'KYC_VIEW_BASIC', 'KYC_VIEW_PASSPORT', 'KYC_VIEW_DOCUMENTS', 'KYC_VIEW_BIOMETRIC_SOURCE', 'RESIDENT_CREATE_FROM_APPLICATION']),
+];
+const _permTemplates = <(String, List<String>)>[
+  ('Без доступа', []),
+  ('Администратор', ['RESIDENTS_MANAGE', 'FINANCE_VIEW', 'FINANCE_MANAGE']),
+  ('Бухгалтер', ['FINANCE_VIEW', 'FINANCE_MANAGE']),
+  ('Обращения', ['TICKETS_VIEW', 'TICKETS_MANAGE']),
+  ('Проверка заявок', ['APPLICATION_VIEW', 'APPLICATION_REVIEW', 'APPLICATION_REJECT', 'KYC_VIEW_BASIC']),
+  ('Полная проверка KYC', ['APPLICATION_VIEW', 'APPLICATION_REVIEW', 'APPLICATION_APPROVE', 'APPLICATION_REJECT', 'KYC_VIEW_BASIC', 'KYC_VIEW_DOCUMENTS', 'KYC_VIEW_PASSPORT', 'KYC_VIEW_BIOMETRIC_SOURCE']),
+];
+
+/// Owner-only: set one staff member's permissions, saved with PUT /permissions/users/:id.
+class _StaffPermissions extends StatefulWidget {
+  const _StaffPermissions({required this.userId, required this.fullName});
+  final String userId;
+  final String fullName;
+  @override
+  State<_StaffPermissions> createState() => _StaffPermissionsState();
+}
+
+class _StaffPermissionsState extends State<_StaffPermissions> {
+  Set<String>? selected; // null while loading
+  List<String> available = const [];
+  bool busy = false;
+  String? error;
+  @override
+  void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
+  Future<void> _load() async {
+    try {
+      final r = await SessionScope.of(context).api.get('/permissions/staff') as Map<String, dynamic>;
+      available = (r['available'] as List).cast<String>();
+      final users = (r['users'] as List).cast<Map<String, dynamic>>();
+      final user = users.firstWhere((u) => '${u['id']}' == widget.userId, orElse: () => const {});
+      if (mounted) setState(() => selected = {...((user['permissions'] as List?)?.cast<String>() ?? const [])});
+    } catch (e) {
+      if (mounted) setState(() => error = 'Не удалось загрузить права. Потяните вниз или вернитесь позже.');
+    }
+  }
+  Future<void> _save() async {
+    setState(() => busy = true);
+    try {
+      await SessionScope.of(context).api.put('/permissions/users/${widget.userId}', {'permissions': selected!.toList()});
+      if (mounted) { Navigator.of(context).pop(); toast(context, 'Права сохранены'); }
+    } on ApiException catch (e) {
+      if (mounted) { setState(() => busy = false); toast(context, e.message); }
+    }
+  }
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text('Права: ${widget.fullName}')),
+        body: selected == null
+            ? (error != null ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(error!, textAlign: TextAlign.center))) : const Center(child: CircularProgressIndicator()))
+            : PageBody(maxWidth: 760, children: [
+                Text('Отметьте, что доступно сотруднику. Можно начать с готового шаблона.', style: Theme.of(context).textTheme.bodySmall),
+                const Gap(10),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final t in _permTemplates) ActionChip(label: Text(t.$1), onPressed: busy ? null : () => setState(() => selected = {...t.$2.where(available.contains)})),
+                ]),
+                for (final g in _permGroups) ...[
+                  SectionTitle(g.$1),
+                  for (final code in g.$2.where(available.contains))
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: selected!.contains(code),
+                      onChanged: busy ? null : (v) => setState(() => v == true ? selected!.add(code) : selected!.remove(code)),
+                      title: Text(_permLabels[code] ?? code),
+                    ),
+                ],
+                const Gap(16),
+                FilledButton(onPressed: busy ? null : _save, child: Text(busy ? 'Сохраняем…' : 'Сохранить права')),
+                const Gap(24),
+              ]),
+      );
+}
+
 class StaffListCard extends StatelessWidget {
   const StaffListCard({super.key});
   @override
@@ -1592,6 +1681,7 @@ class StaffListCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (v) => _staffAction(context, s.api, u, v, refresh),
                 itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'perms', child: Text('Права доступа')),
                   PopupMenuItem(value: 'toggle', child: Text(u['active'] == false ? 'Включить' : 'Отключить')),
                   const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
                 ],
@@ -1601,7 +1691,7 @@ class StaffListCard extends StatelessWidget {
         const Gap(10),
         FilledButton.icon(onPressed: () => _createStaff(context, s.api, refresh), icon: const Icon(Icons.person_add_alt_1_rounded), label: const Text('Добавить сотрудника')),
         const Gap(8),
-        Text('Новый сотрудник получает базовые права. Их можно изменить в кабинете на компьютере: Настройки → Права сотрудников.', style: Theme.of(context).textTheme.bodySmall),
+        Text('Новый сотрудник получает базовые права. Чтобы изменить их — откройте «…» у сотрудника и выберите «Права доступа».', style: Theme.of(context).textTheme.bodySmall),
       ]),
     );
   }
@@ -1722,6 +1812,8 @@ class _PropertyCardState extends State<PropertyCard> {
 Future<void> _staffAction(BuildContext context, ApiClient api, Map<String, dynamic> u, String action, Future<void> Function() refresh) async {
   try {
     switch (action) {
+      case 'perms':
+        openPage(context, _StaffPermissions(userId: '${u['id']}', fullName: '${u['fullName']}'));
       case 'toggle':
         final enable = u['active'] == false;
         await api.patch('/users/${u['id']}', {'active': enable});
