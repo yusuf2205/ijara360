@@ -35,6 +35,31 @@ label.toggle-row small{font-weight:500;opacity:.72;line-height:1.35}
 .finance-export{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 12px}
 .finance-export>span{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;opacity:.8}
 .finance-export .button{padding:6px 12px;font-size:13px}
+/* Payment receipt (print-friendly; paper-like light card in any theme) */
+.finance-row-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.receipt-overlay{position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px;z-index:60}
+.receipt-print{background:#fff;color:#111;border-radius:14px;width:100%;max-width:420px;padding:22px;box-shadow:var(--shadow)}
+.receipt-head{display:flex;flex-direction:column;gap:2px;border-bottom:1px dashed #bbb;padding-bottom:12px;margin-bottom:14px}
+.receipt-head strong{font-size:18px}
+.receipt-head span{font-size:13px;opacity:.65}
+.receipt-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px}
+.receipt-grid dt{opacity:.6;font-size:13px}
+.receipt-grid dd{margin:0;text-align:right;font-weight:600}
+.receipt-total{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid #eee;border-bottom:1px solid #eee;padding:10px 0;margin-bottom:12px}
+.receipt-total strong{font-size:20px}
+.receipt-lines-h{font-size:13px;opacity:.6}
+.receipt-lines ul{list-style:none;margin:6px 0 12px;padding:0;display:flex;flex-direction:column;gap:6px}
+.receipt-lines li,.receipt-line-single{display:flex;justify-content:space-between;gap:12px;font-size:13px}
+.receipt-line-single{margin-bottom:12px}
+.receipt-foot{display:flex;justify-content:space-between;font-size:12px;opacity:.6;border-top:1px dashed #bbb;padding-top:12px}
+.receipt-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+@media print{
+  body *{visibility:hidden!important}
+  .receipt-print,.receipt-print *{visibility:visible!important}
+  .receipt-print{position:absolute;left:0;top:0;box-shadow:none;max-width:none;width:auto}
+  .receipt-overlay{background:#fff!important}
+  .receipt-actions{display:none!important}
+}
 .session-list{display:grid;gap:10px}
 .session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .session-row div{display:grid;gap:2px;min-width:0}

@@ -26,8 +26,9 @@ function requestKey() {
 }
 
 type Debtor={residentId:string;fullName:string;room:string|null;bed:string|null;totalDebt:string;daysOverdue:number};
-export function FinancePanel({residents,rooms,userId,initialResidentId='',onSaved}:{residents:Resident[];rooms:Room[];userId:string;initialResidentId?:string;onSaved:()=>Promise<void>}) {
+export function FinancePanel({residents,rooms,userId,initialResidentId='',propertyName='',onSaved}:{residents:Resident[];rooms:Room[];userId:string;initialResidentId?:string;propertyName?:string;onSaved:()=>Promise<void>}) {
   const [debtors,setDebtors]=useState<Debtor[]>([]);
+  const [receipt,setReceipt]=useState<Payment|null>(null);
   const [data,setData]=useState<Snapshot|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [residentId,setResidentId]=useState(initialResidentId),[status,setStatus]=useState(''),[page,setPage]=useState(1);
   const [modal,setModal]=useState<FormMode|null>(null),[pending,setPending]=useState<Pending|null>(null),[busy,setBusy]=useState(false);
@@ -82,12 +83,32 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
       <section className="panel finance-section"><h2>Начисления <span>{data.chargeCount}</span></h2>
         {!data.charges.length?<div className="empty"><Wallet size={30}/><h3>Начисления не найдены</h3><p>Создайте начисление или измените фильтры.</p></div>:data.charges.map(c=><article key={c.id} className="finance-row" data-testid="charge-row"><div><Link href={`/residents/${c.residentId}`}><strong>{c.resident.fullName}</strong></Link><p>{types[c.type]} · Комната {c.room.number} / Место {c.bed.number}</p><small>{dateLabel(c.billingPeriodStart)} — {dateLabel(c.billingPeriodEnd)}</small><p>Оплатить до {dateLabel(c.dueDate)} · Льготный период: {c.gracePeriodDays} дн.</p></div><div><span className={'status-pill '+(c.status==='OVERDUE'?'finance-overdue':'')}>{statuses[c.status]}</span><dl className="detail-grid"><dt>Начислено</dt><dd>{financeMoney(c.amount)}</dd><dt>Оплачено</dt><dd>{financeMoney(c.paidAmount)}</dd><dt>Остаток</dt><dd>{financeMoney(c.dueAmount)}</dd></dl>{c.status!=='PAID'&&<button className="button secondary" disabled={busy||!!pending} onClick={()=>setModal(c)}>Записать платёж</button>}</div></article>)}
       </section>
-      <section className="panel finance-section"><h2>Платежи <span>{data.paymentCount}</span></h2>{!data.payments.length?<p className="muted">Платежей пока нет.</p>:data.payments.map(p=><article key={p.id} className="finance-row" data-testid="payment-row"><div><strong>{p.resident.fullName}</strong><p>{methods[p.method]} · {new Date(p.createdAt).toLocaleString('ru',{timeZone:'Asia/Tashkent'})}</p>{p.comment&&<p className="resident-note">{p.comment}</p>}<small>Записал: {p.creator.fullName}</small><ul className="finance-allocations">{p.allocations.map(a=><li key={a.id}>{types[a.charge.type]} · {dateLabel(a.charge.billingPeriodStart)} — {dateLabel(a.charge.billingPeriodEnd)}: {financeMoney(a.amount)}</li>)}</ul>{p.unallocatedAmount!=='0'&&<p>Остаток аванса: {financeMoney(p.unallocatedAmount)}</p>}</div><strong>{financeMoney(p.amount)}</strong></article>)}</section>
+      <section className="panel finance-section"><h2>Платежи <span>{data.paymentCount}</span></h2>{!data.payments.length?<p className="muted">Платежей пока нет.</p>:data.payments.map(p=><article key={p.id} className="finance-row" data-testid="payment-row"><div><strong>{p.resident.fullName}</strong><p>{methods[p.method]} · {new Date(p.createdAt).toLocaleString('ru',{timeZone:'Asia/Tashkent'})}</p>{p.comment&&<p className="resident-note">{p.comment}</p>}<small>Записал: {p.creator.fullName}</small><ul className="finance-allocations">{p.allocations.map(a=><li key={a.id}>{types[a.charge.type]} · {dateLabel(a.charge.billingPeriodStart)} — {dateLabel(a.charge.billingPeriodEnd)}: {financeMoney(a.amount)}</li>)}</ul>{p.unallocatedAmount!=='0'&&<p>Остаток аванса: {financeMoney(p.unallocatedAmount)}</p>}</div><div className="finance-row-right"><strong>{financeMoney(p.amount)}</strong><button className="button text" onClick={()=>setReceipt(p)}>Чек</button></div></article>)}</section>
       <div className="resident-actions finance-pagination"><button className="button secondary" disabled={page===1} onClick={()=>setPage(page-1)}>Назад</button><span>Страница {page}</span><button className="button secondary" disabled={page*data.pageSize>=Math.max(data.chargeCount,data.paymentCount)} onClick={()=>setPage(page+1)}>Далее</button></div>
       <section className="panel finance-section"><h2>Финансовый допуск</h2><p className="muted">Ограничен у {data.summary.blockedResidents} жильцов. Просрочка отмечается после срока оплаты; ограничение — после льготного периода.</p>{data.residents.map(r=><article className="finance-row" key={r.id}><Link href={`/residents/${r.id}`}>{r.fullName}</Link><span>К оплате: {financeMoney(r.totalDebt)}<br/>Аванс: {financeMoney(r.creditBalance)}</span><span className={'status-pill '+(!r.accessGranted?'finance-overdue':'')}>{!r.accessGranted?'Ограничен: просрочка':r.accessStatusReason==='GRACE_PERIOD'?'Разрешён: льготный период':'Разрешён'}</span></article>)}{!data.residents.length&&<p>Жильцов пока нет.</p>}</section>
     </>}
     {modal&&(!pending||busy)&&<FinanceForm modal={modal} residents={residents} rooms={rooms} initialResidentId={residentId} close={()=>setModal(null)} submit={submit} busy={busy} error={error}/>}
+    {receipt&&<Receipt payment={receipt} propertyName={propertyName} close={()=>setReceipt(null)}/>}
   </>;
+}
+
+// A print-friendly payment receipt. "Печать" opens the browser print dialog, where it can be saved as PDF.
+function Receipt({payment,propertyName,close}:{payment:Payment;propertyName:string;close:()=>void}) {
+  const when=new Date(payment.createdAt).toLocaleString('ru',{timeZone:'Asia/Tashkent'});
+  return <div className="receipt-overlay" onClick={close}><div className="receipt-print" onClick={e=>e.stopPropagation()}>
+    <div className="receipt-head"><strong>{propertyName||'Ijara360'}</strong><span>Квитанция об оплате</span></div>
+    <dl className="receipt-grid">
+      <dt>Дата</dt><dd>{when}</dd>
+      <dt>Жилец</dt><dd>{payment.resident.fullName}</dd>
+      <dt>Способ</dt><dd>{methods[payment.method]||payment.method}</dd>
+      <dt>Номер</dt><dd>{payment.id.slice(0,8).toUpperCase()}</dd>
+    </dl>
+    <div className="receipt-total"><span>Получено</span><strong>{financeMoney(payment.amount)}</strong></div>
+    {payment.allocations.length>0&&<div className="receipt-lines"><span className="receipt-lines-h">Зачтено в счёт:</span><ul>{payment.allocations.map(a=><li key={a.id}><span>{types[a.charge.type]} · {dateLabel(a.charge.billingPeriodStart)} — {dateLabel(a.charge.billingPeriodEnd)}</span><span>{financeMoney(a.amount)}</span></li>)}</ul></div>}
+    {payment.unallocatedAmount!=='0'&&<div className="receipt-line-single"><span>В аванс</span><span>{financeMoney(payment.unallocatedAmount)}</span></div>}
+    <div className="receipt-foot"><span>Принял: {payment.creator.fullName}</span><span>Ijara360</span></div>
+    <div className="receipt-actions"><button className="button secondary" onClick={close}>Закрыть</button><button className="button primary" onClick={()=>window.print()}>Печать / Сохранить PDF</button></div>
+  </div></div>;
 }
 
 function FinanceForm({modal,residents,rooms,initialResidentId,close,submit,busy,error}:{modal:FormMode;residents:Resident[];rooms:Room[];initialResidentId:string;close:()=>void;submit:(request:Pending)=>Promise<void>;busy:boolean;error:string}) {
