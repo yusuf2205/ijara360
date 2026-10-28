@@ -21,6 +21,8 @@ model Property {
   // When on, the finance worker raises each active bed's monthly rent on its payment day. Off by default so
   // nothing is billed while the house is still being set up; the owner turns it on in Settings when ready.
   autoBillingEnabled Boolean @default(false) @map("auto_billing_enabled")
+  // When on, residents who use the app are reminded about rent due soon or overdue (at most once a day each).
+  paymentRemindersEnabled Boolean @default(true) @map("payment_reminders_enabled")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   users     User[]

@@ -55,9 +55,10 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
   async tick() {
     if (this.running) return this.running;
     this.running = (async () => {
-      for (const property of await this.db.property.findMany({select:{id:true,autoBillingEnabled:true}})) {
-        // One house's billing hiccup must not hold up every house's refresh, so isolate it.
+      for (const property of await this.db.property.findMany({select:{id:true,autoBillingEnabled:true,paymentRemindersEnabled:true}})) {
+        // One house's billing or reminder hiccup must not hold up every house's refresh, so isolate each.
         if (property.autoBillingEnabled) try { await this.autobill(property.id); } catch { this.logger.error('Auto-billing failed; next tick retries.'); }
+        if (property.paymentRemindersEnabled) try { await this.remindDue(property.id); } catch { this.logger.error('Payment reminders failed; next tick retries.'); }
         await this.refresh(property.id);
       }
     })().catch(() => { this.logger.error('Finance refresh failed; next tick and access reads retry.'); }).finally(() => { this.running = undefined; });
@@ -107,6 +108,31 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
     const resident = await tx.resident.findFirst({where:{id,propertyId:actor.propertyId}});
     if (!resident) throw new NotFoundException('Жилец не найден.');
     return resident;
+  }
+  /**
+   * Reminds residents who use the app about rent due within three days or already overdue, at most once a
+   * day per charge (deduplicated against today's reminder notifications). Self-guards on the house switch.
+   */
+  async remindDue(propertyId: string) {
+    const property = await this.db.property.findUnique({where:{id:propertyId},select:{paymentRemindersEnabled:true}});
+    if (!property?.paymentRemindersEnabled) return;
+    const t = tashkentToday();
+    const today = financeDate(t.iso);
+    const horizon = new Date(today.getTime() + 3 * 86400000); // start reminding three days before the due date
+    const dayStart = new Date(`${t.iso}T00:00:00+05:00`); // the Tashkent day's start, for once-a-day dedup
+    const charges = await this.db.charge.findMany({where:{propertyId,dueAmount:{gt:0},status:{not:'PAID'},dueDate:{lte:horizon}},
+      select:{id:true,residentId:true,type:true,dueAmount:true,dueDate:true,billingPeriodStart:true}});
+    if (!charges.length) return;
+    const [accounts, remindedToday] = await Promise.all([
+      this.db.tenantAccount.findMany({where:{propertyId,active:true,activatedAt:{not:null}},select:{residentId:true}}),
+      this.db.notification.findMany({where:{propertyId,kind:'PAYMENT_REMINDER',createdAt:{gte:dayStart}},select:{entityId:true}}),
+    ]);
+    const hasApp = new Set(accounts.map(a => a.residentId)), done = new Set(remindedToday.map(n => n.entityId));
+    const due = charges.filter(c => hasApp.has(c.residentId) && !done.has(c.id));
+    if (!due.length) return;
+    await this.db.$transaction(async tx => {
+      for (const c of due) await this.notifications.remindPayment(tx, c, Math.round((c.dueDate.getTime() - today.getTime()) / 86400000));
+    }, {maxWait:10000,timeout:20000});
   }
   async createCharge(actor: Actor, dto: ChargeDto) {
     const amount = money(dto.amount);

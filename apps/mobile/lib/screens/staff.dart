@@ -1579,13 +1579,13 @@ class PropertyCard extends StatefulWidget {
 
 class _PropertyCardState extends State<PropertyCard> {
   final name = TextEditingController(), address = TextEditingController();
-  bool busy = false, loaded = false, autoBilling = false, autoBusy = false;
+  bool busy = false, loaded = false, autoBilling = false, autoBusy = false, reminders = false, remindBusy = false;
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
   @override
   void dispose() { name.dispose(); address.dispose(); super.dispose(); }
   Future<void> _load() async {
-    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; autoBilling = r['autoBillingEnabled'] == true; if (mounted) setState(() => loaded = true); } catch (_) {}
+    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; autoBilling = r['autoBillingEnabled'] == true; reminders = r['paymentRemindersEnabled'] == true; if (mounted) setState(() => loaded = true); } catch (_) {}
   }
   Future<void> save() async {
     setState(() => busy = true);
@@ -1599,6 +1599,12 @@ class _PropertyCardState extends State<PropertyCard> {
     try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'autoBillingEnabled': value}); if (mounted) toast(context, value ? 'Автоначисления включены' : 'Автоначисления выключены'); }
     on ApiException catch (e) { if (mounted) { setState(() => autoBilling = !value); toast(context, e.message); } }
     finally { if (mounted) setState(() => autoBusy = false); }
+  }
+  Future<void> setReminders(bool value) async {
+    setState(() { reminders = value; remindBusy = true; });
+    try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'paymentRemindersEnabled': value}); if (mounted) toast(context, value ? 'Напоминания включены' : 'Напоминания выключены'); }
+    on ApiException catch (e) { if (mounted) { setState(() => reminders = !value); toast(context, e.message); } }
+    finally { if (mounted) setState(() => remindBusy = false); }
   }
   @override
   Widget build(BuildContext context) {
@@ -1614,13 +1620,23 @@ class _PropertyCardState extends State<PropertyCard> {
       ])),
       const Gap(14),
       const SectionTitle('Начисления'),
-      AppCard(child: SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        value: autoBilling,
-        onChanged: autoBusy ? null : setAutoBilling,
-        title: const Text('Автоматические начисления аренды'),
-        subtitle: const Text('В день оплаты каждого жильца система сама создаёт начисление за месяц. Повторно за тот же месяц не начисляет.'),
-      )),
+      AppCard(child: Column(children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: autoBilling,
+          onChanged: autoBusy ? null : setAutoBilling,
+          title: const Text('Автоматические начисления аренды'),
+          subtitle: const Text('В день оплаты каждого жильца система сама создаёт начисление за месяц. Повторно за тот же месяц не начисляет.'),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: reminders,
+          onChanged: remindBusy ? null : setReminders,
+          title: const Text('Напоминания об оплате'),
+          subtitle: const Text('Жильцам с приложением приходит напоминание, когда срок оплаты близко или уже прошёл. Не чаще раза в день.'),
+        ),
+      ])),
     ]);
   }
 }

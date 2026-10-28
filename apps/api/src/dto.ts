@@ -68,6 +68,7 @@ export class PropertyDto {
   @IsString() @Length(1, 120) name!: string;
   @IsOptional() @IsString() @Length(0, 500) address?: string;
   @IsOptional() @IsBoolean() autoBillingEnabled?: boolean;
+  @IsOptional() @IsBoolean() paymentRemindersEnabled?: boolean;
 }
 
 export class LoginApprovalDto {

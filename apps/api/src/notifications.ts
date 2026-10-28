@@ -68,6 +68,14 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
     const extra=p.unallocatedAmount.gt(0)?` ${sum(p.unallocatedAmount)} ушло в аванс.`:'';
     return this.tenant(tx,p.residentId,{kind:'PAYMENT_RECORDED',title:'Оплата зачтена',body:`Получено ${sum(p.amount)}.${extra}`,link:'/app/payments',entity:'Payment',entityId:p.id});
   }
+  // A rent reminder: the day before/of the due date, or once the charge is overdue. Sent at most once a day per charge (see FinanceService.remindDue).
+  remindPayment(tx:Tx,c:{id:string;residentId:string;type:string;dueAmount:Prisma.Decimal;dueDate:Date;billingPeriodStart:Date},daysLeft:number){
+    const what=c.type==='RENT'?`Аренда за ${new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',month:'long'}).format(c.billingPeriodStart)}`:chargeType[c.type]||'Начисление';
+    const [title,body]=daysLeft<0
+      ? ['Просрочен платёж',`${what}: просрочен на ${-daysLeft} дн. К оплате ${sum(c.dueAmount)}.`]
+      : ['Напоминание об оплате',`${what}: ${sum(c.dueAmount)}. Срок оплаты ${daysLeft===0?'сегодня':`${day(c.dueDate)} (через ${daysLeft} дн.)`}.`];
+    return this.tenant(tx,c.residentId,{kind:'PAYMENT_REMINDER',title,body,link:'/app/payments',entity:'Charge',entityId:c.id});
+  }
 
   // Delivery worker.
   deliverDue(){

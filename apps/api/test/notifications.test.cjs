@@ -6,6 +6,7 @@ const {PrismaClient}=require('@prisma/client');
 const {createApp}=require('../dist/app');
 const {TelegramService,TelegramError}=require('../dist/telegram');
 const {NotificationsService}=require('../dist/notifications');
+const {FinanceService}=require('../dist/finance');
 const {grantRuntime}=require('../../../scripts/grant-runtime.cjs');
 if(process.env.NODE_ENV!=='test'||new URL(process.env.DATABASE_URL).pathname!=='/ijara360_test')throw Error('Dedicated test DB only');
 process.env.KYC_ENCRYPTION_KEY='7'.repeat(64);
@@ -86,6 +87,34 @@ test('a rolled-back action leaves no notification or outbox row; no account or n
  await send(owner,'post','/occupancies/check-in').send({residentId:plain.id,bedId:beds[0].id,moveInDate:'2026-09-01',monthlyPrice:'500000',paymentDay:5,depositAmount:'0'}).expect(201);
  await charge(plain,0);
  assert.equal(await db.notification.count(),1,'no app account, no notification');
+});
+
+test('payment reminders reach app residents near due or overdue, once a day, and honour the switch',async()=>{
+ const fin=app.get(FinanceService);
+ const today=(await db.$queryRawUnsafe("SELECT finance_today()::text AS d"))[0].d;
+ const propertyId=(await db.property.findFirst()).id;
+ const addDays=n=>new Date(new Date(today+'T00:00:00Z').getTime()+n*86400000).toISOString().slice(0,10);
+ const a=await tenant(1,{telegram:false}); // uses the app, feed only
+ await charge(a.resident,1,{billingPeriodStart:addDays(-40),billingPeriodEnd:addDays(-10),dueDate:addDays(-1)}); // overdue by a day
+ const before=(await feed(a.token)).total; // the "new charge" notification
+ await fin.remindDue(propertyId);
+ let f=await feed(a.token);
+ assert.equal(f.total,before+1);
+ assert.equal(f.items[0].title,'Просрочен платёж');
+ assert.match(f.items[0].body,/просрочен на 1 дн\./);
+ await fin.remindDue(propertyId); // same day again: no duplicate reminder
+ assert.equal((await feed(a.token)).total,before+1);
+ // a resident without the app is never reminded
+ const plain=(await send(owner,'post','/residents').send({fullName:'Без приложения',phone:'+998904000050'}).expect(201)).body;
+ await send(owner,'post','/occupancies/check-in').send({residentId:plain.id,bedId:beds[0].id,moveInDate:addDays(-60),monthlyPrice:'500000',paymentDay:5,depositAmount:'0'}).expect(201);
+ await charge(plain,0,{billingPeriodStart:addDays(-40),billingPeriodEnd:addDays(-10),dueDate:addDays(-1)});
+ await fin.remindDue(propertyId);
+ assert.equal(await db.notification.count({where:{kind:'PAYMENT_REMINDER'}}),1,'only the app resident is reminded');
+ // switch off: no new reminders even for a fresh overdue charge
+ await db.property.update({where:{id:propertyId},data:{paymentRemindersEnabled:false}});
+ await charge(a.resident,1,{billingPeriodStart:addDays(-70),billingPeriodEnd:addDays(-40),dueDate:addDays(-2)});
+ await fin.remindDue(propertyId);
+ assert.equal(await db.notification.count({where:{kind:'PAYMENT_REMINDER'}}),1,'the switch stops reminders');
 });
 
 test('tickets notify staff without the author and answers notify the tenant; feeds are private',async()=>{

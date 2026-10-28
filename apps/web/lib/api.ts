@@ -16,5 +16,5 @@ export type Occupancy = { id: string; residentId: string; roomId: string; bedId:
 export type Resident = { id:string; fullName:string; phone:string; note:string|null; photoUrl:string|null; occupancies:Occupancy[]; totalDebt:string; creditBalance:string; accessGranted:boolean; accessStatusReason:string };
 export type Bed = { id: string; number: string; displayNumber: string; status: 'AVAILABLE' | 'OCCUPIED'; occupancy: Occupancy | null };
 export type Room = { archivedAt: string | null; canDelete: boolean; id: string; number: string; capacity: number; version: number; beds: Bed[]; totalBeds: number; availableBeds: number; occupiedBeds: number };
-export type Property = { id: string; name: string; address: string | null; autoBillingEnabled: boolean };
+export type Property = { id: string; name: string; address: string | null; autoBillingEnabled: boolean; paymentRemindersEnabled: boolean };
 export type Activity = { id: string; action: string; entity: string; entityId: string; actor: { fullName: string } | null; createdAt: string; metadata: Record<string, unknown> };
