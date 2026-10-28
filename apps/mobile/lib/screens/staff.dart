@@ -1423,6 +1423,14 @@ class _DocumentsCard extends StatelessWidget {
                   label: Text(docLabel('${d['kind']}')),
                 ),
             ]),
+            if (documents.any((d) => d['kind'] == 'FACE') && documents.any((d) => d['kind'] == 'PASSPORT_FRONT')) ...[
+              const Gap(10),
+              OutlinedButton.icon(
+                onPressed: () => openPage(context, _FaceCompare(applicationId: applicationId, version: version)),
+                icon: const Icon(Icons.compare_rounded, size: 18),
+                label: const Text('Сверка лица с паспортом'),
+              ),
+            ],
           ],
         ]),
       );
@@ -1454,6 +1462,37 @@ class _DocViewer extends StatelessWidget {
           return InteractiveViewer(minScale: 1, maxScale: 6, child: Center(child: Image.memory(snap.data!)));
         },
       ),
+    );
+  }
+}
+
+/// Selfie and passport photo side by side, so staff confirm it is the same person. Each load is a deliberate,
+/// journalled document access — the same as opening a single document.
+class _FaceCompare extends StatelessWidget {
+  const _FaceCompare({required this.applicationId, required this.version});
+  final String applicationId;
+  final Object? version;
+  Widget _photo(ApiClient api, String kind, String caption) => Expanded(child: Column(children: [
+        Expanded(child: FutureBuilder<Uint8List>(
+          future: api.bytes('/applications/$applicationId/documents/$kind', {'v': '$version'}),
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator(color: Brand.white));
+            if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(12), child: Text('${snap.error}', textAlign: TextAlign.center, style: manrope(13, FontWeight.w600, color: Brand.white))));
+            return InteractiveViewer(minScale: 1, maxScale: 6, child: Center(child: Image.memory(snap.data!)));
+          },
+        )),
+        const Gap(6),
+        Text(caption, style: manrope(13, FontWeight.w700, color: Brand.white)),
+      ]));
+  @override
+  Widget build(BuildContext context) {
+    final api = SessionScope.of(context).api;
+    final wide = MediaQuery.sizeOf(context).width >= 520;
+    final photos = [_photo(api, 'FACE', 'Селфи'), const SizedBox(width: 12, height: 12), _photo(api, 'PASSPORT_FRONT', 'Паспорт')];
+    return Scaffold(
+      backgroundColor: Brand.ink,
+      appBar: AppBar(backgroundColor: Brand.ink, foregroundColor: Brand.white, title: const Text('Сверка лица')),
+      body: Padding(padding: const EdgeInsets.all(12), child: wide ? Row(children: photos) : Column(children: photos)),
     );
   }
 }
