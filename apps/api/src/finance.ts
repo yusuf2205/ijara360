@@ -1,10 +1,11 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Logger, Module, NotFoundException, OnModuleDestroy, OnModuleInit, Param, ParseUUIDPipe, Post, Query, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, Injectable, Logger, Module, NotFoundException, OnModuleDestroy, OnModuleInit, Param, ParseUUIDPipe, Post, Query, Req, Res, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import type { Response } from 'express';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
 import { PermissionCode, requireAccess } from './permission-policy';
-import { ChargeDto, FinanceQuery, PaymentDto } from './finance.dto';
+import { ChargeDto, FinanceQuery, PaymentDto, ReportQuery } from './finance.dto';
 import { NotificationsModule, NotificationsService } from './notifications';
 import { publish } from './realtime';
 
@@ -20,6 +21,13 @@ const money = (value: string) => {
   return amount;
 };
 const chargeInclude = { resident:{select:{id:true,fullName:true}}, bed:{select:{id:true,number:true}}, room:{select:{id:true,number:true}} };
+// Excel-friendly CSV: a text cell is quoted and escaped; a money cell is a comma-decimal number Excel can sum.
+const csvText = (v: string | null | undefined) => `"${(v ?? '').replace(/"/g,'""')}"`;
+const csvMoney = (v: Prisma.Decimal | string) => new Prisma.Decimal(v).toFixed(2).replace('.',',');
+const csvDate = (d: Date, tz = 'UTC') => new Intl.DateTimeFormat('ru-RU',{timeZone:tz,day:'2-digit',month:'2-digit',year:'numeric'}).format(d);
+const chargeTypeRu: Record<string,string> = {RENT:'Аренда',DEPOSIT:'Залог',PENALTY:'Штраф',UTILITIES:'Коммунальные',OTHER:'Другое'};
+const chargeStatusRu: Record<string,string> = {UNPAID:'Не оплачено',PARTIALLY_PAID:'Частично',PAID:'Оплачено',OVERDUE:'Просрочено'};
+const methodRu: Record<string,string> = {CASH:'Наличные',CARD_TRANSFER:'Перевод на карту',BANK_TRANSFER:'Банковский перевод',OTHER:'Другое'};
 // Today as the house lives it (Tashkent), so the payment-day decision never drifts with the server clock's zone.
 function tashkentToday() {
   const iso = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -232,6 +240,57 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       }).sort((a,b)=>b.daysOverdue-a.daysOverdue||Number(b.totalDebt)-Number(a.totalDebt));
     });
   }
+  /** An Excel-openable CSV of payments, charges or debtors; the period defaults to the current Tashkent month. */
+  report(actor: Actor, q: ReportQuery) {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
+      const todayIso = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const fromIso = q.from ?? `${todayIso.slice(0,7)}-01`;
+      const fromDate = financeDate(fromIso);
+      const lastDay = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth()+1, 0)).getUTCDate();
+      const toIso = q.to ?? `${fromIso.slice(0,7)}-${String(lastDay).padStart(2,'0')}`;
+      const toDate = financeDate(toIso);
+      if (toDate < fromDate) throw new UnprocessableEntityException('Конец периода не может быть раньше начала.');
+      const rows: string[] = [];
+      let filename: string;
+      if (q.type === 'debtors') {
+        filename = `ijara360-debtors-${todayIso}.csv`;
+        rows.push(['Жилец','Телефон','Комната','Место','Долг, сум','Дней просрочки'].map(csvText).join(';'));
+        const residents = await tx.resident.findMany({where:{propertyId:actor.propertyId,totalDebt:{gt:0}},
+          select:{id:true,fullName:true,phone:true,totalDebt:true,occupancies:{where:{status:'ACTIVE'},select:{room:{select:{number:true}},bed:{select:{number:true}}},take:1}}});
+        const overdue = await tx.charge.groupBy({by:['residentId'],where:{propertyId:actor.propertyId,status:'OVERDUE',dueAmount:{gt:0}},_min:{dueDate:true}});
+        const oldest = new Map(overdue.map(o=>[o.residentId,o._min.dueDate]));
+        const now = financeDate(todayIso);
+        const list = residents.map(r => {
+          const due = oldest.get(r.id);
+          const days = due ? Math.max(0,Math.floor((now.getTime()-new Date(due).getTime())/86400000)) : 0;
+          return {fullName:r.fullName,phone:r.phone,room:r.occupancies[0]?.room.number ?? '',bed:r.occupancies[0]?.bed.number ?? '',debt:r.totalDebt,days};
+        }).sort((a,b)=>b.days-a.days || Number(b.debt)-Number(a.debt));
+        for (const d of list) rows.push([csvText(d.fullName),csvText(d.phone),csvText(d.room),csvText(d.bed),csvMoney(d.debt),String(d.days)].join(';'));
+      } else if (q.type === 'charges') {
+        filename = `ijara360-charges-${fromIso}_${toIso}.csv`;
+        rows.push(['Период с','Период по','Срок оплаты','Жилец','Комната','Место','Тип','Начислено','Оплачено','Остаток','Статус'].map(csvText).join(';'));
+        const charges = await tx.charge.findMany({where:{propertyId:actor.propertyId,billingPeriodStart:{gte:fromDate,lte:toDate}},include:chargeInclude,orderBy:[{billingPeriodStart:'asc'},{id:'asc'}]});
+        let total = new Prisma.Decimal(0);
+        for (const c of charges) {
+          total = total.plus(c.amount);
+          rows.push([csvText(csvDate(c.billingPeriodStart)),csvText(csvDate(c.billingPeriodEnd)),csvText(csvDate(c.dueDate)),csvText(c.resident.fullName),csvText(c.room.number),csvText(c.bed.number),csvText(chargeTypeRu[c.type]||c.type),csvMoney(c.amount),csvMoney(c.paidAmount),csvMoney(c.dueAmount),csvText(chargeStatusRu[c.status]||c.status)].join(';'));
+        }
+        rows.push([csvText('Итого'),'','','','','','',csvMoney(total),'','',''].join(';'));
+      } else {
+        filename = `ijara360-payments-${fromIso}_${toIso}.csv`;
+        rows.push(['Дата','Жилец','Телефон','Сумма','Способ','Комментарий','Записал'].map(csvText).join(';'));
+        const startAt = new Date(`${fromIso}T00:00:00+05:00`), endAt = new Date(new Date(`${toIso}T00:00:00+05:00`).getTime()+86400000);
+        const payments = await tx.payment.findMany({where:{propertyId:actor.propertyId,createdAt:{gte:startAt,lt:endAt}},include:{resident:{select:{fullName:true,phone:true}},creator:{select:{fullName:true}}},orderBy:[{createdAt:'asc'},{id:'asc'}]});
+        let total = new Prisma.Decimal(0);
+        for (const p of payments) {
+          total = total.plus(p.amount);
+          rows.push([csvText(csvDate(p.createdAt,'Asia/Tashkent')),csvText(p.resident.fullName),csvText(p.resident.phone),csvMoney(p.amount),csvText(methodRu[p.method]||p.method),csvText(p.comment),csvText(p.creator.fullName)].join(';'));
+        }
+        rows.push([csvText('Итого'),'','',csvMoney(total),'','',''].join(';'));
+      }
+      return {filename, csv: rows.join('\r\n')};
+    });
+  }
   access(actor: Actor, id: string) {
     return this.transaction(actor,'FINANCE_VIEW',async tx => {
       const r = await this.resident(tx,actor,id);
@@ -246,6 +305,12 @@ class FinanceController {
   @Get() snapshot(@Req() req: AuthRequest,@Query() query: FinanceQuery) {return this.service.snapshot(req.actor,query);}
   @Get('month') month(@Req() req: AuthRequest) {return this.service.month(req.actor);}
   @Get('debtors') debtors(@Req() req: AuthRequest) {return this.service.debtors(req.actor);}
+  @Get('report') async report(@Req() req: AuthRequest, @Query() q: ReportQuery, @Res() res: Response) {
+    const {filename, csv} = await this.service.report(req.actor, q);
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename}"`);
+    res.send('﻿'+csv); // BOM so Excel reads UTF-8
+  }
   @Post('charges') charge(@Req() req: AuthRequest,@Body() dto: ChargeDto) {return this.service.createCharge(req.actor,dto);}
   @Post('payments') payment(@Req() req: AuthRequest,@Body() dto: PaymentDto) {return this.service.createPayment(req.actor,dto);}
   @Get('residents/:id/access') access(@Req() req: AuthRequest,@Param('id',ParseUUIDPipe) id: string) {return this.service.access(req.actor,id);}

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { ChargeStatus, ChargeType, PaymentMethod } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 
 export class ChargeDto {
   @IsUUID('4') residentId!: string;
@@ -25,4 +25,9 @@ export class FinanceQuery {
   @IsOptional() @IsUUID('4') residentId?: string;
   @IsOptional() @IsEnum(ChargeStatus) status?: ChargeStatus;
   @Type(() => Number) @IsInt() @Min(1) @Max(100000) page = 1;
+}
+export class ReportQuery {
+  @IsIn(['payments','charges','debtors']) type!: 'payments'|'charges'|'debtors';
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
 }

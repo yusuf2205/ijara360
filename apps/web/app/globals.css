@@ -31,6 +31,10 @@ label.toggle-row{display:flex;gap:10px;align-items:flex-start;cursor:pointer;mar
 label.toggle-row input{width:18px;height:18px;margin:2px 0 0;flex-shrink:0;accent-color:var(--brand)}
 label.toggle-row span{display:flex;flex-direction:column;gap:3px}
 label.toggle-row small{font-weight:500;opacity:.72;line-height:1.35}
+/* Finance report export buttons */
+.finance-export{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:2px 0 12px}
+.finance-export>span{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;opacity:.8}
+.finance-export .button{padding:6px 12px;font-size:13px}
 .session-list{display:grid;gap:10px}
 .session-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .session-row div{display:grid;gap:2px;min-width:0}

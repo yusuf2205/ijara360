@@ -216,3 +216,20 @@ test('debtors list is sorted by days overdue with place and amount',async()=>{
  assert.equal(list[0].room,'1');
  assert.equal(list.find(d=>d.residentId===second.id).daysOverdue,0);
 });
+
+test('Excel report export: payments, charges and debtors as UTF-8 CSV',async()=>{
+ const c=await charge({billingPeriodStart:today.slice(0,8)+'01',billingPeriodEnd:date(20),dueDate:today});
+ await pay(c,{amount:'100.10'});
+ let r=await send(agent,'get','/finance/report?type=payments').expect(200);
+ assert.match(r.headers['content-type'],/text\/csv/);
+ assert.match(r.headers['content-disposition'],/attachment; filename="ijara360-payments-.*\.csv"/);
+ assert.ok(r.text.startsWith('﻿'),'BOM so Excel reads UTF-8');
+ assert.match(r.text,/Finance test resident/);assert.match(r.text,/100,10/);assert.match(r.text,/Итого/);
+ r=await send(agent,'get','/finance/report?type=charges').expect(200);
+ assert.match(r.text,/Аренда/);assert.match(r.text,/100,10/);
+ await charge({dueDate:date(-1)}); // now the resident owes
+ r=await send(agent,'get','/finance/report?type=debtors').expect(200);
+ assert.match(r.headers['content-disposition'],/ijara360-debtors-/);assert.match(r.text,/Finance test resident/);
+ await send(agent,'get','/finance/report?type=bogus').expect(422);
+ await send(request(server),'get','/finance/report?type=payments').expect(401);
+});

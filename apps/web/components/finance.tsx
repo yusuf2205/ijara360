@@ -51,6 +51,16 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     }catch(e){if(e instanceof ApiError&&e.status>=400&&e.status<500&&e.status!==401&&e.status!==403){sessionStorage.removeItem(storageKey);setPending(null);}setError((e as Error).message);}
     finally{setBusy(false);}
   }
+  async function downloadReport(type:'payments'|'charges'|'debtors') {
+    setError('');
+    try {
+      const res=await fetch(`/api/finance/report?type=${type}`,{cache:'no-store',credentials:'same-origin',headers:{'X-Ijara-Request':'1'}});
+      if(!res.ok) throw new Error();
+      const blob=await res.blob();
+      const name=/filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition')||'')?.[1]||`ijara360-${type}.csv`;
+      const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    } catch { setError('Не удалось выгрузить отчёт. Повторите позже.'); }
+  }
   return <>
     <div className="page-heading"><div><div className="heading-kicker">ФИНАНСОВЫЙ УЧЁТ</div><h1>Финансы</h1><p>Начисления, оплаты и задолженность жильцов.</p></div><div className="resident-actions"><button className="button secondary" disabled={busy||!!pending||!residents.length} onClick={()=>setModal('payment')}>Принять оплату</button><button className="button primary" disabled={busy||!!pending||!residents.length} onClick={()=>setModal('charge')}><Plus size={18}/>Создать начисление</button></div></div>
     {notice&&<div role="status" className="finance-notice">{notice}</div>}
@@ -61,6 +71,7 @@ export function FinancePanel({residents,rooms,userId,initialResidentId='',onSave
     {data&&<>
       <div className="stats-grid finance-stats">{([['Начислено',data.summary.charged,'c-blue',<FileText size={17} key="i"/>],['Получено',data.summary.paid,'c-green',<CheckCircle2 size={17} key="i"/>],['Зачтено',data.summary.applied,'c-green',<Banknote size={17} key="i"/>],['Авансы',data.summary.creditBalance,'c-blue',<Wallet size={17} key="i"/>],['Остаток к оплате',data.summary.outstanding,'c-orange',<AlertCircle size={17} key="i"/>],['Из него просрочено',data.summary.overdue,'c-red',<AlertCircle size={17} key="i"/>]] as [string,string,string,ReactNode][]).map(([label,value,tone,icon])=><div className="stat finance-kpi" key={label}><span className={`chip ${tone}`}>{icon}</span><div><strong>{financeMoney(value)}</strong><small>{label}</small></div></div>)}</div>
       <p className="muted">Итоги за всё время{residentId?' по выбранному жильцу':''}. Остаток включает начисления, срок оплаты которых ещё не наступил.</p>
+      <div className="finance-export"><span><FileText size={15}/>Экспорт в Excel:</span><button className="button secondary" onClick={()=>downloadReport('payments')}>Платежи за месяц</button><button className="button secondary" onClick={()=>downloadReport('charges')}>Начисления за месяц</button><button className="button secondary" onClick={()=>downloadReport('debtors')}>Должники</button></div>
       {debtors.length>0&&<section className="panel finance-section debtors-section"><h2>Должники <span>{debtors.length}</span></h2><p className="muted">Отсортированы по дням просрочки.</p>
         <div className="debtor-list">{debtors.map(d=><Link className="debtor-row" href={`/residents/${d.residentId}`} key={d.residentId}>
           <span className="avatar">{d.fullName.slice(0,1)}</span>
