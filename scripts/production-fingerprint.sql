@@ -1,5 +1,7 @@
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
-SELECT 'properties',count(*),md5(coalesce(string_agg(row_to_json(x)::text,'|' ORDER BY id),'')) FROM properties x
+-- Project the original M1 fields so adding auto_billing_enabled does not change the fingerprint.
+SELECT 'properties',count(*),md5(coalesce(string_agg(row_to_json(x)::text,'|' ORDER BY id),'')) FROM
+  (SELECT id,name,address,active,created_at,updated_at FROM properties) x
 UNION ALL SELECT 'rooms',count(*),md5(coalesce(string_agg((jsonb_build_object('archived_at',NULL)||to_jsonb(x))::text,'|' ORDER BY id),'')) FROM rooms x
 UNION ALL SELECT 'beds',count(*),md5(coalesce(string_agg(row_to_json(x)::text,'|' ORDER BY id),'')) FROM beds x
 -- Project the original M1 fields so the M5 Telegram columns do not change the fingerprint.
