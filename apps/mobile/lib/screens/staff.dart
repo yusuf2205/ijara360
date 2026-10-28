@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
@@ -459,21 +460,24 @@ class _PlaceRow extends StatelessWidget {
     final debt = num.tryParse('${resident?['totalDebt'] ?? 0}') ?? 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: AppCard(
-        onTap: occ == null ? null : () => openPage(context, ResidentScreen(id: '${occ['residentId']}')),
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          Avatar(occ == null ? '' : '${resident?['fullName'] ?? ''}', size: 40),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Место $room-${bed['number']}', style: manrope(14, FontWeight.w700)),
-            Text(occ == null ? 'Свободно' : '${resident?['fullName'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(12, FontWeight.w500, color: Brand.gray500)),
-          ])),
-          const SizedBox(width: 8),
-          if (occ != null) StatusPill(debt > 0 ? 'Долг ${sum(debt)}' : 'Оплачено', tone: debt > 0 ? Tone.red : Tone.green)
-          else StatusPill('Свободно', tone: Tone.gray),
-        ]),
-      ),
+      child: Builder(builder: (context) {
+        final canHouse = occ == null && SessionScope.of(context).can('RESIDENTS_MANAGE');
+        return AppCard(
+          onTap: occ == null ? (canHouse ? () => checkIn(context, bedId: '${bed['id']}') : null) : () => openPage(context, ResidentScreen(id: '${occ['residentId']}')),
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            Avatar(occ == null ? '' : '${resident?['fullName'] ?? ''}', size: 40),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Место $room-${bed['number']}', style: manrope(14, FontWeight.w700)),
+              Text(occ == null ? 'Свободно' : '${resident?['fullName'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: manrope(12, FontWeight.w500, color: Brand.gray500)),
+            ])),
+            const SizedBox(width: 8),
+            if (occ != null) StatusPill(debt > 0 ? 'Долг ${sum(debt)}' : 'Оплачено', tone: debt > 0 ? Tone.red : Tone.green)
+            else StatusPill(canHouse ? 'Заселить' : 'Свободно', tone: canHouse ? Tone.blue : Tone.gray),
+          ]),
+        );
+      }),
     );
   }
 }
@@ -493,6 +497,9 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
     final s = SessionScope.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Жильцы')),
+      floatingActionButton: s.can('RESIDENTS_MANAGE')
+          ? FloatingActionButton.extended(backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => checkIn(context), icon: const Icon(Icons.how_to_reg_rounded), label: const Text('Заселить'))
+          : null,
       body: LiveData<List<dynamic>>(
         topics: const {'house', 'finance'},
         load: () async => (await s.api.get('/residents')) as List<dynamic>,
@@ -563,6 +570,9 @@ class ResidentScreen extends StatelessWidget {
                 PopupMenuButton<String>(
                   onSelected: (v) => _residentAction(context, s.api, r, occ, v, refresh),
                   itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'edit', child: Text('Изменить данные')),
+                    const PopupMenuItem(value: 'invite', child: Text('Пригласить в приложение')),
+                    if (occ != null) const PopupMenuItem(value: 'transfer', child: Text('Переселить')),
                     if (occ != null) const PopupMenuItem(value: 'checkout', child: Text('Выселить')),
                     const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
                   ],
@@ -621,6 +631,25 @@ class ResidentScreen extends StatelessWidget {
 Future<void> _residentAction(BuildContext context, ApiClient api, Map<String, dynamic> r, Map<String, dynamic>? occ, String action, Future<void> Function() refresh) async {
   try {
     switch (action) {
+      case 'edit':
+        final res = await _residentForm(context, fullName: '${r['fullName']}', phone: '${r['phone']}');
+        if (res == null) return;
+        await api.patch('/residents/${r['id']}', {'fullName': res.$1, 'phone': res.$2});
+        await refresh();
+        if (context.mounted) toast(context, 'Данные изменены');
+      case 'invite':
+        final res = await api.post('/residents/${r['id']}/app-invite', {}) as Map<String, dynamic>;
+        if (!context.mounted) return;
+        if (res['delivered'] == true) { toast(context, 'Приглашение отправлено в Telegram'); }
+        else if (res['link'] != null) { await _showInviteLink(context, '${res['link']}'); }
+        else { toast(context, 'Приглашение создано'); }
+      case 'transfer':
+        if (occ == null) return;
+        final picked = await _pickBed(context, api, title: 'Переселить в место');
+        if (picked == null) return;
+        await api.post('/occupancies/${occ['id']}/transfer', {'bedId': picked, 'transferDate': _todayIso()});
+        await refresh();
+        if (context.mounted) toast(context, 'Жилец переселён');
       case 'checkout':
         if (occ == null) return;
         if (!await _confirmAction(context, title: 'Выселить жильца?', message: 'Проживание закроется сегодняшней датой. История и платежи сохранятся.', confirm: 'Выселить', danger: false)) return;
@@ -634,6 +663,313 @@ Future<void> _residentAction(BuildContext context, ApiClient api, Map<String, dy
     }
   } on ApiException catch (e) {
     if (context.mounted) toast(context, e.message);
+  }
+}
+
+Future<(String, String)?> _residentForm(BuildContext context, {required String fullName, required String phone}) async {
+  final n = TextEditingController(text: fullName), p = TextEditingController(text: phone);
+  final res = await showDialog<(String, String)>(context: context, builder: (d) => AlertDialog(
+        title: const Text('Данные жильца'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: n, autofocus: true, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'ФИО')),
+          const Gap(10),
+          TextField(controller: p, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Телефон')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
+          FilledButton(onPressed: () { final nn = n.text.trim(), pp = p.text.trim(); if (nn.isEmpty || pp.length < 8) return; Navigator.pop(d, (nn, pp)); }, child: const Text('Сохранить')),
+        ],
+      ));
+  n.dispose();
+  p.dispose();
+  return res;
+}
+
+Future<void> _showInviteLink(BuildContext context, String link) => showDialog<void>(context: context, builder: (d) => AlertDialog(
+      title: const Text('Приглашение в приложение'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Отправьте жильцу эту ссылку. По ней он задаст пароль и войдёт. Ссылка действует 48 часов.'),
+        const Gap(10),
+        SelectableText(link, style: manrope(13, FontWeight.w600, color: Brand.blue)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d), child: const Text('Закрыть')),
+        FilledButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: link)); Navigator.pop(d); toast(context, 'Ссылка скопирована'); }, icon: const Icon(Icons.copy_rounded, size: 18), label: const Text('Копировать')),
+      ],
+    ));
+
+/// Picks a free bed across all rooms (for a transfer). Returns the bed id or null.
+Future<String?> _pickBed(BuildContext context, ApiClient api, {required String title}) async {
+  final free = <Map<String, dynamic>>[];
+  try {
+    final rooms = (await api.get('/rooms') as List).cast<Map<String, dynamic>>();
+    for (final r in rooms) {
+      if (r['archivedAt'] != null) continue;
+      for (final b in (r['beds'] as List).cast<Map<String, dynamic>>()) {
+        if (b['status'] == 'AVAILABLE') free.add({'id': b['id'], 'label': 'Комната ${r['number']} · место ${b['displayNumber'] ?? b['number']}'});
+      }
+    }
+  } on ApiException catch (e) { if (context.mounted) toast(context, e.message); return null; }
+  if (!context.mounted) return null;
+  if (free.isEmpty) { toast(context, 'Нет свободных мест.'); return null; }
+  String sel = '${free.first['id']}';
+  return showDialog<String>(context: context, builder: (d) => StatefulBuilder(builder: (d, setD) => AlertDialog(
+        title: Text(title),
+        content: DropdownButtonFormField<String>(isExpanded: true, initialValue: sel, items: [for (final b in free) DropdownMenuItem(value: '${b['id']}', child: Text('${b['label']}', overflow: TextOverflow.ellipsis))], onChanged: (v) => setD(() => sel = v ?? sel)),
+        actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(d, sel), child: const Text('Выбрать'))],
+      )));
+}
+
+// ---------- Check-in (заселение); the same sheet houses an approved applicant (convert) ----------
+Future<void> checkIn(BuildContext context, {String? bedId, String? applicationId, Object? version}) => showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      builder: (_) => SessionScope(session: SessionScope.of(context), child: _CheckInSheet(bedId: bedId, applicationId: applicationId, version: version)),
+    );
+
+class _CheckInSheet extends StatefulWidget {
+  const _CheckInSheet({this.bedId, this.applicationId, this.version});
+  final String? bedId;
+  final String? applicationId; // when set, the sheet houses this approved application instead of a new resident
+  final Object? version;
+  @override
+  State<_CheckInSheet> createState() => _CheckInSheetState();
+}
+
+class _CheckInSheetState extends State<_CheckInSheet> {
+  List<Map<String, dynamic>> rooms = [], residents = [];
+  String? roomId, bedId, residentId;
+  bool existing = false, busy = false, loading = true;
+  final fullName = TextEditingController(), phone = TextEditingController(), price = TextEditingController(), deposit = TextEditingController(text: '0');
+  int paymentDay = 10;
+  DateTime date = DateTime.now();
+  String? error;
+
+  @override
+  void initState() { super.initState(); bedId = widget.bedId; WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
+  @override
+  void dispose() { fullName.dispose(); phone.dispose(); price.dispose(); deposit.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final r = await Future.wait([SessionScope.of(context).api.get('/rooms'), SessionScope.of(context).api.get('/residents')]);
+      rooms = (r[0] as List).cast<Map<String, dynamic>>().where((x) => ((x['availableBeds'] as int?) ?? 0) > 0 && x['archivedAt'] == null).toList();
+      residents = (r[1] as List).cast<Map<String, dynamic>>().where((x) => !(x['occupancies'] as List).any((o) => o['status'] == 'ACTIVE')).toList();
+      if (bedId != null) { final room = rooms.where((x) => (x['beds'] as List).any((b) => b['id'] == bedId)).firstOrNull; roomId = room?['id'] as String?; }
+      if (mounted) setState(() => loading = false);
+    } on ApiException catch (e) { if (mounted) setState(() { error = e.message; loading = false; }); }
+  }
+
+  List<Map<String, dynamic>> get freeBeds {
+    final room = rooms.where((x) => x['id'] == roomId).firstOrNull;
+    return room == null ? [] : (room['beds'] as List).cast<Map<String, dynamic>>().where((b) => b['status'] == 'AVAILABLE').toList();
+  }
+
+  String _iso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _digits(String s, {String fallback = ''}) { final v = s.replaceAll(RegExp(r'[^0-9.]'), ''); return v.isEmpty ? fallback : v; }
+
+  bool get convert => widget.applicationId != null;
+
+  Future<void> save() async {
+    final value = _digits(price.text);
+    if (bedId == null) { setState(() => error = 'Выберите место.'); return; }
+    if (!convert && !existing && (fullName.text.trim().isEmpty || phone.text.trim().isEmpty)) { setState(() => error = 'Укажите имя и телефон жильца.'); return; }
+    if (!convert && existing && residentId == null) { setState(() => error = 'Выберите жильца.'); return; }
+    if (value.isEmpty) { setState(() => error = 'Укажите месячную цену.'); return; }
+    setState(() { busy = true; error = null; });
+    try {
+      if (convert) {
+        await SessionScope.of(context).api.post('/applications/${widget.applicationId}/convert', {'bedId': bedId, 'moveInDate': _iso(date), 'monthlyPrice': value, 'paymentDay': paymentDay, 'depositAmount': _digits(deposit.text, fallback: '0'), 'version': widget.version});
+      } else {
+        await SessionScope.of(context).api.post('/occupancies/check-in', {
+          if (existing) 'residentId': residentId else 'resident': {'fullName': fullName.text.trim(), 'phone': phone.text.trim()},
+          'bedId': bedId, 'moveInDate': _iso(date), 'monthlyPrice': value, 'paymentDay': paymentDay, 'depositAmount': _digits(deposit.text, fallback: '0'),
+        });
+      }
+      if (!mounted) return;
+      Navigator.pop(context);
+      toast(context, 'Жилец заселён');
+    } on ApiException catch (e) { setState(() => error = e.message); } finally { if (mounted) setState(() => busy = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+      child: loading
+          ? const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))
+          : SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              Text(convert ? 'Заселить из заявки' : 'Заселить жильца', style: t.headlineSmall),
+              const Gap(16),
+              if (rooms.isEmpty)
+                Text('Нет свободных мест. Добавьте комнату или освободите место.', style: t.bodyMedium)
+              else ...[
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: roomId,
+                  decoration: const InputDecoration(labelText: 'Комната'),
+                  items: [for (final r in rooms) DropdownMenuItem(value: '${r['id']}', child: Text('Комната ${r['number']} · свободно ${r['availableBeds']}'))],
+                  onChanged: (v) => setState(() { roomId = v; bedId = null; }),
+                ),
+                const Gap(12),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: freeBeds.any((b) => b['id'] == bedId) ? bedId : null,
+                  decoration: const InputDecoration(labelText: 'Место'),
+                  items: [for (final b in freeBeds) DropdownMenuItem(value: '${b['id']}', child: Text('Место ${b['displayNumber'] ?? b['number']}'))],
+                  onChanged: (v) => setState(() => bedId = v),
+                ),
+                if (!convert) ...[
+                  const Gap(14),
+                  SegmentedButton<bool>(
+                    segments: const [ButtonSegment(value: false, label: Text('Новый жилец')), ButtonSegment(value: true, label: Text('Из прежних'))],
+                    selected: {existing},
+                    onSelectionChanged: (s) => setState(() => existing = s.first),
+                  ),
+                  const Gap(12),
+                  if (existing)
+                    DropdownButtonFormField<String>(
+                      isExpanded: true,
+                      initialValue: residentId,
+                      decoration: const InputDecoration(labelText: 'Жилец'),
+                      items: [for (final r in residents) DropdownMenuItem(value: '${r['id']}', child: Text('${r['fullName']}', overflow: TextOverflow.ellipsis))],
+                      onChanged: (v) => setState(() => residentId = v),
+                    )
+                  else ...[
+                    TextField(controller: fullName, textCapitalization: TextCapitalization.words, decoration: const InputDecoration(labelText: 'ФИО жильца')),
+                    const Gap(10),
+                    TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Телефон', hintText: '+998 90 123 45 67')),
+                  ],
+                ],
+                const Gap(12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Дата заселения'),
+                  trailing: Text(day(_iso(date)), style: manrope(15, FontWeight.w700, color: Brand.blue)),
+                  onTap: () async {
+                    final d = await showDatePicker(context: context, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime.now());
+                    if (d != null) setState(() => date = d);
+                  },
+                ),
+                const Gap(4),
+                TextField(controller: price, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Месячная цена', suffixText: 'сум')),
+                const Gap(10),
+                Row(children: [
+                  Expanded(child: TextField(controller: deposit, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Залог', suffixText: 'сум'))),
+                  const SizedBox(width: 12),
+                  Expanded(child: InputDecorator(
+                    decoration: const InputDecoration(labelText: 'День оплаты'),
+                    child: DropdownButtonHideUnderline(child: DropdownButton<int>(isExpanded: true, value: paymentDay, items: [for (var i = 1; i <= 31; i++) DropdownMenuItem(value: i, child: Text('$i-е число'))], onChanged: (v) => setState(() => paymentDay = v ?? 10))),
+                  )),
+                ]),
+              ],
+              if (error != null) ...[const Gap(12), Text(error!, style: manrope(14, FontWeight.w600, color: Brand.red))],
+              const Gap(18),
+              if (rooms.isNotEmpty)
+                FilledButton.icon(onPressed: busy ? null : save, icon: const Icon(Icons.how_to_reg_rounded), label: Text(busy ? 'Заселяем…' : 'Заселить')),
+            ])),
+    );
+  }
+}
+
+// ---------- Charge (начисление) ----------
+Future<void> addCharge(BuildContext context) => showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      builder: (_) => SessionScope(session: SessionScope.of(context), child: const _ChargeSheet()),
+    );
+
+class _ChargeSheet extends StatefulWidget {
+  const _ChargeSheet();
+  @override
+  State<_ChargeSheet> createState() => _ChargeSheetState();
+}
+
+class _ChargeSheetState extends State<_ChargeSheet> {
+  List<Map<String, dynamic>> residents = [];
+  final Map<String, String> bedOf = {};
+  String? residentId;
+  bool busy = false, loading = true;
+  String? error;
+  final amount = TextEditingController();
+  late DateTime periodStart, periodEnd, due;
+  final key = ApiClient.uuid();
+
+  @override
+  void initState() {
+    super.initState();
+    final n = DateTime.now();
+    periodStart = DateTime(n.year, n.month, 1);
+    periodEnd = DateTime(n.year, n.month + 1, 0);
+    due = periodEnd;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+  @override
+  void dispose() { amount.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final all = (await SessionScope.of(context).api.get('/residents') as List).cast<Map<String, dynamic>>();
+      residents = [];
+      for (final r in all) {
+        final occ = (r['occupancies'] as List).cast<Map<String, dynamic>>().where((o) => o['status'] == 'ACTIVE').firstOrNull;
+        if (occ != null) { residents.add(r); bedOf['${r['id']}'] = '${(occ['bed'] as Map)['id']}'; }
+      }
+      if (mounted) setState(() => loading = false);
+    } on ApiException catch (e) { if (mounted) setState(() { error = e.message; loading = false; }); }
+  }
+
+  String _iso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  Future<void> _pick(DateTime cur, void Function(DateTime) set) async {
+    final d = await showDatePicker(context: context, initialDate: cur, firstDate: DateTime(2020), lastDate: DateTime(2100));
+    if (d != null) setState(() => set(d));
+  }
+
+  Future<void> save() async {
+    final a = amount.text.replaceAll(RegExp(r'[^0-9.]'), '');
+    if (residentId == null) { setState(() => error = 'Выберите жильца.'); return; }
+    if (a.isEmpty) { setState(() => error = 'Укажите сумму.'); return; }
+    if (periodEnd.isBefore(periodStart)) { setState(() => error = 'Конец периода не может быть раньше начала.'); return; }
+    setState(() { busy = true; error = null; });
+    try {
+      await SessionScope.of(context).api.post('/finance/charges', {'residentId': residentId, 'bedId': bedOf[residentId], 'amount': a, 'type': 'RENT', 'billingPeriodStart': _iso(periodStart), 'billingPeriodEnd': _iso(periodEnd), 'dueDate': _iso(due), 'gracePeriodDays': 0, 'idempotencyKey': key});
+      if (!mounted) return;
+      Navigator.pop(context);
+      toast(context, 'Начисление создано');
+    } on ApiException catch (e) { setState(() => error = e.message); } finally { if (mounted) setState(() => busy = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+      child: loading
+          ? const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))
+          : SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+              Text('Начислить', style: t.headlineSmall),
+              const Gap(16),
+              if (residents.isEmpty)
+                Text('Нет заселённых жильцов — начислять некому.', style: t.bodyMedium)
+              else ...[
+                DropdownButtonFormField<String>(isExpanded: true, initialValue: residentId, decoration: const InputDecoration(labelText: 'Жилец'), items: [for (final r in residents) DropdownMenuItem(value: '${r['id']}', child: Text('${r['fullName']}', overflow: TextOverflow.ellipsis))], onChanged: (v) => setState(() => residentId = v)),
+                const Gap(12),
+                TextField(controller: amount, keyboardType: TextInputType.number, style: manrope(22, FontWeight.w800), decoration: const InputDecoration(labelText: 'Сумма', suffixText: 'сум')),
+                const Gap(6),
+                ListTile(contentPadding: EdgeInsets.zero, title: const Text('Период с'), trailing: Text(day(_iso(periodStart)), style: manrope(14, FontWeight.w700, color: Brand.blue)), onTap: () => _pick(periodStart, (d) => periodStart = d)),
+                ListTile(contentPadding: EdgeInsets.zero, title: const Text('по'), trailing: Text(day(_iso(periodEnd)), style: manrope(14, FontWeight.w700, color: Brand.blue)), onTap: () => _pick(periodEnd, (d) => periodEnd = d)),
+                ListTile(contentPadding: EdgeInsets.zero, title: const Text('Оплатить до'), trailing: Text(day(_iso(due)), style: manrope(14, FontWeight.w700, color: Brand.blue)), onTap: () => _pick(due, (d) => due = d)),
+              ],
+              if (error != null) ...[const Gap(12), Text(error!, style: manrope(14, FontWeight.w600, color: Brand.red))],
+              const Gap(18),
+              if (residents.isNotEmpty) FilledButton.icon(onPressed: busy ? null : save, icon: const Icon(Icons.receipt_long_rounded), label: Text(busy ? 'Создаём…' : 'Начислить')),
+            ])),
+    );
   }
 }
 
@@ -653,7 +989,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Оплаты')),
+      appBar: AppBar(title: const Text('Оплаты'), actions: [
+        if (s.can('FINANCE_MANAGE')) IconButton(tooltip: 'Начислить', icon: const Icon(Icons.receipt_long_outlined), onPressed: () => addCharge(context)),
+      ]),
       floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(isExtended: _extended, backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
       body: NotificationListener<UserScrollNotification>(
         onNotification: (n) {
@@ -963,11 +1301,14 @@ class _DecisionCardState extends State<_DecisionCard> {
       if (s.can('APPLICATION_REVIEW')) buttons.add(OutlinedButton.icon(onPressed: busy ? null : _needsInfo, icon: const Icon(Icons.help_outline_rounded), label: const Text('Запросить данные')));
       if (s.can('APPLICATION_REJECT')) buttons.add(OutlinedButton.icon(style: OutlinedButton.styleFrom(foregroundColor: Brand.red), onPressed: busy ? null : _reject, icon: const Icon(Icons.close_rounded), label: const Text('Отклонить')));
     }
+    if (status == 'APPROVED' && s.can('RESIDENT_CREATE_FROM_APPLICATION')) {
+      buttons.add(FilledButton.icon(onPressed: busy ? null : () => checkIn(context, applicationId: widget.id, version: widget.application['version']), icon: const Icon(Icons.how_to_reg_rounded), label: const Text('Заселить')));
+    }
     if (buttons.isEmpty) return const SizedBox.shrink();
     return AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Решение по заявке', style: manrope(15, FontWeight.w800)),
       const Gap(4),
-      Text(status == 'SUBMITTED' ? 'Возьмите заявку в работу, затем одобрите или отклоните.' : 'Проверьте анкету и документы выше, затем примите решение.', style: Theme.of(context).textTheme.bodySmall),
+      Text(status == 'SUBMITTED' ? 'Возьмите заявку в работу, затем одобрите или отклоните.' : status == 'APPROVED' ? 'Заявка одобрена. Заселите жильца в свободное место.' : 'Проверьте анкету и документы выше, затем примите решение.', style: Theme.of(context).textTheme.bodySmall),
       const Gap(12),
       Wrap(spacing: 8, runSpacing: 8, children: buttons),
     ]));
@@ -1227,6 +1568,45 @@ Future<(String, String, String)?> _staffFormDialog(BuildContext context) async {
   phone.dispose();
   pass.dispose();
   return r;
+}
+
+/// Owner-only: the home's name and address (same as the cabinet's «Ваш дом»).
+class PropertyCard extends StatefulWidget {
+  const PropertyCard({super.key});
+  @override
+  State<PropertyCard> createState() => _PropertyCardState();
+}
+
+class _PropertyCardState extends State<PropertyCard> {
+  final name = TextEditingController(), address = TextEditingController();
+  bool busy = false, loaded = false;
+  @override
+  void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
+  @override
+  void dispose() { name.dispose(); address.dispose(); super.dispose(); }
+  Future<void> _load() async {
+    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; if (mounted) setState(() => loaded = true); } catch (_) {}
+  }
+  Future<void> save() async {
+    setState(() => busy = true);
+    try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'address': address.text.trim()}); if (mounted) toast(context, 'Сохранено'); }
+    on ApiException catch (e) { if (mounted) toast(context, e.message); }
+    finally { if (mounted) setState(() => busy = false); }
+  }
+  @override
+  Widget build(BuildContext context) {
+    if (!loaded) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SectionTitle('Ваш дом'),
+      AppCard(child: Column(children: [
+        TextField(controller: name, decoration: const InputDecoration(labelText: 'Название дома')),
+        const Gap(10),
+        TextField(controller: address, decoration: const InputDecoration(labelText: 'Адрес')),
+        const Gap(12),
+        Align(alignment: Alignment.centerLeft, child: FilledButton(onPressed: busy ? null : save, child: Text(busy ? 'Сохраняем…' : 'Сохранить'))),
+      ])),
+    ]);
+  }
 }
 
 Future<void> _staffAction(BuildContext context, ApiClient api, Map<String, dynamic> u, String action, Future<void> Function() refresh) async {

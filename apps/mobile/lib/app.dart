@@ -172,7 +172,7 @@ class _StaffAppState extends State<StaffApp> with _Unread {
       if (s.can('VIEW_LOCATION')) ('map', Destination('Карта', Icons.map_outlined, Icons.map_rounded, (_) => const StaffMapScreen())),
       if (s.can('APPLICATION_VIEW')) ('applications', Destination('Заявки', Icons.assignment_outlined, Icons.assignment_rounded, (_) => const ApplicationsScreen())),
       ('feed', Destination('Уведомления', Icons.notifications_none_rounded, Icons.notifications_rounded, (_) => NotificationsScreen(onOpen: (c, n) => _openLink(c, n)), badge: unread)),
-      ('profile', Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => ProfileScreen(extra: [const TelegramCard(), if (s.role == Role.superAdmin) const StaffListCard()]))),
+      ('profile', Destination('Профиль', Icons.person_outline_rounded, Icons.person_rounded, (_) => ProfileScreen(extra: [const TelegramCard(), if (s.role == Role.superAdmin) const PropertyCard(), if (s.role == Role.superAdmin) const StaffListCard()]))),
     ]);
     return AppShell(destinations: [for (final x in sections) x.$2]);
   }
