@@ -6,7 +6,7 @@
 
 | Место | Назначение |
 |---|---|
-| `C:\Users\User\Documents\GitHub\Ijara360` | Локальная рабочая копия |
+| `D:\GitHub\Ijara360` | Локальная рабочая копия |
 | `https://github.com/yusuf2205/ijara360` | Git remote `github`: исходники, документация, история |
 | `https://mygithub.uz/joseph/ijara360` | Git remote `mygithub`: тот же коммит ветки main |
 | NAS `/volume1/docker/ijara360/releases/<commit>/source` | Снимок отслеживаемых файлов конкретного коммита |
