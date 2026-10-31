@@ -13,6 +13,7 @@ import { allowedOrigins } from './origins';
 import { ResidentsModule } from './residents';
 import { FinanceModule } from './finance';
 import { ApplicationsModule } from './applications';
+import { KycRetentionService } from './kyc-retention';
 import { RealtimeHub, RealtimeModule } from './realtime';
 import { TenantModule } from './tenant';
 import { TenantFinanceModule } from './tenant-finance';
@@ -23,13 +24,13 @@ import { LocationModule, LocationService } from './location';
 
 @Controller('health')
 class HealthController {
-  constructor(private readonly db: Database, private readonly realtime: RealtimeHub, private readonly location: LocationService) {}
+  constructor(private readonly db: Database, private readonly realtime: RealtimeHub, private readonly location: LocationService, private readonly kycRetention: KycRetentionService) {}
   @Get() async health() {
     try { await this.db.$queryRaw`SELECT 1`; }
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
     // Private listeners only (the public one answers 404 here). Seconds since each worker last finished.
     const age = (d: Date | null) => d ? Math.round((Date.now() - d.getTime()) / 1000) : null;
-    return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening,
+    return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening, kyc: { retentionWorker: age(this.kycRetention.lastRun) },
       location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY), mapKey: this.location.mapKey } };
   }
 }

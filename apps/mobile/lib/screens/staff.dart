@@ -1274,7 +1274,7 @@ class ApplicationScreen extends StatelessWidget {
             if (text('comment') != null) KeyValue('Комментарий', text('comment')!),
           ])),
           const Gap(14),
-          _DocumentsCard(applicationId: id, documents: (a['documents'] as List?)?.cast<Map<String, dynamic>>() ?? const [], version: a['version']),
+          _DocumentsCard(applicationId: id, documents: (a['documents'] as List?)?.cast<Map<String, dynamic>>() ?? const [], version: a['version'], purged: a['documentsPurgedAt'] != null),
           const Gap(14),
           _DecisionCard(id: id, application: a, refresh: refresh),
         ]);
@@ -1400,17 +1400,20 @@ String docLabel(String kind) => switch (kind) {
 /// view here is written to the access journal exactly as in the cabinet. The list is already filtered by the
 /// viewer's rights on the server, so a staffer without passport rights simply sees nothing to open.
 class _DocumentsCard extends StatelessWidget {
-  const _DocumentsCard({required this.applicationId, required this.documents, required this.version});
+  const _DocumentsCard({required this.applicationId, required this.documents, required this.version, required this.purged});
   final String applicationId;
   final List<Map<String, dynamic>> documents;
   final Object? version;
+  final bool purged;
   @override
   Widget build(BuildContext context) => AppCard(
         color: Brand.blueSoft,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Документы и фото', style: manrope(15, FontWeight.w800)),
           const Gap(4),
-          Text(documents.isEmpty
+          Text(purged
+              ? 'Удалены: срок хранения истёк.'
+              : documents.isEmpty
               ? 'Нет прав на просмотр паспорта и фото лица, либо документы ещё не загружены.'
               : 'Каждое открытие фиксируется в журнале доступа.'),
           if (documents.isNotEmpty) ...[

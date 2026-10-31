@@ -355,6 +355,8 @@ model RentalApplication {
   convertedAt DateTime? @map("converted_at") @db.Timestamptz(3)
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
   retentionPolicy String @default("MANUAL_REVIEW") @map("retention_policy")
+  documentsPurgedAt DateTime? @map("documents_purged_at") @db.Timestamptz(3)
+  profilePurgedAt DateTime? @map("profile_purged_at") @db.Timestamptz(3)
   property Property @relation(fields:[propertyId],references:[id],onDelete:Restrict)
   resident Resident? @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Restrict,onUpdate:Restrict)
   documents ApplicationDocument[]

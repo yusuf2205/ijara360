@@ -1,6 +1,6 @@
 import {HttpException,Injectable,ServiceUnavailableException,UnprocessableEntityException} from '@nestjs/common';
 import {createCipheriv,createDecipheriv,createHmac,randomBytes,randomUUID} from 'node:crypto';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,rm,writeFile} from 'node:fs/promises';
 import {isAbsolute,join} from 'node:path';
 import sharp from 'sharp';
 
@@ -59,5 +59,10 @@ export class PrivateStorage {
   async get(storageKey:string){
     if(!/^applications\/[a-f0-9-]{36}\/(passport_front|passport_back|face)\/[a-f0-9-]{36}\.enc$/.test(storageKey))throw new ServiceUnavailableException('Документ недоступен.');
     try{return this.decrypt(await readFile(join(process.env.KYC_STORAGE_PATH!,storageKey)),storageKey);}catch{throw new ServiceUnavailableException('Документ временно недоступен.');}
+  }
+  /** Removes every stored version of the application's documents (a re-upload keeps the previous file). */
+  async removeApplication(applicationId:string){
+    if(!/^[a-f0-9-]{36}$/.test(applicationId))throw new Error('Unexpected application id.');
+    await rm(join(process.env.KYC_STORAGE_PATH!,'applications',applicationId),{recursive:true,force:true});
   }
 }
