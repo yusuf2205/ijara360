@@ -50,6 +50,9 @@ Git bundle защищает историю кода, но не заменяет 
 
 С M6 ([M6-RELIABILITY.md](M6-RELIABILITY.md)):
 - домашнюю сеть обслуживает отдельный шлюз `gateway-lan`, а Tailscale Serve и Funnel обслуживает `gateway`;
+- с 2026-11-04 все проекты NAS работают с NVMe: `/volume1/docker/ijara360` — ссылка на `/volume3/projects/ijara360` (база, релизы, секреты); резервные копии и документы жильцов остаются на жёстком диске в `/volume1/storage/ijara360/{backups,kyc}` и подключены ссылками. Перенос: `scripts/move-to-nvme-nas.sh`, для других проектов `scripts/move-project-to-nvme-nas.sh`;
+- секреты `secrets/*` принадлежат пользователю Joseph, права 600 (читает владелец и root, остальные — нет);
+- каждую ночь в 04:30 сервис `nas-usb-backup` (`infra/nas-usb-backup`, на NAS `/volume3/projects/usb-backup`) делает зашифрованную копию restic всех проектов NAS на USB-диск (`/mnt/@usb/sdd1/NAS-projects-restic`): базы выгружаются целостно, хранится 7 ежедневных, 4 еженедельных и 6 ежемесячных версий, по воскресеньям проверяется чтение 10 % данных. Пароль: `/volume3/projects/usb-backup/restic-password` и копия `/volume1/storage/_usb-backup/restic-password`; без него копии не восстановить;
 - ночную резервную копию делает сервис `backup` (03:30 по Ташкенту, проверка восстановления, хранение 14 дней), cron не нужен;
 - сервис `watchdog` сообщает о сбоях владельцам в Telegram;
 - сервис `offsite` шифрует каждую ночную копию открытым ключом age владельца и отправляет её в Google Drive и на USB-диски с папкой `Ijara360-backup` ([M6-OFFSITE.md](M6-OFFSITE.md));
