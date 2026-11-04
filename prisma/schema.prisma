@@ -35,6 +35,7 @@ model Property {
   applications RentalApplication[]
   @@map("properties")
   notifications Notification[]
+  occupancyPlans OccupancyPlan[]
 }
 
 model User {
@@ -288,11 +289,25 @@ model Occupancy {
   room Room @relation(fields: [roomId, propertyId], references: [id, propertyId], onDelete: Restrict, onUpdate: Restrict)
   bed Bed @relation(fields: [bedId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: Restrict)
   creator User @relation(fields: [createdBy, propertyId], references: [id, propertyId], onDelete: Restrict, onUpdate: Restrict)
+  plan OccupancyPlan?
   // Partial unique indexes for ACTIVE bed/resident live in the SQL migration (Prisma 6).
   @@index([propertyId, status])
   @@index([residentId, moveInDate])
   @@index([bedId, moveInDate])
   @@map("occupancies")
+}
+
+// Planned end of a stay, kept apart from the close-only occupancy history (see the occupancy_plans migration).
+model OccupancyPlan {
+  occupancyId String @id @map("occupancy_id") @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  plannedEndDate DateTime @map("planned_end_date") @db.Date
+  reminderStage Int @default(0) @map("reminder_stage") @db.SmallInt
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  occupancy Occupancy @relation(fields: [occupancyId], references: [id], onDelete: Restrict)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  @@index([propertyId, plannedEndDate])
+  @@map("occupancy_plans")
 }
 
 

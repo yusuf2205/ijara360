@@ -23,6 +23,7 @@ type Tx=Prisma.TransactionClient;
 const view={id:true,kind:true,title:true,body:true,link:true,readAt:true,createdAt:true} as const;
 const sum=(v:Prisma.Decimal|string|number)=>Math.round(Number(v)).toLocaleString('ru-RU').replace(/ /g,' ')+' сум';
 const day=(d:Date)=>new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'}).format(d);
+const dayYear=(d:Date)=>new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(d);
 const chargeType:Record<string,string>={RENT:'Аренда',DEPOSIT:'Залог',PENALTY:'Штраф',UTILITIES:'Коммунальные',OTHER:'Начисление'};
 
 /**
@@ -77,6 +78,20 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
       ? ['Просрочен платёж',`${what}: просрочен на ${-daysLeft} дн. К оплате ${sum(c.dueAmount)}.`]
       : ['Напоминание об оплате',`${what}: ${sum(c.dueAmount)}. Срок оплаты ${daysLeft===0?'сегодня':`${day(c.dueDate)} (через ${daysLeft} дн.)`}.`];
     return this.tenant(tx,c.residentId,{kind:'PAYMENT_REMINDER',title,body,link:'/app/payments',entity:'Charge',entityId:c.id});
+  }
+
+  // End of stay (see ResidentsService.remindStays). The resident: two weeks, three days and the last day.
+  stayEnding(tx:Tx,residentId:string,occupancyId:string,end:Date,daysLeft:number){
+    const when=daysLeft===0?'сегодня':`${day(end)} (через ${daysLeft} дн.)`;
+    return this.tenant(tx,residentId,{kind:'STAY_ENDING',title:'Срок проживания',body:`Ваше проживание по договору заканчивается ${when}. Если хотите продлить, сообщите администрации.`,link:'/app',entity:'Occupancy',entityId:occupancyId});
+  }
+  // Staff: three days before and once the date has passed.
+  stayEndingStaff(tx:Tx,propertyId:string,o:{residentId:string;occupancyId:string;fullName:string;room:string;bed:string;end:Date;daysLeft:number}){
+    const [title,when]=o.daysLeft<0?['Срок проживания истёк',`истёк ${day(o.end)}`]:['Скоро выезд',o.daysLeft===0?'заканчивается сегодня':`заканчивается ${day(o.end)} (через ${o.daysLeft} дн.)`];
+    return this.staff(tx,propertyId,['RESIDENTS_MANAGE'],{kind:'STAY_ENDING',title,body:`${o.fullName}, комната ${o.room}, место ${o.bed}: срок проживания ${when}. Продлите срок или оформите выселение.`,link:`/residents/${o.residentId}`,entity:'Occupancy',entityId:o.occupancyId});
+  }
+  stayPlanChanged(tx:Tx,residentId:string,occupancyId:string,end:Date|null){
+    return this.tenant(tx,residentId,{kind:'STAY_PLAN_CHANGED',title:'Срок проживания',body:end?`Ваше проживание по договору — до ${dayYear(end)}.`:'Дата окончания проживания снята.',link:'/app',entity:'Occupancy',entityId:occupancyId});
   }
 
   /** An owner's broadcast to every resident who uses the app: one feed item each, with a Telegram copy when linked. */

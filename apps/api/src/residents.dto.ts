@@ -16,6 +16,7 @@ export class CheckInDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'Укажите дату заселения.'}) moveInDate!: string;
   @IsString() @Matches(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/, {message:'Месячная цена должна быть неотрицательной суммой, до двух знаков после точки.'}) monthlyPrice!: string;
   @IsInt() @Min(1, {message:'День оплаты: от 1 до 31.'}) @Max(31, {message:'День оплаты: от 1 до 31.'}) paymentDay!: number;
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'Укажите дату окончания проживания.'}) plannedEndDate?: string;
   @IsString() @Matches(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/, {message:'Депозит должен быть неотрицательной суммой, до двух знаков после точки.'}) depositAmount!: string;
 }
 export class TransferDto {
@@ -24,4 +25,8 @@ export class TransferDto {
 }
 export class CheckOutDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'Укажите дату выселения.'}) moveOutDate!: string;
+}
+export class PlanDto {
+  // Empty or null: the stay has no planned end.
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, {message:'Укажите дату окончания проживания.'}) plannedEndDate?: string | null;
 }

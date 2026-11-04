@@ -41,6 +41,16 @@ Future<String?> _promptText(BuildContext context, {required String title, requir
 }
 
 String _todayIso() { final n = DateTime.now(); return '${n.year.toString().padLeft(4, '0')}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}'; }
+String _isoDate(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+/// Days from today to a planned end of stay (negative once it has passed).
+int _daysLeft(Object? iso) { final e = DateTime.parse('$iso').toUtc(), n = DateTime.now(); return DateTime.utc(e.year, e.month, e.day).difference(DateTime.utc(n.year, n.month, n.day)).inDays; }
+/// A stay that ends within 30 days or is already overdue.
+bool _endingSoon(Map<String, dynamic>? occ) => occ?['plan'] != null && _daysLeft(occ!['plan']['plannedEndDate']) <= 30;
+/// "до 15 ноября · через 3 дн." (with the year when it is not this one).
+String _planText(Object? iso) {
+  final d = _daysLeft(iso), y = DateTime.parse('$iso').toUtc().year;
+  return 'до ${day(iso)}${y != DateTime.now().year ? ' $y' : ''}${d < 0 ? ' · просрочено на ${-d} дн.' : d == 0 ? ' · сегодня' : d <= 30 ? ' · через $d дн.' : ''}';
+}
 
 // ---------- Home ----------
 class StaffHome extends StatelessWidget {
@@ -60,8 +70,9 @@ class StaffHome extends StatelessWidget {
         final tickets = s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE') ? s.api.get('/tickets', {'status': 'OPEN'}) : Future.value(null);
         final month = s.can('FINANCE_VIEW') ? s.api.get('/finance/month').catchError((_) => null) : Future.value(null);
         final today = s.api.get('/occupancies/today').catchError((_) => null);
-        final r = await Future.wait([rooms, feed, fin, apps, tickets, month, today]);
-        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4], 'month': r[5], 'today': r[6]};
+        final ending = s.api.get('/occupancies/ending').catchError((_) => null);
+        final r = await Future.wait([rooms, feed, fin, apps, tickets, month, today, ending]);
+        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4], 'month': r[5], 'today': r[6], 'ending': r[7]};
       },
       builder: (context, d, refresh) {
         final rooms = (d['rooms'] as List).cast<Map<String, dynamic>>();
@@ -75,6 +86,7 @@ class StaffHome extends StatelessWidget {
         final unread = (d['feed'] as Map)['unread'] as int? ?? 0;
         final month = d['month'] as Map<String, dynamic>?;
         final today = d['today'] as Map<String, dynamic>?;
+        final ending = d['ending'] as List?;
         int count(String k) => ((month?[k] as Map?)?['residents'] as int?) ?? 0;
         final t = Theme.of(context).textTheme;
         final wide = MediaQuery.sizeOf(context).width >= 900;
@@ -122,6 +134,7 @@ class StaffHome extends StatelessWidget {
             if (fin != null) ColorTile(icon: Icons.account_balance_wallet_outlined, tone: Tone.orange, value: sum(fin['summary']['outstanding']), label: 'Общий долг', onTap: () => go('finance')),
             if (debtors != null) ColorTile(icon: Icons.person_off_outlined, tone: Tone.orange, value: '$debtors', label: 'Должники', onTap: () => go('finance')),
             if (newApps != null) ColorTile(icon: Icons.assignment_outlined, value: '$newApps', label: 'Новые заявки', onTap: () => go('applications')),
+            if (ending != null) ColorTile(icon: Icons.event_busy_outlined, tone: Tone.orange, value: '${ending.length}', label: 'Скоро выезд', onTap: () => go('residents')),
             if (newTickets != null) ColorTile(icon: Icons.chat_bubble_outline_rounded, value: '$newTickets', label: 'Новые обращения', onTap: () => go('tickets')),
           ]),
           if (month != null) ...[const Gap(10), ColorTile(icon: Icons.payments_outlined, tone: Tone.green, value: sum(month['received']), label: 'Получено за месяц', onTap: () => go('finance'))],
@@ -546,7 +559,8 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
           final list = all.cast<Map<String, dynamic>>().where((r) {
             final living = (r['occupancies'] as List).any((o) => o['status'] == 'ACTIVE');
             final debt = (num.tryParse('${r['totalDebt']}') ?? 0) > 0;
-            final okFilter = filter == 'all' || (filter == 'active' && living) || (filter == 'debt' && debt);
+            final ending = _endingSoon((r['occupancies'] as List).cast<Map<String, dynamic>>().where((o) => o['status'] == 'ACTIVE').firstOrNull);
+            final okFilter = filter == 'all' || (filter == 'active' && living) || (filter == 'debt' && debt) || (filter == 'ending' && ending);
             final q = query.toLowerCase();
             return okFilter && (q.isEmpty || '${r['fullName']}'.toLowerCase().contains(q) || '${r['phone']}'.contains(q));
           }).toList();
@@ -554,7 +568,7 @@ class _ResidentsScreenState extends State<ResidentsScreen> {
             TextField(onChanged: (v) => setState(() => query = v), decoration: const InputDecoration(hintText: 'Имя или телефон', prefixIcon: Icon(Icons.search_rounded))),
             const Gap(12),
             Wrap(spacing: 8, children: [
-              for (final f in const [('active', 'Проживают'), ('debt', 'Должники'), ('all', 'Все')])
+              for (final f in const [('active', 'Проживают'), ('debt', 'Должники'), ('ending', 'Скоро выезд'), ('all', 'Все')])
                 ChoiceChip(label: Text(f.$2), selected: filter == f.$1, showCheckmark: false, onSelected: (_) => setState(() => filter = f.$1)),
             ]),
             const Gap(12),
@@ -583,6 +597,7 @@ class _ResidentTile extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${r['fullName']}', style: manrope(15, FontWeight.w800)),
           Text(occ == null ? 'Не проживает' : 'Комната ${occ['room']['number']} · место ${occ['room']['number']}-${occ['bed']['number']}', style: Theme.of(context).textTheme.bodySmall),
+          if (_endingSoon(occ)) Text(_planText(occ!['plan']['plannedEndDate']), style: manrope(12, FontWeight.w700, color: Brand.red)),
         ])),
         debt > 0 ? StatusPill(sum(debt), tone: Tone.red) : const StatusPill('Оплачено', tone: Tone.green),
       ])),
@@ -612,6 +627,7 @@ class ResidentScreen extends StatelessWidget {
                     const PopupMenuItem(value: 'edit', child: Text('Изменить данные')),
                     const PopupMenuItem(value: 'invite', child: Text('Пригласить в приложение')),
                     if (occ != null) const PopupMenuItem(value: 'transfer', child: Text('Переселить')),
+                    if (occ != null) const PopupMenuItem(value: 'plan', child: Text('Срок проживания')),
                     if (occ != null) const PopupMenuItem(value: 'checkout', child: Text('Выселить')),
                     const PopupMenuItem(value: 'delete', child: Text('Удалить', style: TextStyle(color: Brand.red))),
                   ],
@@ -648,6 +664,7 @@ class ResidentScreen extends StatelessWidget {
               const SectionTitle('Проживание'),
               AppCard(child: Column(children: [
                 KeyValue('Заселён', day(occ['moveInDate'])),
+                KeyValue('Проживание', occ['plan'] == null ? 'без даты окончания' : _planText(occ['plan']['plannedEndDate'])),
                 KeyValue('Цена в месяц', sum(occ['monthlyPrice'])),
                 KeyValue('День оплаты', '${occ['paymentDay']}-е число'),
                 KeyValue('Залог', sum(occ['depositAmount'])),
@@ -689,6 +706,13 @@ Future<void> _residentAction(BuildContext context, ApiClient api, Map<String, dy
         await api.post('/occupancies/${occ['id']}/transfer', {'bedId': picked, 'transferDate': _todayIso()});
         await refresh();
         if (context.mounted) toast(context, 'Жилец переселён');
+      case 'plan':
+        if (occ == null) return;
+        final picked = await _planDialog(context, moveIn: DateTime.parse('${occ['moveInDate']}'), current: occ['plan']?['plannedEndDate'] as String?);
+        if (picked == null) return;
+        await api.put('/occupancies/${occ['id']}/plan', {'plannedEndDate': picked.isEmpty ? null : picked});
+        await refresh();
+        if (context.mounted) toast(context, picked.isEmpty ? 'Дата окончания снята' : 'Срок проживания сохранён');
       case 'checkout':
         if (occ == null) return;
         if (!await _confirmAction(context, title: 'Выселить жильца?', message: 'Проживание закроется сегодняшней датой. История и платежи сохранятся.', confirm: 'Выселить', danger: false)) return;
@@ -704,6 +728,24 @@ Future<void> _residentAction(BuildContext context, ApiClient api, Map<String, dy
     if (context.mounted) toast(context, e.message);
   }
 }
+
+/// Sets or removes the planned end of a stay: a date sets it, '' removes it, null is cancel.
+Future<String?> _planDialog(BuildContext context, {required DateTime moveIn, String? current}) => showDialog<String>(context: context, builder: (d) => AlertDialog(
+      title: const Text('Срок проживания'),
+      content: Text('${current == null ? 'Дата окончания не указана.' : 'Сейчас: ${_planText(current)}.'}\n\nЖилец получит напоминания за 14 и 3 дня и в последний день, сотрудники — за 3 дня, в последний день и после окончания. Выселение оформляет сотрудник.'),
+      actions: [
+        if (current != null) TextButton(onPressed: () => Navigator.pop(d, ''), child: const Text('Снять срок')),
+        TextButton(onPressed: () => Navigator.pop(d), child: const Text('Отмена')),
+        FilledButton(onPressed: () async {
+          final first = DateTime(moveIn.year, moveIn.month, moveIn.day + 1), last = DateTime(moveIn.year + 10, moveIn.month, moveIn.day);
+          var initial = current != null ? DateTime.parse(current) : DateTime.now().add(const Duration(days: 30));
+          if (initial.isBefore(first)) initial = first;
+          if (initial.isAfter(last)) initial = last;
+          final picked = await showDatePicker(context: d, initialDate: initial, firstDate: first, lastDate: last);
+          if (picked != null && d.mounted) Navigator.pop(d, _isoDate(picked));
+        }, child: const Text('Выбрать дату')),
+      ],
+    ));
 
 Future<(String, String)?> _residentForm(BuildContext context, {required String fullName, required String phone}) async {
   final n = TextEditingController(text: fullName), p = TextEditingController(text: phone);
@@ -784,6 +826,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
   final fullName = TextEditingController(), phone = TextEditingController(), price = TextEditingController(), deposit = TextEditingController(text: '0');
   int paymentDay = 10;
   DateTime date = DateTime.now();
+  DateTime? planEnd; // optional end of stay, for the reminders
   String? error;
 
   @override
@@ -820,11 +863,12 @@ class _CheckInSheetState extends State<_CheckInSheet> {
     setState(() { busy = true; error = null; });
     try {
       if (convert) {
-        await SessionScope.of(context).api.post('/applications/${widget.applicationId}/convert', {'bedId': bedId, 'moveInDate': _iso(date), 'monthlyPrice': value, 'paymentDay': paymentDay, 'depositAmount': _digits(deposit.text, fallback: '0'), 'version': widget.version});
+        await SessionScope.of(context).api.post('/applications/${widget.applicationId}/convert', {'bedId': bedId, 'moveInDate': _iso(date), 'monthlyPrice': value, 'paymentDay': paymentDay, 'depositAmount': _digits(deposit.text, fallback: '0'), if (planEnd != null) 'plannedEndDate': _iso(planEnd!), 'version': widget.version});
       } else {
         await SessionScope.of(context).api.post('/occupancies/check-in', {
           if (existing) 'residentId': residentId else 'resident': {'fullName': fullName.text.trim(), 'phone': phone.text.trim()},
           'bedId': bedId, 'moveInDate': _iso(date), 'monthlyPrice': value, 'paymentDay': paymentDay, 'depositAmount': _digits(deposit.text, fallback: '0'),
+          if (planEnd != null) 'plannedEndDate': _iso(planEnd!),
         });
       }
       if (!mounted) return;
@@ -891,6 +935,19 @@ class _CheckInSheetState extends State<_CheckInSheet> {
                   onTap: () async {
                     final d = await showDatePicker(context: context, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime.now());
                     if (d != null) setState(() => date = d);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Проживание до'),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text(planEnd == null ? 'не указано' : day(_iso(planEnd!)), style: manrope(15, FontWeight.w700, color: planEnd == null ? Brand.gray500 : Brand.blue)),
+                    if (planEnd != null) IconButton(tooltip: 'Без даты окончания', visualDensity: VisualDensity.compact, icon: const Icon(Icons.close_rounded, size: 18), onPressed: () => setState(() => planEnd = null)),
+                  ]),
+                  onTap: () async {
+                    final first = DateTime(date.year, date.month, date.day + 1);
+                    final d = await showDatePicker(context: context, initialDate: planEnd ?? first.add(const Duration(days: 180)), firstDate: first, lastDate: DateTime(date.year + 10, date.month, date.day));
+                    if (d != null) setState(() => planEnd = d);
                   },
                 ),
                 const Gap(4),

@@ -199,9 +199,9 @@ export class TenantAccountsService {
     return this.issueSession(a.accountId,{platform:a.platform,deviceName:a.deviceName,remembered:a.remembered},trusted?.id??null);
   }
   async me(t:Tenant){
-    const r=await this.db.resident.findUniqueOrThrow({where:{id:t.residentId},include:{property:{select:{name:true,address:true}},occupancies:{where:{status:'ACTIVE'},include:{room:{select:{number:true}},bed:{select:{number:true}}}}}});
+    const r=await this.db.resident.findUniqueOrThrow({where:{id:t.residentId},include:{property:{select:{name:true,address:true}},occupancies:{where:{status:'ACTIVE'},include:{plan:{select:{plannedEndDate:true}},room:{select:{number:true}},bed:{select:{number:true}}}}}});
     const o=r.occupancies[0];
-    return {fullName:r.fullName,phone:r.phone,property:r.property,occupancy:o?{room:o.room.number,bed:o.bed.number,moveInDate:o.moveInDate,monthlyPrice:o.monthlyPrice,paymentDay:o.paymentDay,depositAmount:o.depositAmount}:null};
+    return {fullName:r.fullName,phone:r.phone,property:r.property,occupancy:o?{room:o.room.number,bed:o.bed.number,moveInDate:o.moveInDate,monthlyPrice:o.monthlyPrice,paymentDay:o.paymentDay,plannedEndDate:o.plan?.plannedEndDate??null,depositAmount:o.depositAmount}:null};
   }
   async sessions(t:Tenant,currentId:string){
     const rows=await this.db.tenantSession.findMany({where:{accountId:t.accountId,expiresAt:{gt:new Date()}},select:sessionSelect,orderBy:[{lastSeenAt:'desc'},{createdAt:'desc'}]});

@@ -2,14 +2,14 @@
 import { LocationSummary } from './map';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, Banknote, BedDouble, Bot, Building2, Cctv, CheckCircle2, CircleAlert, FileText, House, Send, UserMinus, UserPlus, Users, Wallet } from 'lucide-react';
+import { AlertCircle, Banknote, BedDouble, Bot, Building2, CalendarClock, Cctv, CheckCircle2, CircleAlert, FileText, House, Send, UserMinus, UserPlus, Users, Wallet } from 'lucide-react';
 import { api, type Room } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 
 type Summary = { charged: string; paid: string; outstanding: string; overdue: string; blockedResidents: number };
 type Group = { residents: number; amount: string };
 type Month = { month: string; paid: Group; partial: Group; unpaid: Group; received: string; months: { month: string; received: string }[] };
-type Extra = { finance?: Summary & { debtors: number }; month?: Month; applications?: number; today?: { movedIn: number; movedOut: number } };
+type Extra = { finance?: Summary & { debtors: number }; month?: Month; applications?: number; today?: { movedIn: number; movedOut: number }; ending?: number };
 
 const sum = (v: string | number) => Math.round(Number(v)).toLocaleString('ru-RU') + ' сум';
 function greeting() {
@@ -41,6 +41,7 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
         can('FINANCE_VIEW') && api<Month>('/finance/month').then(m => { next.month = m; }).catch(() => undefined),
         can('APPLICATION_VIEW') && api<{ counts: Record<string, number> }>('/applications?status=SUBMITTED').then(a => { next.applications = a.counts.SUBMITTED || 0; }).catch(() => undefined),
         api<{ movedIn: number; movedOut: number }>('/occupancies/today').then(t => { next.today = t; }).catch(() => undefined),
+        api<unknown[]>('/occupancies/ending').then(e => { next.ending = e.length; }).catch(() => undefined),
       ]);
       if (live) setExtra(next);
     })();
@@ -63,6 +64,7 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
     { icon: <UserMinus size={18} />, tone: 'c-blue', label: 'Не дома', soon: true },
   ];
   if (f) kpis.push({ href: '/finance', icon: <AlertCircle size={18} />, tone: 'c-orange', value: f.debtors, label: 'Должники' });
+  if (extra.ending !== undefined) kpis.push({ href: '/residents?filter=ending', icon: <CalendarClock size={18} />, tone: 'c-orange', value: extra.ending, label: 'Скоро выезд' });
   if (extra.applications !== undefined) kpis.push({ href: '/applications?status=SUBMITTED', icon: <FileText size={18} />, tone: 'c-red', value: extra.applications, label: 'Новые заявки' });
 
   // Phone tiles (mockup "Главная (Dashboard)").
@@ -78,6 +80,7 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
     { href: '/finance', icon: <CheckCircle2 size={18} />, tone: 't-green', value: m.paid.residents, label: 'Оплатили' },
     { href: '/finance', icon: <CircleAlert size={18} />, tone: 't-red', value: m.unpaid.residents + m.partial.residents, label: 'Не оплатили' });
   if (f) tiles.push({ href: '/finance', icon: <Wallet size={18} />, tone: 't-orange', value: sum(f.outstanding), label: 'Общий долг' });
+  if (extra.ending !== undefined) tiles.push({ href: '/residents?filter=ending', icon: <CalendarClock size={18} />, tone: 't-orange', value: extra.ending, label: 'Скоро выезд' });
   if (m) tiles.push({ href: '/finance', icon: <Banknote size={18} />, tone: 't-green', value: sum(m.received), label: 'Получено за месяц', wide: true });
 
   return <div className="dashboard">

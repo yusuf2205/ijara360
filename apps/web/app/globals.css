@@ -618,3 +618,5 @@ label.with-icon>input{padding-left:44px}
   .finance-kpi .chip{width:30px;height:30px}
   .debtor-sum strong{font-size:12px}
 }
+/* A stay that ends within 30 days or is overdue (resident card and list). */
+.warn-text{color:var(--bad);font-weight:600}

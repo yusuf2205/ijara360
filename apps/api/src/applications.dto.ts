@@ -44,6 +44,7 @@ export class ConvertDto extends ApplicationVersionDto {
   @IsInt() @Min(1) @Max(31) paymentDay!:number;
   @IsString() @Length(1,20) depositAmount!:string;
   @IsOptional() @IsUUID() existingResidentId?:string;
+  @IsOptional() @IsString() @Length(10,10) plannedEndDate?:string;
 }
 export function validateProfile(profile:ApplicationProfile){
   const p=profile;
@@ -62,5 +63,5 @@ export function validateProfile(profile:ApplicationProfile){
 }
 export function conversionCheckIn(dto:ConvertDto,residentId?:string,profile?:ApplicationProfile):CheckInDto {
   if(!/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(dto.monthlyPrice)||! /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(dto.depositAmount))throw new UnprocessableEntityException('Укажите корректные суммы аренды и депозита.');
-  return {bedId:dto.bedId,moveInDate:dto.moveInDate,monthlyPrice:dto.monthlyPrice,paymentDay:dto.paymentDay,depositAmount:dto.depositAmount,...(residentId?{residentId}:{resident:{fullName:profile!.fullName!,phone:profile!.phone}})};
+  return {bedId:dto.bedId,moveInDate:dto.moveInDate,monthlyPrice:dto.monthlyPrice,paymentDay:dto.paymentDay,depositAmount:dto.depositAmount,...(dto.plannedEndDate?{plannedEndDate:dto.plannedEndDate}:{}),...(residentId?{residentId}:{resident:{fullName:profile!.fullName!,phone:profile!.phone}})};
 }

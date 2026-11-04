@@ -19,6 +19,8 @@ async function grantRuntime(db) {
   for (const table of ['rental_applications','applicant_sessions','phone_challenges','application_documents','biometric_enrollment_sources','telegram_cursors']) await db.$executeRawUnsafe(`GRANT SELECT,INSERT,UPDATE ON ${table} TO ijara_app`);
   // Documents have no DELETE grant: only these functions remove them, and only after the retention period.
   await db.$executeRawUnsafe('GRANT EXECUTE ON FUNCTION kyc_documents_expired(uuid), kyc_purge_application_documents(uuid, text), kyc_purge_closed_application(uuid, text) TO ijara_app');
+  // Planned end of stay: extended or removed by staff; every change is in audit_logs.
+  await db.$executeRawUnsafe('GRANT SELECT,INSERT,UPDATE,DELETE ON occupancy_plans TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT ON permissions TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT,DELETE ON user_permissions TO ijara_app');
   await db.$executeRawUnsafe('GRANT SELECT,INSERT ON application_status_history TO ijara_app');

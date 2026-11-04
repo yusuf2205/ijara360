@@ -43,7 +43,7 @@ class TenantHome extends StatelessWidget {
                 Text(L(context, 'МОЁ МЕСТО'), style: manrope(11, FontWeight.w800, color: Brand.blueLight, spacing: 1.4)),
                 const Gap(8),
                 Text(occ == null ? L(context, 'Не заселён') : '${L(context, 'Комната')} ${occ['room']}', style: manrope(26, FontWeight.w800, color: Brand.white)),
-                if (occ != null) Text('${L(context, 'Место')} ${occ['room']}-${occ['bed']} · ${dayL(context, occ['moveInDate'])}', style: manrope(14, FontWeight.w600, color: const Color(0xFFB9B9BE))),
+                if (occ != null) Text('${L(context, 'Место')} ${occ['room']}-${occ['bed']} · ${dayL(context, occ['moveInDate'])}${occ['plannedEndDate'] != null ? ' — ${dueBy(context, occ['plannedEndDate'])}' : ''}', style: manrope(14, FontWeight.w600, color: const Color(0xFFB9B9BE))),
                 const Gap(12),
                 StatusPill(occ == null ? L(context, 'Нет проживания') : L(context, 'Проживаю'), tone: occ == null ? Tone.gray : Tone.blue),
               ])),

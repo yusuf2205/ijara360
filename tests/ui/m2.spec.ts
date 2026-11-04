@@ -3,6 +3,8 @@ const password='UI test only strong password 2026';
 const person='М2 Тестовый жилец';
 const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 async function selectRoom(page:Page,number:string){const select=page.getByRole('combobox',{name:'Комната',exact:true});const value=await select.locator('option').filter({hasText:new RegExp('^Комната '+number+' ')}).getAttribute('value');await select.selectOption(value!);}
+const inDays=(n:number)=>new Date(Date.parse(today)+n*86400000).toISOString().slice(0,10);
+const ru=(iso:string)=>iso.split('-').reverse().join('.');
 let ownerCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 async function login(page:Page,phone='+998900000010') {
  if(phone==='+998900000010' && ownerCookies.length){await page.context().addCookies(ownerCookies);await page.goto('/');await expect(page.getByRole('heading',{name:/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи), /})).toBeVisible();return;}
@@ -27,7 +29,8 @@ test('M2 empty residents state offers check-in and invalid links have friendly r
 test('M2 mobile check-in from a free bed shows real resident and counters after reload',async({page})=>{
  await page.setViewportSize({width:390,height:844});await login(page);await page.getByRole('heading',{name:'Комната №1',exact:true}).click();
  await page.locator('.place-row').first().getByRole('button',{name:'Заселить',exact:true}).click();
- await page.getByLabel('ФИО',{exact:true}).fill(person);await page.getByLabel('Телефон',{exact:true}).fill('+998901234501');await page.getByRole('textbox',{name:'Заметка',exact:true}).fill('Заметка М2');await next(page);await next(page);await conditions(page);
+ await page.getByLabel('ФИО',{exact:true}).fill(person);await page.getByLabel('Телефон',{exact:true}).fill('+998901234501');await page.getByRole('textbox',{name:'Заметка',exact:true}).fill('Заметка М2');await next(page);await next(page);await page.getByLabel('Проживание до (необязательно)').fill(inDays(10));await conditions(page);
+ await expect(page.getByRole('dialog')).toContainText(ru(inDays(10)));
  await page.screenshot({path:'.local/screenshots/m2-checkin-390.png',fullPage:true});await noOverflow(page);
  await page.getByRole('button',{name:'Подтвердить заселение'}).click();await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.locator('.place-row').first()).toContainText(person);
  await page.reload();await expect(page.locator('.place-row').first()).toContainText('Оплачено');await expect(page.locator('.room-stats')).toContainText('Занято');
@@ -38,6 +41,19 @@ test('M2 transfer to another room preserves both stays and prices',async({page})
  await selectRoom(page,'2');await page.getByRole('combobox',{name:'Свободное место',exact:true}).selectOption({label:'Место 1'});await page.getByRole('button',{name:'Подтвердить переселение'}).click();
  await expect(page.getByRole('dialog')).not.toBeVisible();await expect(page.locator('.resident-location')).toContainText('Комната 2 / Место 1');await expect(page.locator('.stay-row')).toHaveCount(2);await expect(page.locator('.stay-row').filter({hasText:'Завершено'})).toContainText('Комната 1 / Место 1');
  await page.screenshot({path:'.local/screenshots/m2-resident-1440.png',fullPage:true});await noOverflow(page);
+});
+test('M2 end of stay: on the card, in the list and on the dashboard; changed at 320px',async({page})=>{
+ await page.setViewportSize({width:320,height:740});await login(page);await resident(page);const stay=page.locator('.detail-grid').filter({hasText:'Дата заселения'});
+ await expect(stay).toContainText(`до ${ru(inDays(10))} · через 10 дн.`);
+ await page.getByRole('button',{name:'Срок проживания',exact:true}).click();const dialog=page.getByRole('dialog');
+ await expect(dialog.getByLabel('Проживание до',{exact:true})).toHaveValue(inDays(10));await noOverflow(page);
+ await page.screenshot({path:'.local/screenshots/m2-plan-320.png',fullPage:true});
+ await dialog.getByLabel('Проживание до',{exact:true}).fill(inDays(45));await dialog.getByRole('button',{name:'Сохранить',exact:true}).click();await expect(dialog).not.toBeVisible();
+ await expect(stay).toContainText(`до ${ru(inDays(45))}`);await expect(stay).not.toContainText('через');
+ await page.goto('/residents');await page.getByRole('button',{name:'Скоро выезд',exact:true}).click();await expect(page.locator('.resident-row')).toHaveCount(0);
+ await resident(page);await page.getByRole('button',{name:'Срок проживания',exact:true}).click();await dialog.getByLabel('Проживание до',{exact:true}).fill(inDays(5));await dialog.getByRole('button',{name:'Сохранить',exact:true}).click();await expect(dialog).not.toBeVisible();
+ await page.goto('/residents?filter=ending');await expect(page.locator('.resident-row')).toHaveCount(1);await expect(page.locator('.resident-row')).toContainText('через 5 дн.');await noOverflow(page);
+ await page.setViewportSize({width:1440,height:1000});await page.goto('/');await expect(page.locator('.stat').filter({hasText:'Скоро выезд'}).locator('strong')).toHaveText('1');
 });
 test('M2 checkout at 320px frees bed and keeps resident/history',async({page})=>{
  await page.setViewportSize({width:320,height:740});await login(page);await resident(page);await page.getByRole('button',{name:'Выселить',exact:true}).click();
