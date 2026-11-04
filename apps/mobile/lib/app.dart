@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'session.dart';
+import 'screens/analytics.dart';
 import 'screens/common.dart';
 import 'screens/login.dart';
 import 'screens/staff.dart';
@@ -168,6 +169,7 @@ class _StaffAppState extends State<StaffApp> with _Unread {
       ('rooms', Destination('Комнаты', Icons.meeting_room_outlined, Icons.meeting_room_rounded, (_) => const RoomsScreen())),
       ('residents', Destination('Жильцы', Icons.people_outline_rounded, Icons.people_rounded, (_) => const ResidentsScreen())),
       if (s.can('FINANCE_VIEW')) ('finance', Destination('Оплаты', Icons.account_balance_wallet_outlined, Icons.account_balance_wallet_rounded, (_) => const FinanceScreen())),
+      if (s.can('FINANCE_VIEW')) ('analytics', Destination('Аналитика', Icons.insights_outlined, Icons.insights_rounded, (_) => const AnalyticsScreen())),
       if (s.can('TICKETS_VIEW') || s.can('TICKETS_MANAGE')) ('tickets', Destination('Обращения', Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, (_) => const StaffTicketsScreen())),
       if (s.can('VIEW_LOCATION')) ('map', Destination('Карта', Icons.map_outlined, Icons.map_rounded, (_) => const StaffMapScreen())),
       if (s.can('APPLICATION_VIEW')) ('applications', Destination('Заявки', Icons.assignment_outlined, Icons.assignment_rounded, (_) => const ApplicationsScreen())),

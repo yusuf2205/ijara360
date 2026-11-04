@@ -622,3 +622,40 @@ label.with-icon>input{padding-left:44px}
 .warn-text{color:var(--bad);font-weight:600}
 /* Settings: where the house is ("at home / not at home"). */
 .home-point{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px;margin:12px 0;display:grid;gap:10px}.home-point legend{font-weight:700;padding:0 6px}.home-point small{color:var(--muted,#6b7280)}
+
+/* Analytics (2026-11-05): month bars, KPI hints, rooms table. Prefixed an- so no bare utility class is reused. */
+.an-range{display:flex;gap:8px;flex-wrap:wrap}.an-range .button{min-height:40px;padding:8px 14px}
+.an-loading{color:var(--muted)}
+.an-hint{font-size:11px;color:var(--muted)}
+.an-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}.an-kpis .kpi{min-width:0}
+@media(max-width:1000px){.an-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.an-kpis .kpi-row strong{font-size:20px}}
+.an-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.an-grid.an-two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.an-big{font-size:26px;font-weight:800;letter-spacing:-.5px;margin:2px 0 8px}
+.an-note{font-size:12.5px;color:var(--muted);line-height:1.6}.an-note b{color:var(--ink)}
+.an-warn{display:flex;gap:6px;align-items:flex-start;color:var(--warn);margin-top:8px}
+.an-foot{display:flex;gap:6px;align-items:flex-start;margin-top:12px;font-size:11.5px}
+.an-chart{margin-bottom:16px;overflow:hidden}
+.an-legend{display:flex;gap:12px;font-size:11.5px;font-weight:600;color:var(--muted)}.an-legend span{display:flex;align-items:center;gap:5px}.an-legend i{display:inline-block;width:10px;height:10px;border-radius:3px}
+.an-bars{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(26px,1fr);gap:6px;height:190px;align-items:end;overflow-x:auto}
+.an-bars>div{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;height:100%;min-width:0}
+.an-bars small{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.an-bar-value{font-size:10px;font-weight:700;color:var(--ink);white-space:nowrap;min-height:13px}
+.an-bars i{display:block;width:100%;max-width:26px;border-radius:6px 6px 3px 3px}
+.an-pair{display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%;flex:1}.an-pair i{max-width:13px}
+.an-blue{background:#BCD0FF}.an-blue.an-now{background:var(--brand)}
+.an-green{background:#9FDDBB}.an-green.an-now{background:var(--ok)}
+.an-gray{background:#DCE2EC}
+.an-red{background:#F6B9BB}.an-red.an-now{background:var(--bad)}
+.an-orange{background:#FAD3A2}.an-orange.an-now{background:var(--warn)}
+.an-moves{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(26px,1fr);gap:6px;overflow-x:auto}
+.an-moves>div{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;font-weight:700}
+.an-moves small{font-size:10.5px;color:var(--muted);font-weight:500}
+.an-in,.an-out{display:flex;align-items:center;gap:2px;min-height:18px}.an-in{color:var(--ok)}.an-out{color:var(--bad)}
+.an-table{width:100%;border-collapse:collapse;font-size:12.5px}.an-table th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.an-table td{padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap}.an-table td:last-child,.an-table th:last-child{text-align:right}
+.an-meter{display:inline-block;vertical-align:middle;width:64px;height:7px;border-radius:9px;background:var(--surface-2);margin-right:8px;overflow:hidden}.an-meter i{display:block;height:100%;background:var(--brand);border-radius:9px}
+.an-method{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.an-method>span:first-child small{display:block;font-size:11px;color:var(--muted)}.an-method .an-meter{width:100%}
+@media(max-width:1000px){.an-grid{grid-template-columns:1fr}.an-grid.an-two{grid-template-columns:1fr}}
+@media(max-width:700px){.an-big{font-size:22px}.an-bars{height:160px;grid-auto-columns:minmax(17px,1fr);gap:3px}.an-moves{grid-auto-columns:minmax(17px,1fr);gap:3px}.an-bars small,.an-moves small{font-size:9px}.an-pair i{max-width:8px}.an-pair{gap:2px}.an-bar-value{display:none}.an-table{font-size:12px}.an-table td,.an-table th{padding:8px 4px}.an-meter{width:40px;margin-right:5px}.page-heading .an-range .button{min-height:40px;padding:8px 12px}}
