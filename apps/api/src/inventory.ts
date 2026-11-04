@@ -117,8 +117,9 @@ class InventoryController {
   @Patch('property') propertyUpdate(@Req() req: AuthRequest, @Body() dto: PropertyDto) {
     return this.inventory.write(req.actor, async tx => {
       const before = await tx.property.findUniqueOrThrow({ where: { id: req.actor.propertyId } });
+      if ((dto.homeLatitude === undefined) !== (dto.homeLongitude === undefined) || (dto.homeLatitude === null) !== (dto.homeLongitude === null)) throw new UnprocessableEntityException('Укажите обе координаты дома или очистите обе.');
       const property = await tx.property.update({ where: { id: req.actor.propertyId }, data: dto });
-      await this.inventory.audit(tx, req.actor, 'PROPERTY_UPDATED', 'Property', property.id, { before: { name: before.name, address: before.address, autoBilling: before.autoBillingEnabled, reminders: before.paymentRemindersEnabled }, after: { name: property.name, address: property.address, autoBilling: property.autoBillingEnabled, reminders: property.paymentRemindersEnabled } });
+      await this.inventory.audit(tx, req.actor, 'PROPERTY_UPDATED', 'Property', property.id, { before: { name: before.name, address: before.address, autoBilling: before.autoBillingEnabled, reminders: before.paymentRemindersEnabled }, after: { name: property.name, address: property.address, autoBilling: property.autoBillingEnabled, reminders: property.paymentRemindersEnabled }, homeSet: property.homeLatitude !== null, homeRadiusM: property.homeRadiusM });
       return property;
     }, 'SUPER_ADMIN');
   }

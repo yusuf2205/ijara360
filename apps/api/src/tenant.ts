@@ -1,4 +1,4 @@
-import {Body,CanActivate,ConflictException,Controller,Delete,ExecutionContext,ForbiddenException,Get,GoneException,HttpCode,Injectable,Module,NotFoundException,Param,ParseUUIDPipe,Patch,Post,Req,Res,UnauthorizedException,UseGuards} from '@nestjs/common';
+import {Body,CanActivate,ConflictException,Controller,Delete,ExecutionContext,ForbiddenException,Get,GoneException,HttpCode,Injectable,Module,NotFoundException,Param,ParseUUIDPipe,Patch,Post,Put,Req,Res,UnauthorizedException,UseGuards} from '@nestjs/common';
 import {Prisma} from '@prisma/client';
 import {Transform} from 'class-transformer';
 import {IsBoolean,IsIn,IsOptional,IsString,IsUUID,Length} from 'class-validator';
@@ -198,10 +198,16 @@ export class TenantAccountsService {
     const trusted=ctx.deviceToken?await this.db.tenantTrustedDevice.findFirst({where:{tokenHash:digest(ctx.deviceToken),accountId:a.accountId}}):null;
     return this.issueSession(a.accountId,{platform:a.platform,deviceName:a.deviceName,remembered:a.remembered},trusted?.id??null);
   }
+  /** The app language; notifications to this resident are written in it. */
+  async setLang(t:Tenant,lang:string){
+    await this.db.tenantAccount.update({where:{id:t.accountId},data:{lang}});
+    return {lang};
+  }
   async me(t:Tenant){
     const r=await this.db.resident.findUniqueOrThrow({where:{id:t.residentId},include:{property:{select:{name:true,address:true}},occupancies:{where:{status:'ACTIVE'},include:{plan:{select:{plannedEndDate:true}},room:{select:{number:true}},bed:{select:{number:true}}}}}});
     const o=r.occupancies[0];
-    return {fullName:r.fullName,phone:r.phone,property:r.property,occupancy:o?{room:o.room.number,bed:o.bed.number,moveInDate:o.moveInDate,monthlyPrice:o.monthlyPrice,paymentDay:o.paymentDay,plannedEndDate:o.plan?.plannedEndDate??null,depositAmount:o.depositAmount}:null};
+    const account=await this.db.tenantAccount.findUnique({where:{id:t.accountId},select:{lang:true}});
+    return {fullName:r.fullName,phone:r.phone,lang:account?.lang??'ru',property:r.property,occupancy:o?{room:o.room.number,bed:o.bed.number,moveInDate:o.moveInDate,monthlyPrice:o.monthlyPrice,paymentDay:o.paymentDay,plannedEndDate:o.plan?.plannedEndDate??null,depositAmount:o.depositAmount}:null};
   }
   async sessions(t:Tenant,currentId:string){
     const rows=await this.db.tenantSession.findMany({where:{accountId:t.accountId,expiresAt:{gt:new Date()}},select:sessionSelect,orderBy:[{lastSeenAt:'desc'},{createdAt:'desc'}]});
@@ -230,6 +236,7 @@ export class TenantGuard implements CanActivate {
   }
 }
 
+class LangDto{@IsIn(['ru','uz'],{message:'Язык: ru или uz.'}) lang!:string;}
 @Controller('tenant')
 class TenantController {
   constructor(private readonly service:TenantAccountsService,private readonly db:Database){}
@@ -253,6 +260,7 @@ class TenantController {
     res.clearCookie('ijara_tenant',{path:'/api/tenant',httpOnly:true,secure:process.env.COOKIE_SECURE!=='false',sameSite:'strict'});
   }
   @Get('me') @UseGuards(TenantGuard) me(@Req() req:TenantRequest){return this.service.me(req.tenant);}
+  @Put('lang') @HttpCode(200) @UseGuards(TenantGuard) lang(@Req() req:TenantRequest,@Body() dto:LangDto){return this.service.setLang(req.tenant,dto.lang);}
   @Get('sessions') @UseGuards(TenantGuard) sessions(@Req() req:TenantRequest){return this.service.sessions(req.tenant,req.tenantSessionId);}
   @Delete('sessions/:id') @UseGuards(TenantGuard) revoke(@Req() req:TenantRequest,@Param('id',ParseUUIDPipe) id:string){return this.service.revoke(req.tenant,id);}
 }

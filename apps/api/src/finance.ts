@@ -5,7 +5,7 @@ import type { Response } from 'express';
 import { Actor, AuthModule, AuthRequest, SessionGuard } from './auth';
 import { Database } from './database';
 import { PermissionCode, requireAccess } from './permission-policy';
-import { ChargeDto, FinanceQuery, PaymentDto, ReportQuery } from './finance.dto';
+import { ChargeDto, FinanceQuery, MonthQuery, PaymentDto, ReportQuery } from './finance.dto';
 import { NotificationsModule, NotificationsService } from './notifications';
 import { publish } from './realtime';
 
@@ -43,6 +43,46 @@ function billingKey(occupancyId: string, period: string) {
 const paymentInclude = {resident:{select:{id:true,fullName:true}},creator:{select:{id:true,fullName:true}},allocations:{include:{charge:{select:{id:true,type:true,dueDate:true,billingPeriodStart:true,billingPeriodEnd:true}}},orderBy:[{createdAt:'asc' as const},{id:'asc' as const}]}};
 function paymentResult<T extends {amount:Prisma.Decimal;allocations:{amount:Prisma.Decimal}[]}>(payment:T) {
   return {...payment,unallocatedAmount:payment.amount.minus(payment.allocations.reduce((sum,a)=>sum.plus(a.amount),new Prisma.Decimal(0)))};
+}
+const zero = () => new Prisma.Decimal(0);
+
+/**
+ * The receipt for one payment: what the house gives a resident as proof that money (cash or a transfer)
+ * was accepted. Not a fiscal cheque. Payments are an append-only ledger, so the receipt number, the
+ * payment's place in the house's sequence of payments, never changes; neither does the balance right
+ * after it, computed from charges and payments recorded up to that moment.
+ */
+export async function paymentReceipt(tx: Prisma.TransactionClient, propertyId: string, paymentId: string, residentId?: string) {
+  const p = await tx.payment.findFirst({where:{id:paymentId,propertyId,...(residentId?{residentId}:{})},
+    include:{property:{select:{name:true,address:true}},resident:{select:{id:true,fullName:true}},creator:{select:{fullName:true}},
+      allocations:{include:{charge:{select:{type:true,billingPeriodStart:true,billingPeriodEnd:true,room:{select:{number:true}},bed:{select:{number:true}}}}},orderBy:[{createdAt:'asc'},{id:'asc'}]}}});
+  if (!p) throw new NotFoundException('Платёж не найден.');
+  const [[seq],[charged],[paid]] = await Promise.all([
+    tx.$queryRaw<{n:bigint}[]>`SELECT count(*) AS n FROM payments WHERE property_id = ${propertyId}::uuid AND (created_at, id) <= (${p.createdAt}, ${p.id}::uuid)`,
+    tx.$queryRaw<{s:Prisma.Decimal|null}[]>`SELECT sum(amount) AS s FROM charges WHERE resident_id = ${p.residentId}::uuid AND property_id = ${propertyId}::uuid AND created_at <= ${p.createdAt}`,
+    tx.$queryRaw<{s:Prisma.Decimal|null}[]>`SELECT sum(amount) AS s FROM payments WHERE resident_id = ${p.residentId}::uuid AND property_id = ${propertyId}::uuid AND (created_at, id) <= (${p.createdAt}, ${p.id}::uuid)`,
+  ]);
+  const balance = new Prisma.Decimal(charged.s ?? 0).minus(new Prisma.Decimal(paid.s ?? 0));
+  const allocated = p.allocations.reduce((s,a)=>s.plus(a.amount),zero());
+  // The place on the receipt: the bed the money went to, or (an advance) the resident's latest bed.
+  const place = p.allocations[0]?.charge ?? await tx.occupancy.findFirst({where:{residentId:p.residentId,propertyId,moveInDate:{lte:p.createdAt}},orderBy:[{moveInDate:'desc'},{createdAt:'desc'}],select:{room:{select:{number:true}},bed:{select:{number:true}}}});
+  return {
+    id:p.id, number:Number(seq.n), createdAt:p.createdAt, amount:p.amount, method:p.method,
+    property:{name:p.property.name,address:p.property.address},
+    resident:{id:p.resident.id,fullName:p.resident.fullName,room:place?.room.number ?? null,bed:place?.bed.number ?? null},
+    acceptedBy:p.creator.fullName,
+    items:p.allocations.map(a=>({type:a.charge.type,billingPeriodStart:a.charge.billingPeriodStart,billingPeriodEnd:a.charge.billingPeriodEnd,amount:a.amount})),
+    toCredit:p.amount.minus(allocated),
+    after:{debt:balance.gt(0)?balance:zero(),credit:balance.lt(0)?balance.neg():zero()},
+  };
+}
+/** Receipt numbers for a page of payments (their place in the house's payment sequence). */
+export async function receiptNumbers(tx: Prisma.TransactionClient, propertyId: string, ids: string[]) {
+  if (!ids.length) return new Map<string,number>();
+  const rows = await tx.$queryRaw<{id:string;n:bigint}[]>`
+    SELECT id, n FROM (SELECT id, row_number() OVER (ORDER BY created_at, id) AS n FROM payments WHERE property_id = ${propertyId}::uuid) x
+    WHERE id = ANY(${ids}::uuid[])`;
+  return new Map(rows.map(r=>[r.id,Number(r.n)]));
 }
 
 @Injectable()
@@ -195,7 +235,8 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
         tx.payment.findMany({where:scope,include:paymentInclude,orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(query.page-1)*50,take:50}), tx.payment.count({where:scope}),
         tx.resident.findMany({where:{propertyId:actor.propertyId,...(query.residentId?{id:query.residentId}:{})},select:{id:true,fullName:true,totalDebt:true,creditBalance:true,accessGranted:true,accessStatusReason:true,financeCheckedAt:true},orderBy:{fullName:'asc'}})
       ]);
-      return {summary:{charged:totals._sum.amount ?? '0',paid:received._sum.amount ?? '0',applied:totals._sum.paidAmount ?? '0',creditBalance:residents.reduce((sum,r)=>sum.plus(r.creditBalance),new Prisma.Decimal(0)),outstanding:totals._sum.dueAmount ?? '0',overdue:overdue._sum.dueAmount ?? '0',blockedResidents:residents.filter(r=>!r.accessGranted).length},charges,payments:payments.map(paymentResult),residents,chargeCount,paymentCount,page:query.page,pageSize:50,asOf:new Date().toISOString()};
+      const numbers = await receiptNumbers(tx,actor.propertyId,payments.map(p=>p.id));
+      return {summary:{charged:totals._sum.amount ?? '0',paid:received._sum.amount ?? '0',applied:totals._sum.paidAmount ?? '0',creditBalance:residents.reduce((sum,r)=>sum.plus(r.creditBalance),new Prisma.Decimal(0)),outstanding:totals._sum.dueAmount ?? '0',overdue:overdue._sum.dueAmount ?? '0',blockedResidents:residents.filter(r=>!r.accessGranted).length},charges,payments:payments.map(p=>({...paymentResult(p),receiptNumber:numbers.get(p.id)})),residents,chargeCount,paymentCount,page:query.page,pageSize:50,asOf:new Date().toISOString()};
     });
   }
   /** Home screen: this month's rent by resident (paid / partly / not paid), money received this month and the last 6 months. */
@@ -221,6 +262,60 @@ export class FinanceService implements OnModuleInit, OnModuleDestroy {
       const months = Array.from({length:6},(_,i)=>{const d=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()-5+i,1));const key=d.toISOString().slice(0,7);return {month:key,received:(rows.find(r=>r.month===key)?.received ?? new Prisma.Decimal(0)).toFixed(2)};});
       return {month:today.slice(0,7),paid:group(0),partial:group(1),unpaid:group(2),received:months[5].received,months};
     });
+  }
+  /**
+   * The month's report for staff (app and web): what was charged for the month, what came in during it
+   * (by method and by who accepted it, so cash can be reconciled per person), the month's rent by resident,
+   * today's debt, and every payment with its receipt number. Months are Tashkent calendar months.
+   */
+  monthReport(actor: Actor, month?: string) {
+    return this.transaction(actor,'FINANCE_VIEW',async tx => {
+      const t = tashkentToday();
+      const m = month ?? t.month;
+      if (m > t.month) throw new UnprocessableEntityException('Отчёт за будущий месяц пока пуст.');
+      const start = financeDate(`${m}-01`), next = new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()+1,1));
+      const nextIso = next.toISOString().slice(0,10);
+      const startAt = new Date(`${m}-01T00:00:00+05:00`), endAt = new Date(`${nextIso}T00:00:00+05:00`);
+      const [charges, payments, now] = await Promise.all([
+        tx.charge.findMany({where:{propertyId:actor.propertyId,billingPeriodStart:{gte:start,lt:next}},select:{residentId:true,type:true,status:true,amount:true,paidAmount:true,dueAmount:true}}),
+        tx.payment.findMany({where:{propertyId:actor.propertyId,createdAt:{gte:startAt,lt:endAt}},orderBy:[{createdAt:'asc'},{id:'asc'}],
+          select:{id:true,amount:true,method:true,createdAt:true,resident:{select:{id:true,fullName:true}},creator:{select:{id:true,fullName:true}}}}),
+        tx.resident.aggregate({where:{propertyId:actor.propertyId},_sum:{totalDebt:true}}),
+      ]);
+      const overdueNow = await tx.charge.aggregate({where:{propertyId:actor.propertyId,status:'OVERDUE'},_sum:{dueAmount:true}});
+      const byType: Record<string,Prisma.Decimal> = {};
+      let charged = zero(), chargedPaid = zero(), chargedDue = zero();
+      for (const c of charges) { byType[c.type] = (byType[c.type] ?? zero()).plus(c.amount); charged = charged.plus(c.amount); chargedPaid = chargedPaid.plus(c.paidAmount); chargedDue = chargedDue.plus(c.dueAmount); }
+      // Rent by resident, once each, by the worst state of the month's rent (as on the home screen).
+      const rank = {PAID:0,PARTIALLY_PAID:1,UNPAID:2,OVERDUE:2} as const;
+      const rent = new Map<string,{state:number;amount:Prisma.Decimal;due:Prisma.Decimal}>();
+      for (const c of charges.filter(c=>c.type==='RENT')) {
+        const r = rent.get(c.residentId) ?? {state:0,amount:zero(),due:zero()};
+        rent.set(c.residentId,{state:Math.max(r.state,rank[c.status]),amount:r.amount.plus(c.amount),due:r.due.plus(c.dueAmount)});
+      }
+      const group = (state:number) => { const l=[...rent.values()].filter(r=>r.state===state); return {residents:l.length,amount:l.reduce((s,r)=>s.plus(state===0?r.amount:r.due),zero())}; };
+      const byMethod: Record<string,Prisma.Decimal> = {};
+      const byStaff = new Map<string,{name:string;total:Prisma.Decimal;cash:Prisma.Decimal;count:number}>();
+      let received = zero();
+      for (const p of payments) {
+        received = received.plus(p.amount);
+        byMethod[p.method] = (byMethod[p.method] ?? zero()).plus(p.amount);
+        const s = byStaff.get(p.creator.id) ?? {name:p.creator.fullName,total:zero(),cash:zero(),count:0};
+        byStaff.set(p.creator.id,{...s,total:s.total.plus(p.amount),cash:p.method==='CASH'?s.cash.plus(p.amount):s.cash,count:s.count+1});
+      }
+      const numbers = await receiptNumbers(tx,actor.propertyId,payments.map(p=>p.id));
+      return {
+        month:m, current:m===t.month,
+        charged:{total:charged,paid:chargedPaid,due:chargedDue,byType},
+        received:{total:received,count:payments.length,byMethod,byStaff:[...byStaff.values()].sort((a,b)=>Number(b.total)-Number(a.total))},
+        rent:{paid:group(0),partial:group(1),unpaid:group(2)},
+        now:{debt:now._sum.totalDebt ?? zero(),overdue:overdueNow._sum.dueAmount ?? zero()},
+        payments:payments.map(p=>({id:p.id,receiptNumber:numbers.get(p.id),createdAt:p.createdAt,amount:p.amount,method:p.method,resident:p.resident,acceptedBy:p.creator.fullName})).reverse(),
+      };
+    });
+  }
+  receipt(actor: Actor, id: string) {
+    return this.transaction(actor,'FINANCE_VIEW',tx => paymentReceipt(tx,actor.propertyId,id));
   }
   /** Debtors list for the "Должники" screen: residents with debt, their current place, and days overdue. */
   debtors(actor: Actor) {
@@ -305,6 +400,8 @@ class FinanceController {
   @Get() snapshot(@Req() req: AuthRequest,@Query() query: FinanceQuery) {return this.service.snapshot(req.actor,query);}
   @Get('month') month(@Req() req: AuthRequest) {return this.service.month(req.actor);}
   @Get('debtors') debtors(@Req() req: AuthRequest) {return this.service.debtors(req.actor);}
+  @Get('month-report') monthReport(@Req() req: AuthRequest, @Query() q: MonthQuery) {return this.service.monthReport(req.actor, q.month);}
+  @Get('payments/:id/receipt') receipt(@Req() req: AuthRequest, @Param('id',ParseUUIDPipe) id: string) {return this.service.receipt(req.actor, id);}
   @Get('report') async report(@Req() req: AuthRequest, @Query() q: ReportQuery, @Res() res: Response) {
     const {filename, csv} = await this.service.report(req.actor, q);
     res.setHeader('Content-Type','text/csv; charset=utf-8');

@@ -4,6 +4,7 @@ import '../theme.dart';
 import '../ui/kit.dart';
 import '../ui/shell.dart';
 import 'common.dart';
+import 'receipt.dart';
 
 /// Tab order in the tenant app (used by tiles that jump between tabs).
 class TenantTab { static const home = 0, payments = 1, tickets = 2, feed = 3, profile = 4; }
@@ -102,8 +103,6 @@ class TenantHome extends StatelessWidget {
             QuickTile(icon: Icons.chat_bubble_outline_rounded, label: L(context, 'Обращения'), onTap: () => AppShell.go(context, TenantTab.tickets)),
             QuickTile(icon: Icons.notifications_none_rounded, label: L(context, 'Уведомления'), badge: feed['unread'] as int? ?? 0, onTap: () => AppShell.go(context, TenantTab.feed)),
             QuickTile(icon: Icons.person_outline_rounded, label: L(context, 'Профиль'), onTap: () => AppShell.go(context, TenantTab.profile)),
-            QuickTile(icon: Icons.group_outlined, label: L(context, 'Мои гости'), soon: true),
-            QuickTile(icon: Icons.campaign_outlined, label: L(context, 'Объявления'), soon: true),
           ]),
           if ((feed['items'] as List).isNotEmpty) ...[
             SectionTitle(L(context, 'Последнее'), action: L(context, 'Все'), onAction: () => AppShell.go(context, TenantTab.feed)),
@@ -212,6 +211,7 @@ class _PaymentTile extends StatelessWidget {
     final extra = num.tryParse('${p['unallocatedAmount']}') ?? 0;
     final parts = (p['allocations'] as List).cast<Map<String, dynamic>>();
     return AppCard(
+      onTap: () => openPage(context, ReceiptScreen(id: '${p['id']}', tenant: true)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const IconChip(Icons.check_rounded, tone: Tone.green),
@@ -220,6 +220,8 @@ class _PaymentTile extends StatelessWidget {
             Text(sum(p['amount']), style: manrope(17, FontWeight.w800)),
             Text('${dayTime(p['createdAt'])} · ${L(context, methodLabel[p['method']] ?? '')}', style: Theme.of(context).textTheme.bodySmall),
           ])),
+          Text('${L(context, 'Чек')} ${receiptNo(p['receiptNumber'])}', style: manrope(12, FontWeight.w700, color: Brand.blue)),
+          const Icon(Icons.chevron_right_rounded, color: Brand.gray500),
         ]),
         if (parts.isNotEmpty || extra > 0) ...[
           const Gap(10),

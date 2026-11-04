@@ -67,7 +67,7 @@ test('a tenant shares, uploads a point, and staff see it LIVE with accuracy; cur
  const me=(await bearer('get','/tenant/location',a.token).expect(200)).body;
  assert.equal(me.thisDeviceIsPrimary,true);assert.equal(me.primaryDevice,'Phone 1');assert.equal(me.accuracyMeters,12.5);
  const list=(await send(owner,'get','/locations').expect(200)).body;
- assert.deepEqual(list.counts,{ALL:1,LIVE:1,STALE:0,OFFLINE:0,LOCATION_DISABLED:0});
+ assert.deepEqual(list.counts,{ALL:1,LIVE:1,STALE:0,OFFLINE:0,LOCATION_DISABLED:0,AT_HOME:0,AWAY:0});
  const it=list.items[0];
  assert.equal(it.status,'LIVE');assert.equal(it.position.latitude,LAT);assert.equal(it.position.accuracy,12.5);assert.equal(it.position.current,true);
  assert.equal(it.room,'1');assert.equal(it.bed,'2');
@@ -251,4 +251,23 @@ test('rate limit stops a runaway client without blocking normal reconnect batche
  let limited=false;
  for(let i=0;i<260&&!limited;i++){const r=await upload(a,[],okState);if(r.status===429)limited=true;}
  assert.ok(limited,'a client hammering the endpoint is limited');
+});
+
+test('at home / not at home: a recent point inside the house radius, counted once the owner sets the house point',async()=>{
+ const a=await tenant(1),b=await tenant(2);await share(a);await share(b);
+ await upload(a,[point(1)]).expect(200);
+ await upload(b,[point(1,{latitude:LAT+0.01})]).expect(200); // about 1.1 km north
+ let list=(await send(owner,'get','/locations').expect(200)).body;
+ assert.equal(list.home.configured,false);assert.ok(list.items.every(i=>i.atHome===null));assert.deepEqual([list.counts.AT_HOME,list.counts.AWAY],[0,0]);
+ await send(owner,'patch','/property').send({name:'Location',homeLatitude:LAT}).expect(422);
+ await send(owner,'patch','/property').send({name:'Location',homeRadiusM:10}).expect(422);
+ await send(owner,'patch','/property').send({name:'Location',homeLatitude:LAT+0.0005,homeLongitude:LON,homeRadiusM:150}).expect(200); // about 55 m from resident 1
+ list=(await send(owner,'get','/locations').expect(200)).body;
+ assert.equal(list.home.configured,true);assert.deepEqual([list.counts.AT_HOME,list.counts.AWAY],[1,1]);
+ assert.equal(list.items.find(i=>i.residentId===a.resident.id).atHome,true);assert.equal(list.items.find(i=>i.residentId===b.resident.id).atHome,false);
+ await send(owner,'patch','/property').send({name:'Location',homeRadiusM:25}).expect(200);
+ list=(await send(owner,'get','/locations').expect(200)).body;assert.deepEqual([list.counts.AT_HOME,list.counts.AWAY],[0,2]);
+ const audit=await db.auditLog.findFirst({where:{action:'PROPERTY_UPDATED'},orderBy:{createdAt:'desc'}});assert.ok(!JSON.stringify(audit.metadata).includes('41.311'),'the house point is not copied into the journal');
+ await send(owner,'patch','/property').send({name:'Location',homeLatitude:null,homeLongitude:null}).expect(200);
+ assert.equal((await send(owner,'get','/locations').expect(200)).body.home.configured,false);
 });

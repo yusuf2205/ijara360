@@ -314,13 +314,33 @@ test('a rejected application loses all personal data after a week; the row and h
  const again=await start();await verify(again);await complete(again);const b=await mine(again);await send(again,'post','/public/applications/submit').send({version:b.version}).expect(201);
  assert.equal((await send(owner,'get',`/applications/${b.id}`).expect(200)).body.duplicates.applications.length,0);
 });
-test('a cancelled application is emptied after a week; applications in progress and drafts are not',async()=>{
+test('a cancelled application is emptied after a week; applications under review and recent drafts are not',async()=>{
  const {agent,a}=await submitted();await send(agent,'post','/public/applications/cancel').send({version:a.version}).expect(201);await closedDaysAgo(a,7);
  const d=await mine(await start('+998900000044'));
  const other=await start('+998900000033');await verify(other,33,'+998900000033');await complete(other);const x=await mine(other);await send(other,'post','/public/applications/submit').send({version:x.version}).expect(201);
- await closedDaysAgo(x,30);await closedDaysAgo(d,30);
+ await closedDaysAgo(x,30);await closedDaysAgo(d,29);
  assert.deepEqual(await app.get(KycRetentionService).purge(),{purged:1,failed:0});
  assert.ok((await db.rentalApplication.findUnique({where:{id:a.id}})).profilePurgedAt);
  assert.equal((await db.rentalApplication.findUnique({where:{id:x.id}})).profilePurgedAt,null);assert.equal(await db.applicationDocument.count({where:{applicationId:x.id}}),3);
  assert.equal((await db.rentalApplication.findUnique({where:{id:d.id}})).profilePurgedAt,null);
+});
+
+test('a draft or an application waiting for the applicant is cancelled and emptied after 30 days without changes',async()=>{
+ const retention=app.get(KycRetentionService);
+ let {agent,a}=await submitted();a=(await review(a,'UNDER_REVIEW').expect(201)).body;a=(await review(a,'NEEDS_INFO',{reason:'Нужно новое фото',requiredFields:'Фото лица'}).expect(201)).body;
+ const draftAgent=await start('+998900000044');await verify(draftAgent,44,'+998900000044');await complete(draftAgent);const draft=await mine(draftAgent);
+ await closedDaysAgo(a,30);await closedDaysAgo(draft,29);
+ assert.deepEqual(await retention.purge(),{purged:1,failed:0});
+ const row=await db.rentalApplication.findUnique({where:{id:a.id}});
+ assert.equal(row.status,'CANCELLED');assert.ok(row.profilePurgedAt);assert.equal(row.phoneHash,'0'.repeat(64));assert.equal(row.tenantPasswordHash,null);assert.equal(row.feedbackCipher,null);
+ const last=await db.applicationStatusHistory.findFirst({where:{applicationId:a.id},orderBy:{createdAt:'desc'}});
+ assert.deepEqual([last.fromStatus,last.toStatus,last.actorId],['NEEDS_INFO','CANCELLED',null]);
+ assert.equal(await db.applicationDocument.count({where:{applicationId:a.id}}),0);assert.equal(existsSync(stored(a)),false);
+ await send(agent,'get','/public/applications/me').expect(401);
+ // 29 days: the draft and its photos stay; on day 30 it goes the same way.
+ assert.equal((await db.rentalApplication.findUnique({where:{id:draft.id}})).profilePurgedAt,null);assert.equal(await db.applicationDocument.count({where:{applicationId:draft.id}}),3);
+ await closedDaysAgo(draft,30);assert.deepEqual(await retention.purge(),{purged:1,failed:0});
+ assert.equal((await db.rentalApplication.findUnique({where:{id:draft.id}})).status,'CANCELLED');
+ assert.equal((await db.auditLog.findFirst({where:{action:'KYC_DATA_PURGED',entityId:draft.id}})).metadata.policy,'30_DAYS_WITHOUT_CHANGES');
+ await assert.rejects(db.$queryRaw`SELECT kyc_expire_stale_application(${draft.id}::uuid,'x')`,/not abandoned/);
 });

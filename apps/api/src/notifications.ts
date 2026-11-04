@@ -25,6 +25,18 @@ const sum=(v:Prisma.Decimal|string|number)=>Math.round(Number(v)).toLocaleString
 const day=(d:Date)=>new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',day:'numeric',month:'long'}).format(d);
 const dayYear=(d:Date)=>new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(d);
 const chargeType:Record<string,string>={RENT:'Аренда',DEPOSIT:'Залог',PENALTY:'Штраф',UTILITIES:'Коммунальные',OTHER:'Начисление'};
+// Uzbek (Latin) for residents who chose it in the app; staff always read Russian.
+export type Lang='ru'|'uz';
+const uzMonths=['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+const dayUz=(d:Date)=>`${d.getUTCDate()}-${uzMonths[d.getUTCMonth()]}`;
+const dayYearUz=(d:Date)=>`${d.getUTCFullYear()}-yil ${dayUz(d)}`;
+const sumUz=(v:Prisma.Decimal|string|number)=>sum(v).replace('сум','so‘m');
+const chargeTypeUz:Record<string,string>={RENT:'Ijara',DEPOSIT:'Garov',PENALTY:'Jarima',UTILITIES:'Kommunal to‘lovlar',OTHER:'Hisob'};
+/** "Аренда за ноябрь" / "Noyabr oyi uchun ijara". */
+const chargeName=(lang:Lang,c:{type:string;billingPeriodStart:Date})=>{
+  if(lang==='uz'){const m=uzMonths[c.billingPeriodStart.getUTCMonth()];return c.type==='RENT'?`${m[0].toUpperCase()}${m.slice(1)} oyi uchun ijara`:chargeTypeUz[c.type]||'Hisob';}
+  return c.type==='RENT'?`Аренда за ${new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',month:'long'}).format(c.billingPeriodStart)}`:chargeType[c.type]||'Начисление';
+};
 
 /**
  * Notifications are written inside the caller's transaction, so a rolled-back action never notifies.
@@ -43,10 +55,12 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
   async onModuleDestroy(){clearInterval(this.timer);await this.running;}
 
   /** To the resident's app account, if there is an active one; with a Telegram copy when the account is linked. */
-  async tenant(tx:Tx,residentId:string,m:Message){
+  async tenant(tx:Tx,residentId:string,m:Message|((lang:Lang)=>Message)){
     const a=await tx.tenantAccount.findFirst({where:{residentId,active:true,activatedAt:{not:null}}});
     if(!a)return;
-    const n=await tx.notification.create({data:{propertyId:a.propertyId,tenantAccountId:a.id,...m}});
+    // A message builder gets the resident's language; plain messages (owner announcements) go as written.
+    const msg=typeof m==='function'?m(a.lang==='uz'?'uz':'ru'):m;
+    const n=await tx.notification.create({data:{propertyId:a.propertyId,tenantAccountId:a.id,...msg}});
     if(a.telegramUserId)await tx.notificationDelivery.create({data:{notificationId:n.id,chatId:a.telegramUserId}});
     await publish(tx,{p:a.propertyId,topic:'notifications',type:'created',residents:[residentId],staff:false});
   }
@@ -62,36 +76,58 @@ export class NotificationsService implements OnModuleInit,OnModuleDestroy{
     await publish(tx,{p:propertyId,topic:'notifications',type:'created',users:users.map(u=>u.id)});
   }
 
-  // Event texts in one place, so wording stays consistent between the feed and Telegram.
+  // Event texts in one place, so wording stays consistent between the feed and Telegram. Each builds the
+  // resident's language: Russian or Uzbek.
   chargeCreated(tx:Tx,c:{id:string;residentId:string;type:string;amount:Prisma.Decimal;dueDate:Date;billingPeriodStart:Date}){
-    const what=c.type==='RENT'?`Аренда за ${new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',month:'long'}).format(c.billingPeriodStart)}`:chargeType[c.type]||'Начисление';
-    return this.tenant(tx,c.residentId,{kind:'CHARGE_CREATED',title:'Новое начисление',body:`${what}: ${sum(c.amount)}, оплатить до ${day(c.dueDate)}.`,link:'/app/payments',entity:'Charge',entityId:c.id});
+    return this.tenant(tx,c.residentId,lang=>({kind:'CHARGE_CREATED',link:'/app/payments',entity:'Charge',entityId:c.id,...(lang==='uz'
+      ?{title:'Yangi hisob',body:`${chargeName(lang,c)}: ${sumUz(c.amount)}, ${dayUz(c.dueDate)} gacha to‘lang.`}
+      :{title:'Новое начисление',body:`${chargeName(lang,c)}: ${sum(c.amount)}, оплатить до ${day(c.dueDate)}.`})}));
   }
   paymentRecorded(tx:Tx,p:{id:string;residentId:string;amount:Prisma.Decimal;unallocatedAmount:Prisma.Decimal}){
-    const extra=p.unallocatedAmount.gt(0)?` ${sum(p.unallocatedAmount)} ушло в аванс.`:'';
-    return this.tenant(tx,p.residentId,{kind:'PAYMENT_RECORDED',title:'Оплата зачтена',body:`Получено ${sum(p.amount)}.${extra}`,link:'/app/payments',entity:'Payment',entityId:p.id});
+    return this.tenant(tx,p.residentId,lang=>({kind:'PAYMENT_RECORDED',link:'/app/payments',entity:'Payment',entityId:p.id,...(lang==='uz'
+      ?{title:'To‘lov qabul qilindi',body:`${sumUz(p.amount)} qabul qilindi.${p.unallocatedAmount.gt(0)?` ${sumUz(p.unallocatedAmount)} avansga o‘tkazildi.`:''}`}
+      :{title:'Оплата зачтена',body:`Получено ${sum(p.amount)}.${p.unallocatedAmount.gt(0)?` ${sum(p.unallocatedAmount)} ушло в аванс.`:''}`})}));
   }
   // A rent reminder: the day before/of the due date, or once the charge is overdue. Sent at most once a day per charge (see FinanceService.remindDue).
   remindPayment(tx:Tx,c:{id:string;residentId:string;type:string;dueAmount:Prisma.Decimal;dueDate:Date;billingPeriodStart:Date},daysLeft:number){
-    const what=c.type==='RENT'?`Аренда за ${new Intl.DateTimeFormat('ru-RU',{timeZone:'UTC',month:'long'}).format(c.billingPeriodStart)}`:chargeType[c.type]||'Начисление';
-    const [title,body]=daysLeft<0
-      ? ['Просрочен платёж',`${what}: просрочен на ${-daysLeft} дн. К оплате ${sum(c.dueAmount)}.`]
-      : ['Напоминание об оплате',`${what}: ${sum(c.dueAmount)}. Срок оплаты ${daysLeft===0?'сегодня':`${day(c.dueDate)} (через ${daysLeft} дн.)`}.`];
-    return this.tenant(tx,c.residentId,{kind:'PAYMENT_REMINDER',title,body,link:'/app/payments',entity:'Charge',entityId:c.id});
+    return this.tenant(tx,c.residentId,lang=>{
+      const what=chargeName(lang,c);
+      const [title,body]=lang==='uz'
+        ? daysLeft<0
+          ? ['To‘lov muddati o‘tdi',`${what}: ${-daysLeft} kun kechikdi. To‘lash kerak: ${sumUz(c.dueAmount)}.`]
+          : ['To‘lov eslatmasi',`${what}: ${sumUz(c.dueAmount)}. To‘lov muddati: ${daysLeft===0?'bugun':`${dayUz(c.dueDate)} (${daysLeft} kundan keyin)`}.`]
+        : daysLeft<0
+          ? ['Просрочен платёж',`${what}: просрочен на ${-daysLeft} дн. К оплате ${sum(c.dueAmount)}.`]
+          : ['Напоминание об оплате',`${what}: ${sum(c.dueAmount)}. Срок оплаты ${daysLeft===0?'сегодня':`${day(c.dueDate)} (через ${daysLeft} дн.)`}.`];
+      return {kind:'PAYMENT_REMINDER',title,body,link:'/app/payments',entity:'Charge',entityId:c.id};
+    });
   }
-
   // End of stay (see ResidentsService.remindStays). The resident: two weeks, three days and the last day.
   stayEnding(tx:Tx,residentId:string,occupancyId:string,end:Date,daysLeft:number){
-    const when=daysLeft===0?'сегодня':`${day(end)} (через ${daysLeft} дн.)`;
-    return this.tenant(tx,residentId,{kind:'STAY_ENDING',title:'Срок проживания',body:`Ваше проживание по договору заканчивается ${when}. Если хотите продлить, сообщите администрации.`,link:'/app',entity:'Occupancy',entityId:occupancyId});
+    return this.tenant(tx,residentId,lang=>({kind:'STAY_ENDING',link:'/app',entity:'Occupancy',entityId:occupancyId,...(lang==='uz'
+      ?{title:'Yashash muddati',body:`Shartnoma bo‘yicha yashash muddatingiz ${daysLeft===0?'bugun':`${dayUz(end)} kuni (${daysLeft} kundan keyin)`} tugaydi. Uzaytirmoqchi bo‘lsangiz, ma’muriyatga xabar bering.`}
+      :{title:'Срок проживания',body:`Ваше проживание по договору заканчивается ${daysLeft===0?'сегодня':`${day(end)} (через ${daysLeft} дн.)`}. Если хотите продлить, сообщите администрации.`})}));
   }
-  // Staff: three days before and once the date has passed.
+  // Staff: three days before, on the last day and once the date has passed.
   stayEndingStaff(tx:Tx,propertyId:string,o:{residentId:string;occupancyId:string;fullName:string;room:string;bed:string;end:Date;daysLeft:number}){
     const [title,when]=o.daysLeft<0?['Срок проживания истёк',`истёк ${day(o.end)}`]:['Скоро выезд',o.daysLeft===0?'заканчивается сегодня':`заканчивается ${day(o.end)} (через ${o.daysLeft} дн.)`];
     return this.staff(tx,propertyId,['RESIDENTS_MANAGE'],{kind:'STAY_ENDING',title,body:`${o.fullName}, комната ${o.room}, место ${o.bed}: срок проживания ${when}. Продлите срок или оформите выселение.`,link:`/residents/${o.residentId}`,entity:'Occupancy',entityId:o.occupancyId});
   }
   stayPlanChanged(tx:Tx,residentId:string,occupancyId:string,end:Date|null){
-    return this.tenant(tx,residentId,{kind:'STAY_PLAN_CHANGED',title:'Срок проживания',body:end?`Ваше проживание по договору — до ${dayYear(end)}.`:'Дата окончания проживания снята.',link:'/app',entity:'Occupancy',entityId:occupancyId});
+    return this.tenant(tx,residentId,lang=>({kind:'STAY_PLAN_CHANGED',link:'/app',entity:'Occupancy',entityId:occupancyId,...(lang==='uz'
+      ?{title:'Yashash muddati',body:end?`Shartnoma bo‘yicha yashash muddatingiz: ${dayYearUz(end)} gacha.`:'Yashash muddatining tugash sanasi olib tashlandi.'}
+      :{title:'Срок проживания',body:end?`Ваше проживание по договору — до ${dayYear(end)}.`:'Дата окончания проживания снята.'})}));
+  }
+  // Tickets: the staff reply and status changes, in the resident's language (the ticket text itself stays as written).
+  ticketReplied(tx:Tx,residentId:string,ticket:{id:string;title:string},snippet:string){
+    return this.tenant(tx,residentId,lang=>({kind:'TICKET_REPLIED',title:lang==='uz'?'Murojaatingizga javob':'Ответ на обращение',body:`«${ticket.title}»: ${snippet}`,link:`/app/tickets/${ticket.id}`,entity:'Ticket',entityId:ticket.id}));
+  }
+  ticketStatus(tx:Tx,residentId:string,ticket:{id:string;title:string},status:string){
+    const told:Record<Lang,Record<string,string>>={
+      ru:{IN_PROGRESS:'Обращение взято в работу',RESOLVED:'Обращение решено',REJECTED:'Обращение отклонено'},
+      uz:{IN_PROGRESS:'Murojaatingiz ko‘rib chiqilmoqda',RESOLVED:'Murojaatingiz hal qilindi',REJECTED:'Murojaatingiz rad etildi'}};
+    if(!told.ru[status])return;
+    return this.tenant(tx,residentId,lang=>({kind:'TICKET_STATUS',title:told[lang][status],body:`«${ticket.title}»`,link:`/app/tickets/${ticket.id}`,entity:'Ticket',entityId:ticket.id}));
   }
 
   /** An owner's broadcast to every resident who uses the app: one feed item each, with a Telegram copy when linked. */

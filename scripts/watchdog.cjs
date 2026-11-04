@@ -34,6 +34,8 @@ const LABELS = {
   locationApi: 'Геолокация: приём',
   locationWorker: 'Геолокация: статусы',
   retention: 'Геолокация: очистка истории',
+  kycRetention: 'Удаление данных заявок по срокам',
+  stayReminders: 'Напоминания об окончании проживания',
   map: 'Карта (Яндекс)',
 };
 
@@ -82,15 +84,19 @@ function offsiteResult(record, now, startedAt) {
  */
 function apiParts(health, now, startedAt) {
   const loc = health && health.location;
-  if (!health) return { realtime: { ok: null, detail: 'нет ответа API' }, locationApi: { ok: null, detail: 'нет ответа API' }, locationWorker: { ok: null, detail: 'нет ответа API' }, retention: { ok: null, detail: 'нет ответа API' }, map: { ok: null, detail: 'нет ответа API' } };
+  if (!health) return { realtime: { ok: null, detail: 'нет ответа API' }, locationApi: { ok: null, detail: 'нет ответа API' }, locationWorker: { ok: null, detail: 'нет ответа API' }, retention: { ok: null, detail: 'нет ответа API' }, map: { ok: null, detail: 'нет ответа API' }, kycRetention: { ok: null, detail: 'нет ответа API' }, stayReminders: { ok: null, detail: 'нет ответа API' } };
   const early = now - startedAt < 10 * MINUTE;
   const age = (s, max, label) => s == null ? (early ? { ok: null, detail: 'ещё не запускался' } : { ok: false, detail: `${label} не запускается` })
     : s <= max ? { ok: true, detail: `работает (${duration(s * 1000)} назад)` } : { ok: false, detail: `не работал ${duration(s * 1000)}` };
+  const job = (part, key, label) => !part ? { ok: false, detail: 'модуль не отвечает' } : part.failing ? { ok: false, detail: 'ошибка при последнем запуске' } : age(part[key], 3 * 3600, label);
   return {
     realtime: health.realtime === true ? { ok: true, detail: 'работает' } : { ok: false, detail: 'нет связи с базой' },
     locationApi: loc ? { ok: true, detail: loc.lastUpload == null ? 'работает, точек пока не было' : `работает, последняя точка ${duration(loc.lastUpload * 1000)} назад` } : { ok: false, detail: 'модуль не отвечает' },
     locationWorker: loc ? age(loc.statusWorker, 120, 'процесс') : { ok: false, detail: 'модуль не отвечает' },
     retention: loc ? age(loc.retentionWorker, 3 * 3600, 'очистка') : { ok: false, detail: 'модуль не отвечает' },
+    // Hourly checks: the KYC purge runs at 13:00, end-of-stay reminders in the daytime; both report a failed run.
+    kycRetention: job(health.kyc, 'retentionWorker', 'проверка'),
+    stayReminders: job(health.stays, 'reminderWorker', 'проверка'),
     // Without a commercial key the map is "not connected": grey, not an alarm (docs/M7-LOCATION.md).
     // With a key, Yandex itself must accept it (the API checks hourly with each staff origin as Referer).
     map: !loc || !loc.mapConfigured ? { ok: null, detail: 'не подключена' }

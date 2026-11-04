@@ -1,8 +1,9 @@
-import {Controller,Get,Injectable,Module,Query,Req,UseGuards} from '@nestjs/common';
+import {Controller,Get,Injectable,Module,Param,ParseUUIDPipe,Query,Req,UseGuards} from '@nestjs/common';
 import {Prisma} from '@prisma/client';
 import {Type} from 'class-transformer';
 import {IsInt,Max,Min} from 'class-validator';
 import {Database} from './database';
+import {paymentReceipt,receiptNumbers} from './finance';
 import {Tenant,TenantGuard,TenantModule,TenantRequest} from './tenant';
 
 const PAGE=30;
@@ -48,9 +49,14 @@ export class TenantFinanceService {
     return this.read(t,async tx=>{
       const where={propertyId:t.propertyId,residentId:t.residentId};
       const [rows,total]=await Promise.all([tx.payment.findMany({where,select:paymentSelect,orderBy:[{createdAt:'desc'},{id:'desc'}],skip:(page-1)*PAGE,take:PAGE}),tx.payment.count({where})]);
-      const items=rows.map(p=>({...p,unallocatedAmount:p.amount.minus(p.allocations.reduce((s,a)=>s.plus(a.amount),new Prisma.Decimal(0)))}));
+      const numbers=await receiptNumbers(tx,t.propertyId,rows.map(p=>p.id));
+      const items=rows.map(p=>({...p,receiptNumber:numbers.get(p.id),unallocatedAmount:p.amount.minus(p.allocations.reduce((s,a)=>s.plus(a.amount),new Prisma.Decimal(0)))}));
       return {items,total,page,pageSize:PAGE};
     });
+  }
+  /** The resident's own receipt; another resident's payment is simply "not found". */
+  receipt(t:Tenant,id:string){
+    return this.read(t,tx=>paymentReceipt(tx,t.propertyId,id,t.residentId));
   }
 }
 
@@ -60,6 +66,7 @@ class TenantFinanceController{
   @Get('finance') summary(@Req() req:TenantRequest){return this.service.summary(req.tenant);}
   @Get('charges') charges(@Req() req:TenantRequest,@Query() q:PageQuery){return this.service.charges(req.tenant,q.page);}
   @Get('payments') payments(@Req() req:TenantRequest,@Query() q:PageQuery){return this.service.payments(req.tenant,q.page);}
+  @Get('payments/:id/receipt') receipt(@Req() req:TenantRequest,@Param('id',ParseUUIDPipe) id:string){return this.service.receipt(req.tenant,id);}
 }
 
 @Module({imports:[TenantModule],providers:[TenantFinanceService],controllers:[TenantFinanceController]})

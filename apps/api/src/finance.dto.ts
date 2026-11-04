@@ -31,3 +31,6 @@ export class ReportQuery {
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
 }
+export class MonthQuery {
+  @IsOptional() @IsString() @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, {message:'Укажите месяц в формате ГГГГ-ММ.'}) month?: string;
+}

@@ -18,9 +18,10 @@ test('the app on a phone: staff sign in, see the house and switch sections from 
   test.setTimeout(90000);
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, 'Я сотрудник', '+998900000010', 'UI test only strong password 2026');
-  await expect(page.getByRole('heading', { name: greeting })).toBeVisible({ timeout: 20000 });
-  await expect(page.getByRole('button', { name: /^Всего мест: \d+$/ })).toBeVisible();
-  await expect(page.getByText('План дома')).toBeVisible();
+  // Staff home since the blue redesign (b7aa13f): "Здравствуйте," over the name, then the colour tiles.
+  await expect(page.getByRole('heading', { name: 'Тестовый', level: 2 })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('button', { name: /^Мест всего: \d+$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Принять оплату' })).toBeVisible();
   await page.getByRole('tab', { name: /Жильцы/ }).click();
   await expect(page.getByRole('textbox', { name: /Имя или телефон/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

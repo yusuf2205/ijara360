@@ -126,7 +126,7 @@ export class TicketsService{
       if(!ticket)throw new NotFoundException('Обращение не найдено.');
       if(!OPEN.includes(ticket.status))throw new ConflictException('Обращение закрыто. Чтобы ответить, сначала откройте его снова.');
       await tx.ticketMessage.create({data:{ticketId:id,authorType:'STAFF',staffUserId:actor.id,body:dto.body}});
-      await this.notifications.tenant(tx,ticket.residentId,{kind:'TICKET_REPLIED',title:'Ответ на обращение',body:`«${ticket.title}»: ${snippet(dto.body)}`,link:`/app/tickets/${id}`,entity:'Ticket',entityId:id});
+      await this.notifications.ticketReplied(tx,ticket.residentId,{id,title:ticket.title},snippet(dto.body));
       // The first answer takes an open ticket into work.
       await tx.ticket.update({where:{id},data:{updatedAt:new Date(),...(ticket.status==='OPEN'?{status:'IN_PROGRESS',version:{increment:1}}:{})}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_REPLIED',entity:'Ticket',entityId:id,metadata:{}}});
@@ -145,8 +145,7 @@ export class TicketsService{
       await tx.ticket.update({where:{id},data:{status:dto.status,closedAt:closed?new Date():null,version:{increment:1}}});
       await tx.auditLog.create({data:{propertyId:actor.propertyId,actorId:actor.id,action:'TICKET_STATUS_CHANGED',entity:'Ticket',entityId:id,metadata:{from:ticket.status,to:dto.status}}});
       await ticketEvent(tx,actor.propertyId,'status',id,ticket.residentId);
-      const told:Record<string,string>={IN_PROGRESS:'Обращение взято в работу',RESOLVED:'Обращение решено',REJECTED:'Обращение отклонено'};
-      if(told[dto.status])await this.notifications.tenant(tx,ticket.residentId,{kind:'TICKET_STATUS',title:told[dto.status],body:`«${ticket.title}»`,link:`/app/tickets/${id}`,entity:'Ticket',entityId:id});
+      await this.notifications.ticketStatus(tx,ticket.residentId,{id,title:ticket.title},dto.status);
       return this.detail(actor,id,tx);
     });
   }

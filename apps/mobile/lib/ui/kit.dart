@@ -61,6 +61,11 @@ const Map<String, String> _uz = {
   'Аренда':'Ijara','Залог':'Garov','Штраф':'Jarima','Коммунальные':'Kommunal','Начисление':'Hisob',
   'наличные':'naqd','перевод на карту':'kartaga o‘tkazma','банковский перевод':'bank o‘tkazmasi','другое':'boshqa',
   'Оплачено':'To‘langan','Частично':'Qisman','К оплате':'To‘lanishi kerak',
+  // Receipts
+  'Чек':'Chek','Поделиться чеком':'Chekni ulashish','Не удалось поделиться чеком. Попробуйте ещё раз.':'Chekni ulashib bo‘lmadi. Yana urinib ko‘ring.',
+  'Квитанция об оплате':'To‘lov kvitansiyasi','Оплата принята':'To‘lov qabul qilindi','Где живёт':'Yashash joyi','Принял':'Qabul qildi',
+  'Аванс после оплаты':'To‘lovdan keyingi avans','Долг после оплаты':'To‘lovdan keyingi qarz',
+  'Квитанция дома о приёме оплаты. Не является фискальным чеком.':'Uyning to‘lov qabul qilinganligi haqidagi kvitansiyasi. Fiskal chek emas.',
   // Tickets
   'Новое обращение':'Yangi murojaat','Ваше имя видит только владелец дома. Сотрудникам — только суть, а для поломок ещё и комната.':'Ismingizni faqat uy egasi ko‘radi. Xodimlarga — faqat mohiyat, nosozliklar uchun esa xona ham.',
   'Обращений пока нет':'Hozircha murojaat yo‘q','Сломалось что-то, мешают соседи или есть идея? Напишите — администрация ответит здесь.':'Biror narsa buzildimi, qo‘shnilar xalaqit beryaptimi yoki g‘oya bormi? Yozing — ma’muriyat shu yerda javob beradi.',

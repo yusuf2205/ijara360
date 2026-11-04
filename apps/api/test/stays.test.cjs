@@ -2,6 +2,7 @@ const {test,before,after,beforeEach}=require('node:test');
 const assert=require('node:assert/strict');
 const request=require('supertest');
 const {PrismaClient}=require('@prisma/client');
+const {randomUUID}=require('node:crypto');
 const {createApp}=require('../dist/app');
 const {TelegramService}=require('../dist/telegram');
 const {ResidentsService,stayStage}=require('../dist/residents');
@@ -110,4 +111,20 @@ test('conversion of an approved application can carry the end of stay',async()=>
  const dto=conversionCheckIn({bedId:beds[0].id,moveInDate:day(0),monthlyPrice:'1',paymentDay:1,depositAmount:'0',plannedEndDate:day(100),version:1},undefined,{fullName:'X',phone:'+998900000077'});
  assert.equal(dto.plannedEndDate,day(100));
  assert.equal(conversionCheckIn({bedId:beds[0].id,moveInDate:day(0),monthlyPrice:'1',paymentDay:1,depositAmount:'0',version:1},undefined,{fullName:'X',phone:'+998900000077'}).plannedEndDate,undefined);
+});
+
+test('a resident who chose Uzbek gets notifications in Uzbek; staff still read Russian',async()=>{
+ const {resident,occupancy,token}=await tenant(1,{plannedEndDate:day(14)});
+ await bearer('put','/tenant/lang',token).send({lang:'en'}).expect(422);
+ assert.equal((await bearer('get','/tenant/me',token).expect(200)).body.lang,'ru');
+ await bearer('put','/tenant/lang',token).send({lang:'uz'}).expect(200);
+ assert.equal((await bearer('get','/tenant/me',token).expect(200)).body.lang,'uz');
+ assert.equal(await remind(),1);
+ const [ending]=await feed('STAY_ENDING');assert.equal(ending.title,'Yashash muddati');assert.match(ending.body,/^Shartnoma bo‘yicha yashash muddatingiz \d+-[a-z]+ kuni \(14 kundan keyin\) tugaydi\./);
+ await plan(occupancy,day(2)).expect(200);
+ const [changed]=await feed('STAY_PLAN_CHANGED');assert.match(changed.body,/^Shartnoma bo‘yicha yashash muddatingiz: \d{4}-yil \d+-[a-z]+ gacha\.$/);
+ await remind();
+ const staff=await db.notification.findMany({where:{kind:'STAY_ENDING',userId:{not:null}}});assert.equal(staff.length,1);assert.equal(staff[0].title,'Скоро выезд');
+ await send(owner,'post','/finance/charges').send({residentId:resident.id,bedId:beds[1].id,amount:'500000',type:'RENT',billingPeriodStart:day(-10),billingPeriodEnd:day(20),dueDate:day(5),gracePeriodDays:0,idempotencyKey:randomUUID()}).expect(201);
+ const [charge]=await feed('CHARGE_CREATED');assert.equal(charge.title,'Yangi hisob');assert.match(charge.body,/^[A-Z][a-z]+ oyi uchun ijara: 500.000 so‘m, \d+-[a-z]+ gacha to‘lang\.$/);
 });

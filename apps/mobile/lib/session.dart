@@ -34,6 +34,8 @@ class Session extends ChangeNotifier {
     lang = value;
     notifyListeners();
     try { await (await SharedPreferences.getInstance()).setString('ijara_lang', value); } catch (_) {}
+    // The server writes this resident's notifications in the chosen language.
+    if (role == Role.tenant) { try { await api.put('/tenant/lang', {'lang': value}); } catch (_) {} }
   }
   String fullName = '';
   String phone = '';
@@ -86,6 +88,8 @@ class Session extends ChangeNotifier {
     propertyName = (me['property'] as Map?)?['name'] as String? ?? '';
     permissions = {};
     role = Role.tenant;
+    // The language chosen on this phone (also on the sign-in screen) wins over the one stored on the server.
+    if (me['lang'] != lang) { try { await api.put('/tenant/lang', {'lang': lang}); } catch (_) {} }
   }
 
   /// Staff login. Returns an [Approval] when the server wants a Telegram confirmation first.

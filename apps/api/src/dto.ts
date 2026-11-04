@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested, IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min, ValidateNested, IsUUID } from 'class-validator';
 
 export class LoginDto {
   @IsString() @Length(8, 30) phone!: string;
@@ -69,6 +69,10 @@ export class PropertyDto {
   @IsOptional() @IsString() @Length(0, 500) address?: string;
   @IsOptional() @IsBoolean() autoBillingEnabled?: boolean;
   @IsOptional() @IsBoolean() paymentRemindersEnabled?: boolean;
+  // Where the house is, for "at home / not at home": both coordinates or neither (null clears them).
+  @IsOptional() @IsNumber({}, { message: 'Широта: число.' }) @Min(-90) @Max(90) homeLatitude?: number | null;
+  @IsOptional() @IsNumber({}, { message: 'Долгота: число.' }) @Min(-180) @Max(180) homeLongitude?: number | null;
+  @IsOptional() @IsInt() @Min(25, { message: 'Радиус дома: от 25 до 2000 м.' }) @Max(2000, { message: 'Радиус дома: от 25 до 2000 м.' }) homeRadiusM?: number;
 }
 
 export class LoginApprovalDto {

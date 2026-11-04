@@ -85,3 +85,67 @@ test('tenant finance is read-only, tenant-only and paged; checkout ends access',
  await send(owner,'post',`/occupancies/${occupancy.id}/check-out`).send({moveOutDate:day(0)}).expect(201);
  await bearer('get','/tenant/finance',a.token).expect(401);
 });
+
+test('every payment has a receipt: number in the house sequence, what it paid, who accepted it and the balance right after',async()=>{
+ const a=await tenant(1),b=await tenant(2);
+ const c=await charge(a.resident);
+ const p1=await pay(a.resident,'200000',{chargeId:c.id});
+ const p2=await pay(b.resident,'50000',{method:'CARD_TRANSFER'});
+ const p3=await pay(a.resident,'400000');
+ // the tenant's list carries the receipt numbers
+ const list=(await bearer('get','/tenant/payments',a.token).expect(200)).body.items;
+ assert.deepEqual(list.map(p=>p.receiptNumber),[3,1]);
+ // cash, part of the rent: debt left after it
+ let r=(await bearer('get',`/tenant/payments/${p1.id}/receipt`,a.token).expect(200)).body;
+ assert.equal(r.number,1);assert.equal(r.method,'CASH');assert.equal(String(r.amount),'200000');
+ assert.equal(r.property.name,'Tenant finance');assert.deepEqual([r.resident.fullName,r.resident.room,r.resident.bed],['Tenant 1','1','2']);
+ assert.equal(r.acceptedBy,'Owner','the receipt names who accepted the money');
+ assert.equal(r.items.length,1);assert.equal(r.items[0].type,'RENT');assert.equal(String(r.items[0].amount),'200000');
+ assert.equal(String(r.toCredit),'0');assert.deepEqual([String(r.after.debt),String(r.after.credit)],['300000','0']);
+ assert.ok(!JSON.stringify(r).includes('Внутренняя заметка'),'the staff comment stays internal');
+ // the rest of the rent plus an advance; a later payment does not change an earlier receipt
+ r=(await bearer('get',`/tenant/payments/${p3.id}/receipt`,a.token).expect(200)).body;
+ assert.equal(r.number,3);assert.equal(String(r.items[0].amount),'300000');assert.equal(String(r.toCredit),'100000');
+ assert.deepEqual([String(r.after.debt),String(r.after.credit)],['0','100000']);
+ assert.equal(String((await bearer('get',`/tenant/payments/${p1.id}/receipt`,a.token).expect(200)).body.after.debt),'300000');
+ // an advance with nothing to pay still shows the resident's place
+ r=(await bearer('get',`/tenant/payments/${p2.id}/receipt`,b.token).expect(200)).body;
+ assert.deepEqual([r.number,r.method,r.items.length,String(r.toCredit),r.resident.bed],[2,'CARD_TRANSFER',0,'50000','3']);
+ // someone else's receipt does not exist for this tenant; staff see every receipt
+ await bearer('get',`/tenant/payments/${p2.id}/receipt`,a.token).expect(404);
+ await bearer('get',`/tenant/payments/${randomUUID()}/receipt`,a.token).expect(404);
+ await bearer('get','/tenant/payments/not-a-uuid/receipt',a.token).expect(400);
+ await request(server).get(`/api/tenant/payments/${p1.id}/receipt`).expect(401);
+ const staff=(await send(owner,'get',`/finance/payments/${p3.id}/receipt`).expect(200)).body;
+ assert.equal(staff.number,3);assert.equal(staff.resident.fullName,'Tenant 1');
+ await bearer('get',`/finance/payments/${p3.id}/receipt`,a.token).expect(401);
+ const snap=(await send(owner,'get','/finance').expect(200)).body;
+ assert.deepEqual(snap.payments.map(p=>p.receiptNumber),[3,2,1]);
+});
+
+test('the month report: charged, received by method and by who accepted it, rent by resident, debt now and every receipt',async()=>{
+ const a=await tenant(1),b=await tenant(2);
+ const month=day(0).slice(0,7);
+ await charge(a.resident,{billingPeriodStart:`${month}-01`,billingPeriodEnd:day(0),dueDate:day(0)});
+ await charge(b.resident,{billingPeriodStart:`${month}-01`,billingPeriodEnd:day(0),dueDate:day(0),amount:'600000'});
+ await charge(a.resident,{billingPeriodStart:`${month}-01`,billingPeriodEnd:day(0),dueDate:day(0),amount:'100000',type:'UTILITIES'});
+ await pay(a.resident,'600000');await pay(b.resident,'200000',{method:'BANK_TRANSFER'});
+ const r=(await send(owner,'get','/finance/month-report').expect(200)).body;
+ assert.equal(r.month,month);assert.equal(r.current,true);
+ assert.equal(String(r.charged.total),'1200000');assert.equal(String(r.charged.byType.RENT),'1100000');assert.equal(String(r.charged.byType.UTILITIES),'100000');
+ assert.equal(String(r.received.total),'800000');assert.equal(r.received.count,2);
+ assert.deepEqual([String(r.received.byMethod.CASH),String(r.received.byMethod.BANK_TRANSFER)],['600000','200000']);
+ assert.deepEqual(r.received.byStaff.map(s=>[s.name,String(s.total),String(s.cash),s.count]),[['Owner','800000','600000',2]]);
+ assert.deepEqual([r.rent.paid.residents,r.rent.partial.residents,r.rent.unpaid.residents],[1,1,0]);
+ assert.equal(String(r.rent.partial.amount),'400000');
+ assert.equal(String(r.now.debt),'400000');
+ assert.deepEqual(r.payments.map(p=>[p.receiptNumber,p.resident.fullName,p.acceptedBy]),[[2,'Tenant 2','Owner'],[1,'Tenant 1','Owner']]);
+ // an earlier month is its own report; a future month and a bad month are refused; tenants have no access
+ const prev=new Date(Date.UTC(+month.slice(0,4),+month.slice(5,7)-2,1)).toISOString().slice(0,7);
+ const old=(await send(owner,'get',`/finance/month-report?month=${prev}`).expect(200)).body;
+ assert.deepEqual([old.current,String(old.received.total),old.payments.length],[false,'0',0]);
+ const next=new Date(Date.UTC(+month.slice(0,4),+month.slice(5,7),1)).toISOString().slice(0,7);
+ await send(owner,'get',`/finance/month-report?month=${next}`).expect(422);
+ await send(owner,'get','/finance/month-report?month=2026-13').expect(422);
+ await bearer('get','/finance/month-report',a.token).expect(401);
+});

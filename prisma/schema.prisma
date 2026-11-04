@@ -23,6 +23,10 @@ model Property {
   autoBillingEnabled Boolean @default(false) @map("auto_billing_enabled")
   // When on, residents who use the app are reminded about rent due soon or overdue (at most once a day each).
   paymentRemindersEnabled Boolean @default(true) @map("payment_reminders_enabled")
+  // Where the house is, for "at home / not at home" (both coordinates or neither).
+  homeLatitude Float? @map("home_latitude")
+  homeLongitude Float? @map("home_longitude")
+  homeRadiusM Int @default(150) @map("home_radius_m")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   users     User[]
@@ -458,6 +462,8 @@ model TenantAccount {
   phone String @unique @db.VarChar(16)
   passwordHash String? @map("password_hash")
   telegramUserId String? @map("telegram_user_id") @db.VarChar(30)
+  // The resident's app language ('ru' or 'uz'); notifications are written in it.
+  lang String @default("ru") @db.VarChar(2)
   active Boolean @default(true)
   activatedAt DateTime? @map("activated_at") @db.Timestamptz(3)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)

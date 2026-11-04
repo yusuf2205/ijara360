@@ -72,6 +72,18 @@ class HistoryQuery{
 
 const residentSelect={id:true,fullName:true,photoUrl:true,occupancies:{where:{status:'ACTIVE' as const},select:{room:{select:{number:true}},bed:{select:{number:true}}},take:1}};
 
+/** Metres between two points on the Earth (haversine). */
+export function distanceM(a:{latitude:number;longitude:number},b:{latitude:number;longitude:number}){
+  const rad=Math.PI/180,dLat=(b.latitude-a.latitude)*rad,dLon=(b.longitude-a.longitude)*rad;
+  const h=Math.sin(dLat/2)**2+Math.cos(a.latitude*rad)*Math.cos(b.latitude*rad)*Math.sin(dLon/2)**2;
+  return 2*6371000*Math.asin(Math.sqrt(h));
+}
+/** At home: a live or recent (STALE) point within the house radius. Null when the house point or a recent point is unknown. */
+export function atHome(home:{latitude:number;longitude:number;radiusM:number}|null,c:{status:string;position:{latitude:number;longitude:number}|null}){
+  if(!home||!c.position||(c.status!=='LIVE'&&c.status!=='STALE'))return null;
+  return distanceM(home,c.position)<=home.radiusM;
+}
+
 @Injectable()
 export class LocationService implements OnModuleInit,OnModuleDestroy{
   private statusTimer?:ReturnType<typeof setInterval>;
@@ -244,15 +256,17 @@ export class LocationService implements OnModuleInit,OnModuleDestroy{
     };
   }
 
-  /** Every resident with an active occupancy, sharing or not. */
+  /** Every resident with an active occupancy, sharing or not, and whether each is at home when the house point is set. */
   async list(actor:Actor){
     await requireAccess(this.db,actor,'VIEW_LOCATION');
     const now=new Date();
+    const p=await this.db.property.findUniqueOrThrow({where:{id:actor.propertyId},select:{homeLatitude:true,homeLongitude:true,homeRadiusM:true}});
+    const home=p.homeLatitude!==null&&p.homeLongitude!==null?{latitude:p.homeLatitude,longitude:p.homeLongitude,radiusM:p.homeRadiusM}:null;
     const residents=await this.db.resident.findMany({where:{propertyId:actor.propertyId,occupancies:{some:{status:'ACTIVE'}}},select:{...residentSelect,location:true},orderBy:{fullName:'asc'}});
-    const items=residents.map(r=>this.card(r,r.location,now));
-    const counts={ALL:items.length,LIVE:0,STALE:0,OFFLINE:0,LOCATION_DISABLED:0} as Record<string,number>;
-    for(const i of items)counts[i.status]++;
-    return {items,counts,policy:{liveSeconds:locationPolicy.liveSeconds,staleSeconds:locationPolicy.staleSeconds}};
+    const items=residents.map(r=>{const c=this.card(r,r.location,now);return {...c,atHome:atHome(home,c)};});
+    const counts={ALL:items.length,LIVE:0,STALE:0,OFFLINE:0,LOCATION_DISABLED:0,AT_HOME:0,AWAY:0} as Record<string,number>;
+    for(const i of items){counts[i.status]++;if(i.atHome===true)counts.AT_HOME++;else if(i.atHome===false)counts.AWAY++;}
+    return {items,counts,home:{configured:Boolean(home),radiusM:p.homeRadiusM},policy:{liveSeconds:locationPolicy.liveSeconds,staleSeconds:locationPolicy.staleSeconds}};
   }
 
   /** The authoritative "where is this resident now" (also for the future M9 assistant). */

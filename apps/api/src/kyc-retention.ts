@@ -5,33 +5,40 @@ import {Database} from './database';
 import {PrivateStorage} from './private-storage';
 
 // Residents: documents, PINFL and passport number are kept 2 years after check-out.
-// Rejected and cancelled applications: all personal data is kept 1 week. The database functions hold both periods.
+// Rejected and cancelled applications: all personal data is kept 1 week.
+// Drafts and applications waiting for the applicant (NEEDS_INFO): cancelled and emptied after 30 days without changes.
+// The database functions hold all three periods.
 @Injectable()
 export class KycRetentionService implements OnModuleInit,OnModuleDestroy{
   private readonly log=new Logger('KycRetention');
   private timer?:ReturnType<typeof setInterval>;
-  lastRun:Date|null=null;
+  /** For /api/health and the watchdog: the worker's last hourly check, and whether the last purge had errors. */
+  lastTick:Date|null=null;
+  failing=false;
   constructor(private readonly db:Database,private readonly storage:PrivateStorage,private readonly applications:ApplicationService){}
-  onModuleInit(){if(process.env.NODE_ENV!=='test'){this.timer=setInterval(()=>void this.tick(),3600000);this.timer.unref();}}
+  onModuleInit(){if(process.env.NODE_ENV!=='test'){void this.tick();this.timer=setInterval(()=>void this.tick(),3600000);this.timer.unref();}}
   onModuleDestroy(){if(this.timer)clearInterval(this.timer);}
   // Midday only: the night backup checks its archive against its dump, so a purge between the two would fail it.
   private async tick(){
-    if(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tashkent',hour:'2-digit'}).format(new Date())!=='13')return;
-    try{await this.purge();}catch{this.log.error('KYC retention worker failed');}
+    try{if(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Tashkent',hour:'2-digit'}).format(new Date())==='13')this.failing=(await this.purge()).failed>0;}
+    catch{this.failing=true;this.log.error('KYC retention worker failed');}
+    this.lastTick=new Date();
   }
   async purge(){
     if(!this.storage.ready())throw new Error('Storage is not configured.');
     const residents=await this.db.$queryRaw<{id:string}[]>`SELECT id FROM rental_applications WHERE status='CONVERTED_TO_RESIDENT' AND documents_purged_at IS NULL AND kyc_documents_expired(resident_id)`;
     const closed=await this.db.$queryRaw<{id:string}[]>`SELECT id FROM rental_applications WHERE status IN ('REJECTED','CANCELLED') AND profile_purged_at IS NULL AND updated_at<=CURRENT_TIMESTAMP-INTERVAL '7 days'`;
+    const stale=await this.db.$queryRaw<{id:string}[]>`SELECT id FROM rental_applications WHERE status IN ('DRAFT','NEEDS_INFO') AND profile_purged_at IS NULL AND updated_at<=CURRENT_TIMESTAMP-INTERVAL '30 days'`;
     const load=(rows:{id:string}[])=>this.db.rentalApplication.findMany({where:{id:{in:rows.map(r=>r.id)}}});
+    const empty=(a:RentalApplication)=>this.storage.seal({},`application:${a.id}`);
     const results=[
       ...await this.each(await load(residents),'2_YEARS_AFTER_CHECK_OUT',(tx,a)=>{
         const {pinfl:_p,passportSeries:_s,passportNumber:_n,...cleaned}=this.applications.profile(a);
         return tx.$queryRaw<{documents:number}[]>`SELECT kyc_purge_application_documents(${a.id}::uuid,${this.storage.seal(cleaned,`application:${a.id}`)}) AS documents`;
       }),
-      ...await this.each(await load(closed),'1_WEEK_AFTER_CLOSING',(tx,a)=>tx.$queryRaw<{documents:number}[]>`SELECT kyc_purge_closed_application(${a.id}::uuid,${this.storage.seal({},`application:${a.id}`)}) AS documents`),
+      ...await this.each(await load(closed),'1_WEEK_AFTER_CLOSING',(tx,a)=>tx.$queryRaw<{documents:number}[]>`SELECT kyc_purge_closed_application(${a.id}::uuid,${empty(a)}) AS documents`),
+      ...await this.each(await load(stale),'30_DAYS_WITHOUT_CHANGES',(tx,a)=>tx.$queryRaw<{documents:number}[]>`SELECT kyc_expire_stale_application(${a.id}::uuid,${empty(a)}) AS documents`),
     ];
-    this.lastRun=new Date();
     return {purged:results.filter(Boolean).length,failed:results.filter(r=>!r).length};
   }
   private async each(items:RentalApplication[],policy:string,purge:(tx:Prisma.TransactionClient,a:RentalApplication)=>Promise<{documents:number}[]>){

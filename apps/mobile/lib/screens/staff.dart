@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../api/client.dart';
@@ -11,6 +12,8 @@ import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
 import 'common.dart';
+import 'receipt.dart';
+import 'report.dart';
 import 'tenant.dart' show methodLabel;
 
 // ---------- Shared action helpers (edit/delete rooms, residents, staff; review applications) ----------
@@ -60,7 +63,7 @@ class StaffHome extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = SessionScope.of(context);
     return LiveData<Map<String, dynamic>>(
-      topics: const {'house', 'finance', 'applications', 'tickets', 'notifications'},
+      topics: const {'house', 'finance', 'applications', 'tickets', 'notifications', 'location'},
       load: () async {
         // Each block only for staff who may see it; the server would refuse the rest anyway.
         final rooms = s.api.get('/rooms');
@@ -71,8 +74,9 @@ class StaffHome extends StatelessWidget {
         final month = s.can('FINANCE_VIEW') ? s.api.get('/finance/month').catchError((_) => null) : Future.value(null);
         final today = s.api.get('/occupancies/today').catchError((_) => null);
         final ending = s.api.get('/occupancies/ending').catchError((_) => null);
-        final r = await Future.wait([rooms, feed, fin, apps, tickets, month, today, ending]);
-        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4], 'month': r[5], 'today': r[6], 'ending': r[7]};
+        final places = s.can('VIEW_LOCATION') ? s.api.get('/locations').catchError((_) => null) : Future.value(null);
+        final r = await Future.wait([rooms, feed, fin, apps, tickets, month, today, ending, places]);
+        return {'rooms': r[0], 'feed': r[1], 'finance': r[2], 'apps': r[3], 'tickets': r[4], 'month': r[5], 'today': r[6], 'ending': r[7], 'places': r[8]};
       },
       builder: (context, d, refresh) {
         final rooms = (d['rooms'] as List).cast<Map<String, dynamic>>();
@@ -87,6 +91,9 @@ class StaffHome extends StatelessWidget {
         final month = d['month'] as Map<String, dynamic>?;
         final today = d['today'] as Map<String, dynamic>?;
         final ending = d['ending'] as List?;
+        // "At home / not at home" once the owner has set where the house is.
+        final places = d['places'] as Map<String, dynamic>?;
+        final home = places != null && (places['home'] as Map?)?['configured'] == true ? places['counts'] as Map<String, dynamic> : null;
         int count(String k) => ((month?[k] as Map?)?['residents'] as int?) ?? 0;
         final t = Theme.of(context).textTheme;
         final wide = MediaQuery.sizeOf(context).width >= 900;
@@ -134,6 +141,10 @@ class StaffHome extends StatelessWidget {
             if (fin != null) ColorTile(icon: Icons.account_balance_wallet_outlined, tone: Tone.orange, value: sum(fin['summary']['outstanding']), label: 'Общий долг', onTap: () => go('finance')),
             if (debtors != null) ColorTile(icon: Icons.person_off_outlined, tone: Tone.orange, value: '$debtors', label: 'Должники', onTap: () => go('finance')),
             if (newApps != null) ColorTile(icon: Icons.assignment_outlined, value: '$newApps', label: 'Новые заявки', onTap: () => go('applications')),
+            if (home != null) ...[
+              ColorTile(icon: Icons.home_outlined, tone: Tone.green, value: '${home['AT_HOME'] ?? 0}', label: 'Дома сейчас', onTap: () => go('map')),
+              ColorTile(icon: Icons.directions_walk_rounded, tone: Tone.blue, value: '${home['AWAY'] ?? 0}', label: 'Не дома', onTap: () => go('map')),
+            ],
             if (ending != null) ColorTile(icon: Icons.event_busy_outlined, tone: Tone.orange, value: '${ending.length}', label: 'Скоро выезд', onTap: () => go('residents')),
             if (newTickets != null) ColorTile(icon: Icons.chat_bubble_outline_rounded, value: '$newTickets', label: 'Новые обращения', onTap: () => go('tickets')),
           ]),
@@ -1086,6 +1097,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final s = SessionScope.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Оплаты'), actions: [
+        IconButton(tooltip: 'Отчёт за месяц', icon: const Icon(Icons.bar_chart_rounded), onPressed: () => openPage(context, const MonthReportScreen())),
         if (s.can('FINANCE_MANAGE')) IconButton(tooltip: 'Начислить', icon: const Icon(Icons.receipt_long_outlined), onPressed: () => addCharge(context)),
       ]),
       floatingActionButton: s.can('FINANCE_MANAGE') ? FloatingActionButton.extended(isExtended: _extended, backgroundColor: Brand.blue, foregroundColor: Brand.white, onPressed: () => acceptPayment(context), icon: const Icon(Icons.add_card_rounded), label: const Text('Принять оплату')) : null,
@@ -1127,16 +1139,29 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 ]),
               ),
             ),
+            AppCard(
+              onTap: () => openPage(context, const MonthReportScreen()),
+              color: Brand.blueSoft,
+              child: Row(children: [
+                const IconChip(Icons.bar_chart_rounded),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Отчёт за месяц', style: manrope(15, FontWeight.w800)),
+                  Text('Получено, кто принимал наличные, долги и все чеки', style: Theme.of(context).textTheme.bodySmall),
+                ])),
+                const Icon(Icons.chevron_right_rounded),
+              ]),
+            ),
             const SectionTitle('Последние оплаты'),
             if (payments.isEmpty) const EmptyState(icon: Icons.payments_outlined, title: 'Оплат пока нет'),
             for (final p in payments.take(15)) Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: AppCard(child: Row(children: [
+              child: AppCard(onTap: () => openPage(context, ReceiptScreen(id: '${p['id']}')), child: Row(children: [
                 const IconChip(Icons.check_rounded, tone: Tone.green),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('${(p['resident'] as Map?)?['fullName'] ?? ''}', style: manrope(15, FontWeight.w700)),
-                  Text('${dayTime(p['createdAt'])} · ${methodLabel[p['method']] ?? ''}', style: Theme.of(context).textTheme.bodySmall),
+                  Text('${dayTime(p['createdAt'])} · ${methodLabel[p['method']] ?? ''} · ${receiptNo(p['receiptNumber'])}', style: Theme.of(context).textTheme.bodySmall),
                 ])),
                 Text(sum(p['amount']), style: manrope(15, FontWeight.w800)),
               ])),
@@ -1199,10 +1224,14 @@ class _PaymentSheetState extends State<_PaymentSheet> {
     if (resident == null || value.isEmpty) { setState(() => error = 'Выберите жильца и укажите сумму.'); return; }
     setState(() { busy = true; error = null; });
     try {
-      await SessionScope.of(context).api.post('/finance/payments', {'residentId': resident!['id'], 'amount': value, 'method': method, if (comment.text.trim().isNotEmpty) 'comment': comment.text.trim(), 'idempotencyKey': key});
+      final session = SessionScope.of(context);
+      final paid = await session.api.post('/finance/payments', {'residentId': resident!['id'], 'amount': value, 'method': method, if (comment.text.trim().isNotEmpty) 'comment': comment.text.trim(), 'idempotencyKey': key}) as Map<String, dynamic>;
       if (!mounted) return;
-      Navigator.pop(context);
+      final nav = Navigator.of(context);
       toast(context, 'Оплата ${sum(value)} зачтена');
+      nav.pop();
+      // The receipt opens at once: show it to the resident or send it (the sheet lives on the root navigator, outside the session scope).
+      nav.push(MaterialPageRoute(builder: (_) => SessionScope(session: session, child: ReceiptScreen(id: '${paid['id']}'))));
     } on ApiException catch (e) {
       setState(() => error = e.message);
     } finally {
@@ -1807,19 +1836,45 @@ class PropertyCard extends StatefulWidget {
 
 class _PropertyCardState extends State<PropertyCard> {
   final name = TextEditingController(), address = TextEditingController();
-  bool busy = false, loaded = false, autoBilling = false, autoBusy = false, reminders = false, remindBusy = false;
+  bool busy = false, loaded = false, autoBilling = false, autoBusy = false, reminders = false, remindBusy = false, homeBusy = false;
+  double? homeLat, homeLon;
+  int homeRadius = 150;
   @override
   void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _load()); }
   @override
   void dispose() { name.dispose(); address.dispose(); super.dispose(); }
   Future<void> _load() async {
-    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; autoBilling = r['autoBillingEnabled'] == true; reminders = r['paymentRemindersEnabled'] == true; if (mounted) setState(() => loaded = true); } catch (_) {}
+    try { final r = await SessionScope.of(context).api.get('/property') as Map<String, dynamic>; name.text = '${r['name'] ?? ''}'; address.text = '${r['address'] ?? ''}'; autoBilling = r['autoBillingEnabled'] == true; reminders = r['paymentRemindersEnabled'] == true; homeLat = (r['homeLatitude'] as num?)?.toDouble(); homeLon = (r['homeLongitude'] as num?)?.toDouble(); homeRadius = (r['homeRadiusM'] as num?)?.toInt() ?? 150; if (mounted) setState(() => loaded = true); } catch (_) {}
   }
   Future<void> save() async {
     setState(() => busy = true);
     try { await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'address': address.text.trim()}); if (mounted) toast(context, 'Сохранено'); }
     on ApiException catch (e) { if (mounted) toast(context, e.message); }
     finally { if (mounted) setState(() => busy = false); }
+  }
+  /// Saves where the house is: this phone's position now ("the house is here"), a new radius, or clears it.
+  Future<void> setHome({bool here = false, bool clear = false, int? radius}) async {
+    setState(() => homeBusy = true);
+    try {
+      double? lat = homeLat, lon = homeLon;
+      if (clear) { lat = null; lon = null; }
+      if (here) {
+        var p = await Geolocator.checkPermission();
+        if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+        if (p == LocationPermission.denied || p == LocationPermission.deniedForever || !await Geolocator.isLocationServiceEnabled()) {
+          if (mounted) toast(context, 'Разрешите доступ к геопозиции и включите её на телефоне.');
+          return;
+        }
+        final pos = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 20)));
+        lat = pos.latitude; lon = pos.longitude;
+      }
+      if (!mounted) return;
+      await SessionScope.of(context).api.patch('/property', {'name': name.text.trim(), 'homeLatitude': lat, 'homeLongitude': lon, 'homeRadiusM': radius ?? homeRadius});
+      setState(() { homeLat = lat; homeLon = lon; homeRadius = radius ?? homeRadius; });
+      if (mounted) toast(context, clear ? 'Расположение дома очищено' : 'Расположение дома сохранено');
+    } on ApiException catch (e) { if (mounted) toast(context, e.message); }
+    catch (_) { if (mounted) toast(context, 'Не удалось получить геопозицию. Попробуйте на улице или у окна.'); }
+    finally { if (mounted) setState(() => homeBusy = false); }
   }
   // The switch takes effect at once: from now on each bed's rent is raised on its payment day.
   Future<void> setAutoBilling(bool value) async {
@@ -1864,6 +1919,19 @@ class _PropertyCardState extends State<PropertyCard> {
           title: const Text('Напоминания об оплате'),
           subtitle: const Text('Жильцам с приложением приходит напоминание, когда срок оплаты близко или уже прошёл. Не чаще раза в день.'),
         ),
+      ])),
+      const Gap(14),
+      const SectionTitle('Где находится дом'),
+      AppCard(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(homeLat == null ? 'Не указано. Нужно для плиток «Дома сейчас» и «Не дома».' : 'Указано. Жилец считается дома, если его телефон в пределах $homeRadius м.', style: Theme.of(context).textTheme.bodyMedium),
+        const Gap(12),
+        FilledButton.icon(onPressed: homeBusy ? null : () => setHome(here: true), icon: const Icon(Icons.my_location_rounded), label: Text(homeBusy ? 'Определяем…' : 'Я в доме — сохранить это место')),
+        const Gap(10),
+        Row(children: [
+          const Expanded(child: Text('Радиус')),
+          DropdownButton<int>(value: [100, 150, 250, 500].contains(homeRadius) ? homeRadius : 150, items: [for (final m in [100, 150, 250, 500]) DropdownMenuItem(value: m, child: Text('$m м'))], onChanged: homeBusy || homeLat == null ? null : (v) => setHome(radius: v)),
+        ]),
+        if (homeLat != null) Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: homeBusy ? null : () => setHome(clear: true), child: const Text('Очистить'))),
       ])),
     ]);
   }

@@ -2,14 +2,14 @@
 import { LocationSummary } from './map';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { AlertCircle, Banknote, BedDouble, Bot, Building2, CalendarClock, Cctv, CheckCircle2, CircleAlert, FileText, House, Send, UserMinus, UserPlus, Users, Wallet } from 'lucide-react';
+import { AlertCircle, Banknote, BedDouble, Building2, CalendarClock, CheckCircle2, CircleAlert, FileText, House, UserMinus, UserPlus, Users, Wallet } from 'lucide-react';
 import { api, type Room } from '../lib/api';
 import { useRealtime } from '../lib/realtime';
 
 type Summary = { charged: string; paid: string; outstanding: string; overdue: string; blockedResidents: number };
 type Group = { residents: number; amount: string };
 type Month = { month: string; paid: Group; partial: Group; unpaid: Group; received: string; months: { month: string; received: string }[] };
-type Extra = { finance?: Summary & { debtors: number }; month?: Month; applications?: number; today?: { movedIn: number; movedOut: number }; ending?: number };
+type Extra = { finance?: Summary & { debtors: number }; month?: Month; applications?: number; today?: { movedIn: number; movedOut: number }; ending?: number; home?: { at: number; away: number } };
 
 const sum = (v: string | number) => Math.round(Number(v)).toLocaleString('ru-RU') + ' сум';
 function greeting() {
@@ -19,17 +19,15 @@ function greeting() {
 const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', ...o }).format(new Date());
 const monthName = (m: string) => new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC', month: 'short' }).format(new Date(`${m}-01T00:00:00Z`)).replace('.', '');
 
-/** A tile for a module that is not built yet: shown in place, marked «скоро», never with invented numbers. */
-const Soon = () => <span className="soon-badge">скоро</span>;
 
-/** Owner and staff home, as on the owner's mockups (2026-10-17): numbers first, then occupancy, money,
- *  cameras (soon), the house plan, recent events and the assistant (soon). Phones get the tile grid instead. */
+/** Owner and staff home, as on the owner's mockups (2026-10-17): numbers first, then occupancy, money, the house
+ *  plan and recent events. Modules that do not exist yet are not shown (owner, 2026-11-05). Phones get the tile grid. */
 export function Dashboard({ name, rooms, residents, permissions, actions, events }: { name: string; rooms: Room[]; residents: number; permissions: string[]; actions: ReactNode; events: ReactNode }) {
   const [extra, setExtra] = useState<Extra>({});
   const can = (p: string) => permissions.includes(p);
   const [tick, setTick] = useState(0);
   const [, setClock] = useState(0);
-  useRealtime(['finance', 'applications', 'house'], () => setTick(t => t + 1));
+  useRealtime(['finance', 'applications', 'house', 'location'], () => setTick(t => t + 1));
   useEffect(() => { const t = setInterval(() => setClock(c => c + 1), 30000); return () => clearInterval(t); }, []);
   useEffect(() => {
     let live = true;
@@ -42,6 +40,8 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
         can('APPLICATION_VIEW') && api<{ counts: Record<string, number> }>('/applications?status=SUBMITTED').then(a => { next.applications = a.counts.SUBMITTED || 0; }).catch(() => undefined),
         api<{ movedIn: number; movedOut: number }>('/occupancies/today').then(t => { next.today = t; }).catch(() => undefined),
         api<unknown[]>('/occupancies/ending').then(e => { next.ending = e.length; }).catch(() => undefined),
+        // Counts only; shown once the owner has set where the house is (Settings).
+        can('VIEW_LOCATION') && api<{ counts: Record<string, number>; home: { configured: boolean } }>('/locations').then(l => { if (l.home.configured) next.home = { at: l.counts.AT_HOME || 0, away: l.counts.AWAY || 0 }; }).catch(() => undefined),
       ]);
       if (live) setExtra(next);
     })();
@@ -55,14 +55,13 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
   const { finance: f, month: m, today: t } = extra;
   const peak = m ? Math.max(1, ...m.months.map(x => Number(x.received))) : 1;
 
-  type Kpi = { href?: string; icon: ReactNode; tone: string; value?: ReactNode; label: string; soon?: boolean };
+  type Kpi = { href: string; icon: ReactNode; tone: string; value: ReactNode; label: string };
   const kpis: Kpi[] = [
     { href: '/rooms', icon: <BedDouble size={18} />, tone: 'c-blue', value: beds, label: 'Всего мест' },
     { href: '/residents?filter=active', icon: <Users size={18} />, tone: 'c-red', value: busy, label: 'Занято' },
     { href: '/rooms', icon: <CheckCircle2 size={18} />, tone: 'c-green', value: beds - busy, label: 'Свободно' },
-    { icon: <House size={18} />, tone: 'c-green', label: 'Дома сейчас', soon: true },
-    { icon: <UserMinus size={18} />, tone: 'c-blue', label: 'Не дома', soon: true },
   ];
+  if (extra.home) kpis.push({ href: '/map', icon: <House size={18} />, tone: 'c-green', value: extra.home.at, label: 'Дома сейчас' }, { href: '/map', icon: <UserMinus size={18} />, tone: 'c-blue', value: extra.home.away, label: 'Не дома' });
   if (f) kpis.push({ href: '/finance', icon: <AlertCircle size={18} />, tone: 'c-orange', value: f.debtors, label: 'Должники' });
   if (extra.ending !== undefined) kpis.push({ href: '/residents?filter=ending', icon: <CalendarClock size={18} />, tone: 'c-orange', value: extra.ending, label: 'Скоро выезд' });
   if (extra.applications !== undefined) kpis.push({ href: '/applications?status=SUBMITTED', icon: <FileText size={18} />, tone: 'c-red', value: extra.applications, label: 'Новые заявки' });
@@ -76,6 +75,7 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
     { href: '/rooms', icon: <CheckCircle2 size={18} />, tone: 't-green', value: beds - busy, label: 'Свободно' },
     { href: '/residents', icon: <Users size={18} />, tone: 't-blue', value: residents, label: 'Жильцы' },
   ];
+  if (extra.home) tiles.push({ href: '/map', icon: <House size={18} />, tone: 't-green', value: extra.home.at, label: 'Дома сейчас' }, { href: '/map', icon: <UserMinus size={18} />, tone: 't-blue', value: extra.home.away, label: 'Не дома' });
   if (m) tiles.push(
     { href: '/finance', icon: <CheckCircle2 size={18} />, tone: 't-green', value: m.paid.residents, label: 'Оплатили' },
     { href: '/finance', icon: <CircleAlert size={18} />, tone: 't-red', value: m.unpaid.residents + m.partial.residents, label: 'Не оплатили' });
@@ -96,10 +96,7 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
         <Link href="/residents?filter=closed" className="tile t-red"><span className="tile-icon"><UserMinus size={18} /></span><span><small>Выселились</small><strong>{t.movedOut}</strong></span></Link></>}
     </div>
 
-    <div className="stats-grid kpis">{kpis.map(k => {
-      const body = <><span className="kpi-row"><span className={`chip ${k.tone}`}>{k.icon}</span><strong>{k.soon ? '—' : k.value}</strong></span><small>{k.label}{k.soon && <> <Soon /></>}</small></>;
-      return k.href ? <Link href={k.href} className="stat kpi" key={k.label}>{body}</Link> : <div className="stat kpi soon" key={k.label} aria-label={`${k.label}: скоро`}>{body}</div>;
-    })}</div>
+    <div className="stats-grid kpis">{kpis.map(k => <Link href={k.href} className="stat kpi" key={k.label}><span className="kpi-row"><span className={`chip ${k.tone}`}>{k.icon}</span><strong>{k.value}</strong></span><small>{k.label}</small></Link>)}</div>
 
     <div className="dash-grid">
       <section className="card"><h2>Заполняемость дома</h2><div className="occupancy">
@@ -118,10 +115,6 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
         </div>}
       </div></section> : <section className="card"><h2>Сегодня</h2><div className="money"><div><span className="chip c-green"><CheckCircle2 size={17} /></span><p><strong>{beds - busy} свободных мест</strong><small>Можно заселять</small></p></div></div></section>}
 
-      <section className="card soon-card"><h2>Камеры и оборудование <Soon /></h2>
-        <div className="soon-body"><span className="chip c-blue"><Cctv size={20} /></span><p><strong>Живое видео с камер дома</strong><small>Камеры появятся здесь после подключения. Смотреть смогут только сотрудники с правом доступа.</small></p></div>
-        <div className="camera-slots" aria-hidden="true">{[1, 2].map(i => <div key={i}><Cctv size={22} /></div>)}</div>
-      </section>
     </div>
 
     <div className="dash-grid">
@@ -133,11 +126,6 @@ export function Dashboard({ name, rooms, residents, permissions, actions, events
         <p className="plan-legend"><span className="sw full" />Мест нет<span className="sw almost" />Почти заполнена<span className="sw free" />Есть места</p>
       </section>
       <section className="card events-card"><h2>Последние события <Link href="/history">Смотреть все</Link></h2>{events}</section>
-      <section className="card soon-card assistant"><h2><span className="ai-title">AI Помощник</span> <Soon /></h2>
-        <p className="muted">Задавайте вопросы о доме обычными словами. Примеры:</p>
-        <ul className="ai-examples" aria-label="Примеры вопросов">{['Кто сейчас дома?', 'Кто должен больше 7 дней?', 'Покажи новые заявки', 'Есть срочные жалобы?'].map(q => <li key={q}><Bot size={14} />{q}</li>)}</ul>
-        <div className="ai-input" aria-hidden="true"><span>Напишите ваш вопрос…</span><Send size={16} /></div>
-      </section>
     </div>
     {can('VIEW_LOCATION') && <LocationSummary />}
   </div>;

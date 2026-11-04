@@ -35,15 +35,22 @@ export class ResidentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ResidentsService.name);
   private timer?: ReturnType<typeof setInterval>;
   constructor(private readonly db: Database, private readonly finance: FinanceService, private readonly notifications: NotificationsService) {}
+  /** For /api/health and the watchdog: the reminder worker's last hourly check, and whether that run failed. */
+  lastTick: Date | null = null;
+  reminderFailing = false;
   onModuleInit() {
     // Hourly, but reminders go out only in the daytime (Tashkent); tests call remindStays directly.
     if (process.env.NODE_ENV !== 'test') {
-      this.timer = setInterval(() => {
-        const hour = Number(new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Tashkent',hour:'2-digit',hour12:false}).format(new Date()));
-        if (hour >= 10 && hour < 20) void this.remindStays().catch(() => this.logger.error('End-of-stay reminders failed; next hour retries.'));
-      }, 3600000);
+      void this.reminderTick();
+      this.timer = setInterval(() => void this.reminderTick(), 3600000);
       this.timer.unref();
     }
+  }
+  private async reminderTick() {
+    const hour = Number(new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Tashkent',hour:'2-digit',hour12:false}).format(new Date()));
+    try { if (hour >= 10 && hour < 20) await this.remindStays(); this.reminderFailing = false; }
+    catch { this.reminderFailing = true; this.logger.error('End-of-stay reminders failed; next hour retries.'); }
+    this.lastTick = new Date();
   }
   onModuleDestroy() { clearInterval(this.timer); }
   async write<T>(actor: Actor, action: (tx: Prisma.TransactionClient) => Promise<T>) {

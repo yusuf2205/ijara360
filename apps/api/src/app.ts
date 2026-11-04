@@ -10,7 +10,7 @@ import { AuthModule } from './auth';
 import { Database, DatabaseModule } from './database';
 import { InventoryModule } from './inventory';
 import { allowedOrigins } from './origins';
-import { ResidentsModule } from './residents';
+import { ResidentsModule, ResidentsService } from './residents';
 import { FinanceModule } from './finance';
 import { ApplicationsModule } from './applications';
 import { KycRetentionService } from './kyc-retention';
@@ -24,13 +24,14 @@ import { LocationModule, LocationService } from './location';
 
 @Controller('health')
 class HealthController {
-  constructor(private readonly db: Database, private readonly realtime: RealtimeHub, private readonly location: LocationService, private readonly kycRetention: KycRetentionService) {}
+  constructor(private readonly db: Database, private readonly realtime: RealtimeHub, private readonly location: LocationService, private readonly kycRetention: KycRetentionService, private readonly residents: ResidentsService) {}
   @Get() async health() {
     try { await this.db.$queryRaw`SELECT 1`; }
     catch { throw new ServiceUnavailableException('База данных недоступна.'); }
     // Private listeners only (the public one answers 404 here). Seconds since each worker last finished.
     const age = (d: Date | null) => d ? Math.round((Date.now() - d.getTime()) / 1000) : null;
-    return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening, kyc: { retentionWorker: age(this.kycRetention.lastRun) },
+    return { status: 'ok', version: '0.1.0', realtime: this.realtime.listening, kyc: { retentionWorker: age(this.kycRetention.lastTick), failing: this.kycRetention.failing },
+      stays: { reminderWorker: age(this.residents.lastTick), failing: this.residents.reminderFailing },
       location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY), mapKey: this.location.mapKey } };
   }
 }

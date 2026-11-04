@@ -125,3 +125,16 @@ test('M7 parts from /api/health: realtime, location intake, workers, map key', (
   assert.equal(apiParts({realtime:true,location:{statusWorker:null,retentionWorker:null,mapConfigured:false}},now,now-MIN).locationWorker.ok,null,'just started');
   assert.equal(apiParts(null,now,now).realtime.ok,null,'API down is reported by its own check');
 });
+
+test('the watchdog follows the KYC purge and the end-of-stay reminders',()=>{
+  const {apiParts,LABELS}=require('../../../scripts/watchdog.cjs');
+  const now=Date.parse('2026-11-05T08:00:00Z');
+  const base={realtime:true,location:{statusWorker:12,retentionWorker:1800,lastUpload:40,mapConfigured:false}};
+  const good=apiParts({...base,kyc:{retentionWorker:600,failing:false},stays:{reminderWorker:600,failing:false}},now,now-HOUR);
+  assert.equal(good.kycRetention.ok,true);assert.equal(good.stayReminders.ok,true);
+  const bad=apiParts({...base,kyc:{retentionWorker:600,failing:true},stays:{reminderWorker:5*3600,failing:false}},now,now-HOUR);
+  assert.equal(bad.kycRetention.ok,false);assert.match(bad.kycRetention.detail,/ошибка/);assert.equal(bad.stayReminders.ok,false);
+  assert.equal(apiParts(base,now,now-HOUR).kycRetention.ok,false,'an API without the worker is an alarm');
+  assert.equal(apiParts(null,now,now).stayReminders.ok,null);
+  assert.ok(LABELS.kycRetention&&LABELS.stayReminders);
+});

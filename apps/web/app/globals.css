@@ -590,7 +590,7 @@ label.with-icon>input{padding-left:44px}
 .resident-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .resident-head>div:not(.resident-head-actions){min-width:0}
 .resident-head .status-pill{max-width:100%}
-@media(max-width:700px){.resident-head-actions{width:100%}.resident-head-actions .button{flex:1}}
+@media(max-width:700px){.resident-head{flex-wrap:wrap}.resident-head h1{overflow-wrap:anywhere}.resident-head-actions{width:100%;flex:1 1 100%}.resident-head-actions .button{flex:1}}
 /* v4 finance summary + settings tidy */
 .finance-stats{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
 .stat.finance-kpi{display:flex;align-items:center;gap:12px;padding:16px}
@@ -620,3 +620,5 @@ label.with-icon>input{padding-left:44px}
 }
 /* A stay that ends within 30 days or is overdue (resident card and list). */
 .warn-text{color:var(--bad);font-weight:600}
+/* Settings: where the house is ("at home / not at home"). */
+.home-point{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px;margin:12px 0;display:grid;gap:10px}.home-point legend{font-weight:700;padding:0 6px}.home-point small{color:var(--muted,#6b7280)}
