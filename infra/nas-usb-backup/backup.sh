@@ -53,7 +53,6 @@ once() {
   pg top-procurement-postgres-1 || bad="$bad top-db"
   pg top-procurement-staging-postgres-1 || bad="$bad top-staging-db"
   pg yordam-postgres || bad="$bad yordam-db"
-  maria wordpress-wordpressdb-1 || bad="$bad wordpress-db"
   lite gitea /projects/gitea/data/gitea/gitea.db || bad="$bad gitea-db"
   lite suhbat /suhbat-db/suhbat.db || bad="$bad suhbat-db"
   log "backup to $R"
