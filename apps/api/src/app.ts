@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { AnalyticsModule } from './analytics';
+import { GuardiansModule } from './guardians';
 import { ArgumentsHost, Catch, Controller, ExceptionFilter, Get, HttpException, Module, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
@@ -36,7 +37,7 @@ class HealthController {
       location: { statusWorker: age(this.location.beats.status), retentionWorker: age(this.location.beats.retention), lastUpload: age(this.location.beats.ingest), mapConfigured: Boolean(process.env.YANDEX_MAPS_API_KEY), mapKey: this.location.mapKey } };
   }
 }
-@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule, LocationModule, AnalyticsModule], controllers: [HealthController] })
+@Module({ imports: [DatabaseModule, RealtimeModule, AuthModule, InventoryModule, ResidentsModule, FinanceModule, ApplicationsModule, TenantModule, TenantFinanceModule, TicketsModule, NotificationsModule, SystemModule, LocationModule, AnalyticsModule, GuardiansModule], controllers: [HealthController] })
 export class AppModule {}
 
 @Catch()

@@ -8,6 +8,7 @@ import { normalizePhone } from './security';
 import { CheckInDto, CheckOutDto, PlanDto, ResidentDto, TransferDto } from './residents.dto';
 import { FinanceModule, FinanceService } from './finance';
 import { NotificationsModule, NotificationsService } from './notifications';
+import { revokeGuardian } from './guardians';
 
 const history = { include: { room: {select:{id:true,number:true}}, bed: {select:{id:true,number:true}}, plan: {select:{plannedEndDate:true}} }, orderBy: [{moveInDate:'desc' as const},{createdAt:'desc' as const},{id:'desc' as const}] };
 export function businessDate(value: string): Date {
@@ -97,9 +98,14 @@ export class ResidentsService implements OnModuleInit, OnModuleDestroy {
   }
   async detail(actor: Actor, id: string) {
     await this.finance.refresh(actor.propertyId);
-    const resident = await this.db.resident.findFirst({where:{id,propertyId:actor.propertyId},include:{occupancies:history}});
+    const now = new Date();
+    const resident = await this.db.resident.findFirst({where:{id,propertyId:actor.propertyId},include:{occupancies:history,
+      // Parents connected to the bot (parent access); a pending one still has its link to pass on.
+      guardians:{where:{revokedAt:null},orderBy:{createdAt:'asc'},select:{id:true,name:true,phone:true,linkedAt:true,createdAt:true,
+        invites:{where:{consumedAt:null,expiresAt:{gt:now}},orderBy:{createdAt:'desc'},take:1,select:{expiresAt:true}}}}}});
     if (!resident) throw new NotFoundException('Жилец не найден.');
-    return resident;
+    const {guardians, ...rest} = resident;
+    return {...rest, guardians:guardians.map(({invites,...g}) => ({...g, status:g.linkedAt ? 'LINKED' : 'PENDING', linkExpiresAt:invites[0]?.expiresAt ?? null}))};
   }
   async insert(tx: Prisma.TransactionClient, actor: Actor, dto: ResidentDto) {
     const phone = normalizePhone(dto.phone);
@@ -182,6 +188,8 @@ export class ResidentsService implements OnModuleInit, OnModuleDestroy {
       const plan = await tx.occupancyPlan.findUnique({where:{occupancyId:old.id}});
       if (plan) await tx.occupancyPlan.create({data:{occupancyId:current.id,propertyId:actor.propertyId,plannedEndDate:plan.plannedEndDate,reminderStage:plan.reminderStage}});
       await this.audit(tx,actor,'OCCUPANCY_TRANSFERRED',old.residentId,{oldOccupancyId:old.id,newOccupancyId:current.id,oldRoomId:old.roomId,oldBedId:old.bedId,newRoomId:bed.roomId,newBedId:bed.id});
+      const room = await tx.room.findUniqueOrThrow({where:{id:bed.roomId},select:{number:true}});
+      await this.notifications.guardianTransfer(tx,old.residentId,current.id,room.number,bed.number);
       return current;
     });
   }
@@ -198,6 +206,14 @@ export class ResidentsService implements OnModuleInit, OnModuleDestroy {
         await tx.tenantSession.deleteMany({where:{accountId:account.id}});
         await tx.tenantInvite.updateMany({where:{accountId:account.id,consumedAt:null},data:{consumedAt:new Date()}});
         await this.audit(tx,actor,'TENANT_ACCOUNT_DISABLED',old.residentId,{accountId:account.id,reason:'CHECKED_OUT'});
+      }
+      // Parents get the check-out notice, then their access ends (phone and Telegram id are cleared).
+      if (!await tx.occupancy.count({where:{residentId:old.residentId,status:'ACTIVE'}})) {
+        await this.notifications.guardianCheckedOut(tx,old.residentId,id,date);
+        for (const g of await tx.guardian.findMany({where:{residentId:old.residentId,revokedAt:null},select:{id:true}})) {
+          await revokeGuardian(tx,g.id);
+          await this.audit(tx,actor,'GUARDIAN_REVOKED',old.residentId,{guardianId:g.id,reason:'CHECKED_OUT'});
+        }
       }
       return closed;
     });

@@ -12,6 +12,7 @@ import '../session.dart';
 import '../theme.dart';
 import '../ui/kit.dart';
 import 'common.dart';
+import 'guardians.dart';
 import 'receipt.dart';
 import 'report.dart';
 import 'tenant.dart' show methodLabel;
@@ -681,6 +682,7 @@ class ResidentScreen extends StatelessWidget {
                 KeyValue('Залог', sum(occ['depositAmount'])),
               ])),
             ],
+            GuardiansSection(api: s.api, residentId: '${r['id']}', guardians: ((r['guardians'] as List?) ?? const []).cast<Map<String, dynamic>>(), living: occ != null, canManage: s.can('RESIDENTS_MANAGE'), refresh: refresh),
             if (stays.where((o) => o['status'] != 'ACTIVE').isNotEmpty) ...[
               const SectionTitle('История'),
               for (final o in stays.where((o) => o['status'] != 'ACTIVE')) Padding(

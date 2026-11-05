@@ -87,6 +87,11 @@ label.toggle-row small{font-weight:500;opacity:.72;line-height:1.35}
 /* M5: tenant app account */
 .invite-link{display:grid;gap:8px;background:var(--green-soft);border-radius:12px;padding:12px;margin:10px 0}
 .invite-link code{overflow-wrap:anywhere;font-size:12px}
+.guardian-list{list-style:none;margin:8px 0;padding:0;display:grid;gap:10px}
+.guardian-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.guardian-row>div:first-child{display:grid;gap:2px;min-width:0}.guardian-row small{color:var(--muted);overflow-wrap:anywhere}
+.guardian-row .resident-actions{grid-column:1/-1;margin:0}
+.guardian-form{display:grid;gap:10px;margin-top:8px}
 
 /* M5: tenant tickets */
 .ticket-category{max-width:260px;margin-top:6px}

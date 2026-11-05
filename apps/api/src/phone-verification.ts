@@ -6,13 +6,14 @@ import {AuthService} from './auth';
 import {TelegramService} from './telegram';
 import {StaffTelegramService} from './staff-telegram';
 import {TenantTelegramService} from './tenant-telegram';
+import {GuardianTelegramService} from './guardians';
 import {digest,makeToken,normalizePhone,safeTokenEqual} from './security';
 
 type TelegramUpdate={update_id:number;message?:{from?:{id:number;is_bot?:boolean};chat:{id:number;type:string};text?:string;contact?:{user_id?:number;phone_number:string}};callback_query?:{id:string;from:{id:number};data?:string;message?:{chat:{id:number};message_id:number}}};
 @Injectable()
 export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
   private stopped=false;private timer?:NodeJS.Timeout;
-  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService,private readonly telegram:TelegramService,private readonly staff:StaffTelegramService,private readonly tenantTg:TenantTelegramService){}
+  constructor(private readonly db:Database,private readonly applications:ApplicationService,private readonly auth:AuthService,private readonly telegram:TelegramService,private readonly staff:StaffTelegramService,private readonly tenantTg:TenantTelegramService,private readonly guardians:GuardianTelegramService){}
   ready(){return this.telegram.ready();}
   async challenge(a:RentalApplication){
     if(!this.ready())throw new ServiceUnavailableException('Подтверждение телефона пока не подключено.');
@@ -28,11 +29,12 @@ export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
   async call(method:string,body:unknown):Promise<any>{return this.telegram.call(method,body);}
   async send(chatId:number,text:string,reply_markup?:unknown){await this.call('sendMessage',{chat_id:chatId,text,reply_markup});}
   async handle(update:TelegramUpdate){
-    if(update.callback_query){if(await this.staff.decide(update.callback_query))return;await this.tenantTg.decide(update.callback_query);return;}
+    if(update.callback_query){if(await this.staff.decide(update.callback_query))return;if(await this.tenantTg.decide(update.callback_query))return;await this.guardians.decide(update.callback_query);return;}
     const m=update.message;if(!m||m.chat?.type!=='private'||!m.from||m.from.is_bot||m.from.id!==m.chat.id)return;
     const userId=String(m.from.id);
     if(m.text?.startsWith('/start ')){
       const token=m.text.slice(7).trim();if(!/^[A-Za-z0-9_-]{32,100}$/.test(token))return;
+      if(await this.guardians.start(token,userId,m.chat.id))return;
       if(await this.staff.start(token,userId,m.chat.id))return;
       const challenge=await this.db.phoneChallenge.findUnique({where:{tokenHash:digest(token)}});
       if(!challenge||challenge.consumedAt||challenge.expiresAt<=new Date()||challenge.telegramUserId&&challenge.telegramUserId!==userId){await this.send(m.chat.id,'Ссылка истекла. Откройте анкету и запросите подтверждение снова.');return;}
@@ -56,6 +58,8 @@ export class PhoneVerificationService implements OnModuleInit,OnModuleDestroy {
       });
       await this.applications.event(challenge.application,'updated');await this.send(m.chat.id,'Телефон подтверждён. Вернитесь в анкету и продолжите заполнение.',{remove_keyboard:true});return;
     }
+    // A connected parent gets the balance of each resident they follow instead of the application link.
+    if(m.text==='/start'&&await this.guardians.menu(userId,m.chat.id))return;
     if(m.text==='/start'||m.text==='/apply'){
       const origin=process.env.PUBLIC_APP_ORIGIN||process.env.APP_ORIGIN;
       await this.send(m.chat.id,'Подайте заявку в защищённой анкете. Документы не нужно отправлять в чат.',{inline_keyboard:[[{text:'Открыть анкету',url:`${origin}/apply?channel=TELEGRAM`}]]});

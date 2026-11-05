@@ -12,6 +12,7 @@ import {TenantModule} from './tenant';
 import {ApplicationService} from './applications.service';
 import {PassportOcrService} from './passport-ocr';
 import {PhoneVerificationService} from './phone-verification';
+import {GuardiansModule} from './guardians';
 import {ApplicationPasswordDto,ApplicationVersionDto,ConvertDto,DraftDto,ReviewDto,StartApplicationDto} from './applications.dto';
 
 function imageResponse(res:Response,bytes:Buffer){res.set({'Content-Type':'image/jpeg','Cache-Control':'no-store, private','Content-Disposition':'inline; filename="document.jpg"','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'});res.send(bytes);}
@@ -46,5 +47,5 @@ class TelegramController {
   constructor(private readonly phone:PhoneVerificationService){}
   @Post('webhook') webhook(@Headers('x-telegram-bot-api-secret-token') secret:string,@Body() update:unknown){return this.phone.webhook(secret,update as Parameters<PhoneVerificationService['webhook']>[1]);}
 }
-@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule,NotificationsModule],providers:[ApplicationService,KycRetentionService,PassportOcrService,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController],exports:[KycRetentionService]})
+@Module({imports:[AuthModule,PermissionModule,ResidentsModule,TelegramModule,TenantModule,NotificationsModule,GuardiansModule],providers:[ApplicationService,KycRetentionService,PassportOcrService,PrivateStorage,PhoneVerificationService],controllers:[ApplicantController,ApplicationController,TelegramController],exports:[KycRetentionService]})
 export class ApplicationsModule{}

@@ -40,6 +40,7 @@ model Property {
   @@map("properties")
   notifications Notification[]
   occupancyPlans OccupancyPlan[]
+  guardians Guardian[]
 }
 
 model User {
@@ -267,6 +268,7 @@ model Resident {
   property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   occupancies Occupancy[]
   tenantAccount TenantAccount?
+  guardians Guardian[]
   tickets Ticket[]
   @@unique([propertyId, phone])
   @@unique([id, propertyId])
@@ -574,6 +576,7 @@ model Notification {
   propertyId String @map("property_id") @db.Uuid
   tenantAccountId String? @map("tenant_account_id") @db.Uuid
   userId String? @map("user_id") @db.Uuid
+  guardianId String? @map("guardian_id") @db.Uuid
   kind String @db.VarChar(40)
   title String @db.VarChar(160)
   body String @db.VarChar(1000)
@@ -585,6 +588,7 @@ model Notification {
   property Property @relation(fields:[propertyId],references:[id],onDelete:Restrict)
   tenantAccount TenantAccount? @relation(fields:[tenantAccountId],references:[id],onDelete:Restrict)
   user User? @relation(fields:[userId],references:[id],onDelete:Restrict)
+  guardian Guardian? @relation(fields:[guardianId],references:[id],onDelete:Restrict)
   deliveries NotificationDelivery[]
   @@index([tenantAccountId,createdAt])
   @@index([userId,createdAt])
@@ -695,4 +699,36 @@ model ResidentLocationPoint {
   @@index([residentId,recordedAt],map:"resident_location_points_resident_recorded_idx")
   @@index([recordedAt],map:"resident_location_points_recorded_idx")
   @@map("resident_location_points")
+}
+
+// A parent who follows the resident's rent in the Telegram bot (see migration 202611060001_guardians).
+model Guardian {
+  id String @id @default(uuid()) @db.Uuid
+  propertyId String @map("property_id") @db.Uuid
+  residentId String @map("resident_id") @db.Uuid
+  name String @db.VarChar(80)
+  phone String? @db.VarChar(16)
+  telegramUserId String? @map("telegram_user_id") @db.VarChar(30)
+  lang String @default("ru") @db.VarChar(2)
+  createdById String? @map("created_by_id") @db.Uuid
+  linkedAt DateTime? @map("linked_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  property Property @relation(fields:[propertyId],references:[id],onDelete:Restrict)
+  resident Resident @relation(fields:[residentId,propertyId],references:[id,propertyId],onDelete:Restrict,onUpdate:Restrict)
+  invites GuardianInvite[]
+  notifications Notification[]
+  @@index([residentId])
+  @@map("guardians")
+}
+model GuardianInvite {
+  id String @id @default(uuid()) @db.Uuid
+  guardianId String @map("guardian_id") @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  guardian Guardian @relation(fields:[guardianId],references:[id],onDelete:Restrict)
+  @@index([guardianId])
+  @@map("guardian_invites")
 }
